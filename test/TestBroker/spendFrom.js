@@ -2,7 +2,7 @@
 const Broker = artifacts.require('Broker')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
-const { ZERO_ADDR, ETHER_ADDR, assertError, assertRevert, assertEventEmission } = require('./helpers')
+const { ZERO_ADDR, ETHER_ADDR, assertError, assertRevert, assertEventEmission } = require('../../utils/testUtils')
 
 contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
     const owner = coordinator

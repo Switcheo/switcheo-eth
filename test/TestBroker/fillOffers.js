@@ -4,7 +4,7 @@ const SWCoin = artifacts.require('SWCoin')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { ETHER_ADDR, nonceGenerator, makeOffer, getOfferHash, fillOffers, fetchOffer } = require('./helpers')
+const { ETHER_ADDR, nonceGenerator, makeOffer, getOfferHash, fillOffers, fetchOffer } = require('../../utils/testUtils')
 
 contract('Test fillOffers', async () => {
     let broker, jrcoin, swcoin, accounts, filler, makers, coordinator, operator

@@ -2,25 +2,9 @@ const Broker = artifacts.require('Broker')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { ETHER_ADDR, REASON, assertError, assertEventEmission } = require('./helpers')
+const { ETHER_ADDR, REASON, assertError,
+        assertEventEmission, increaseEvmTime } = require('../../utils/testUtils')
 const announceDelay = 604800
-
-increaseTime = async (time) => (
-    new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
-            (err, _result) => {
-                if (err) return reject(err)
-
-                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
-                    (err, result) => {
-                        if (err) reject(err)
-                        else resolve(result)
-                    }
-                )
-            }
-        )
-    })
-)
 
 contract('Test announceWithdraw + slowWithdraw', async () => {
     let broker, coordinator, user, accounts
@@ -50,7 +34,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
                 }
             }])
 
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
 
             const r2 = await broker.slowWithdraw(user, ETHER_ADDR, ethersDeposited, { from: user })
             assertEventEmission(r2.logs, [{
@@ -84,7 +68,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
         beforeEach(async () => {
             await broker.depositEther.sendTransaction({ from: user, value: ethersDeposited })
             await broker.announceWithdraw.sendTransaction(ETHER_ADDR, ethersDeposited, { from: user })
-            await increaseTime(announceDelay - 900)
+            await increaseEvmTime(announceDelay - 900)
         })
 
         it('throws an error', async () => {
@@ -99,7 +83,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
         beforeEach(async () => {
             await broker.depositEther.sendTransaction({ from: user, value: ethersDeposited })
             await broker.announceWithdraw.sendTransaction(ETHER_ADDR, ethersDeposited, { from: user })
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
         })
 
         it('throws an error', async () => {
@@ -114,7 +98,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
 
         beforeEach(async () => {
             await broker.depositEther.sendTransaction({ from: user, value: ethersDeposited })
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
         })
 
         it('throws an error', async () => {
@@ -132,7 +116,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
         beforeEach(async () => {
             await broker.depositEther.sendTransaction({ from: user, value: ethersDeposited })
             await broker.announceWithdraw.sendTransaction(ETHER_ADDR, ethersDeposited, { from: user })
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
         })
 
         it('sends ether to the user', async () => {

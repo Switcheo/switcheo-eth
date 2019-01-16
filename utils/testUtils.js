@@ -1,9 +1,23 @@
+const sha256 = require('js-sha256').sha256
+
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
+
+const abiDecoder = require('abi-decoder')
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
 const OMG_ADDR = '0xd26114cd6EE289AccF82350c8d8487fedB8A0C07'
+
+const Broker = artifacts.require('Broker')
+const AtomicBroker = artifacts.require('AtomicBroker')
+const AirDropper = artifacts.require('AirDropper')
+const JRCoin = artifacts.require('JRCoin')
+const SWCoin = artifacts.require('SWCoin')
+
+abiDecoder.addABI(Broker.abi)
+abiDecoder.addABI(AtomicBroker.abi)
+abiDecoder.addABI(AirDropper.abi)
 
 const HEX_REASONS = {
     ReasonDeposit: '01',
@@ -24,7 +38,24 @@ const HEX_REASONS = {
 
     ReasonWithdraw: '09',
     ReasonWithdrawFeeGive: '14',
-    ReasonWithdrawFeeReceive: '15'
+    ReasonWithdrawFeeReceive: '15',
+
+    ReasonSwapMakerGive: '30',
+    ReasonSwapHolderReceive: '31',
+    ReasonSwapMakerFeeGive: '32',
+    ReasonSwapHolderFeeReceive: '33',
+
+    ReasonSwapHolderGive: '34',
+    ReasonSwapTakerReceive: '35',
+    ReasonSwapFeeGive: '36',
+    ReasonSwapFeeReceive: '37',
+
+    ReasonSwapCancelMakerReceive: '38',
+    ReasonSwapCancelHolderGive: '39',
+    ReasonSwapCancelFeeGive: '3A',
+    ReasonSwapCancelFeeReceive: '3B',
+    ReasonSwapCancelFeeRefundGive: '3C',
+    ReasonSwapCancelFeeRefundReceive: '3D'
 }
 
 const REASON = {}
@@ -46,9 +77,29 @@ const nonceGenerator = function*() {
     }
 }
 
+const decodeReceiptLogs = (receiptLogs) => {
+    const logs = abiDecoder.decodeLogs(receiptLogs)
+    const decodedLogs = []
+    for (const log of logs) {
+        const decodedLog = {
+            event: log.name,
+            args: {}
+        }
+        for (const event of log.events) {
+            decodedLog.args[event.name] = event.value
+        }
+        decodedLogs.push(decodedLog)
+    }
+    return decodedLogs
+}
+
 const assertEventEmission = (emittedEvents, expectedEvents) => {
     if (expectedEvents.length === 0) {
         throw new Error('expectedEvents is empty')
+    }
+    // decode the events if they are raw logs from the transaction receipt
+    if (emittedEvents[0].event === undefined) {
+        emittedEvents = decodeReceiptLogs(emittedEvents)
     }
     assert.equal(emittedEvents.length, expectedEvents.length, 'some events are not being tested')
     for (let i = 0; i < emittedEvents.length; i++) {
@@ -62,9 +113,16 @@ const assertEventEmission = (emittedEvents, expectedEvents) => {
         for (const key in expectedArgs) {
             const actualArg = emittedEvent.args[key]
             const expectedArg = expectedArgs[key]
+            if (actualArg === undefined) { throw new Error('value for ' + key + ' is undefined') }
             assert.equal(actualArg.toString(), expectedArg, 'value for ' + key + ' is ' + expectedArg)
         }
     }
+}
+
+// assertEventEmission works for events from a single contract
+// for
+const assertReceiptLogs = (logs, expectedLogs) => {
+
 }
 
 const assertError = async (method, ...args) => {
@@ -184,7 +242,7 @@ const emptyOfferParams = {
     nonce: 0
 }
 
-const getValidOfferParams = (nextNonce, maker, initialEtherBalance) => {
+const getSampleOfferParams = (nextNonce, maker, initialEtherBalance) => {
   const nonce = nextNonce()
 
   return {
@@ -284,7 +342,7 @@ const assertOfferDoesNotExist = async (broker, offerParams) => {
 
 const assertTokenBalance = async (broker, user, tokenAddress, expectedBalance, message) => {
     const balance = await broker.balances.call(user, tokenAddress)
-    assert.equal(balance.toString(), expectedBalance, message)
+    assert.equal(balance.toString(), expectedBalance.toString(), message)
 }
 
 const assertEtherBalance = async (broker, user, expectedBalance, message) => {
@@ -299,6 +357,161 @@ const assertWalletEtherAmount = async (user, expectedAmount, message) => {
 const assertWalletTokenAmount = async (token, user, expectedAmount, message) => {
     const amount = await token.balanceOf.call(user)
     assert.equal(amount.toString(), expectedAmount, message)
+}
+
+const fundUser = async ({ broker, user, coordinator }, { eth, jrc, swc }) => {
+    if (swc !== undefined) {
+        swCoin = await SWCoin.deployed()
+        await swCoin.mint.sendTransaction(user, swc)
+        await swCoin.approve.sendTransaction(broker.address, swc, { from: user })
+        await broker.depositERC20.sendTransaction(user, swCoin.address, swc, { from: coordinator })
+    }
+    if (jrc !== undefined) {
+        jrCoin = await JRCoin.deployed()
+        await jrCoin.mint.sendTransaction(user, jrc)
+        await jrCoin.approve.sendTransaction(broker.address, jrc, { from: user })
+        await broker.depositERC20.sendTransaction(user, jrCoin.address, jrc, { from: coordinator })
+    }
+    if (eth !== undefined) {
+        await broker.depositEther.sendTransaction({ from: user, value: eth })
+    }
+}
+
+const hashSwapParams = ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }) => {
+    const message = web3.utils.soliditySha3(
+        { type: 'string', value: 'swap' },
+        { type: 'address', value: maker },
+        { type: 'address', value: taker },
+        { type: 'address', value: token },
+        { type: 'uint256', value: amount },
+        { type: 'bytes32', value: hashedSecret },
+        { type: 'uint256', value: expiryTime },
+        { type: 'address', value: feeAsset },
+        { type: 'uint256', value: feeAmount }
+    )
+    return message
+}
+
+const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee) => {
+    const message = hashSwapParams({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount })
+    if (signee === undefined) { signee = maker }
+    const signature = await web3.eth.sign(message, signee)
+    return getSignatureComponents(signature)
+}
+
+const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, txn, signee) => {
+    if (signee === undefined) { signee = maker }
+    const signature = await signCreateSwap({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee)
+    const { v, r, s } = signature
+    return await atomicBroker.createSwap(maker, taker, token, amount, hashedSecret,
+        expiryTime, feeAsset, feeAmount, v, r, s, txn)
+}
+
+const executeSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, secret }, txn) => {
+    return await atomicBroker.executeSwap(maker, taker, token, amount, hashedSecret,
+        expiryTime, feeAsset, feeAmount, secret, txn)
+}
+
+const cancelSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, cancelFeeAmount }, txn) => {
+    return await atomicBroker.cancelSwap(maker, taker, token, amount, hashedSecret,
+        expiryTime, feeAsset, feeAmount, cancelFeeAmount, txn)
+}
+
+const fetchSwapExistance = async (atomicBroker, swapParams) => {
+    const swapHash = hashSwapParams(swapParams)
+    return await atomicBroker.swaps.call(swapHash)
+}
+
+const emptySwapParams = {
+    maker: ZERO_ADDR,
+    taker: ZERO_ADDR,
+    token: ZERO_ADDR,
+    amount: 0,
+    expiryTime: 0,
+    feeAsset: ZERO_ADDR,
+    feeAmount: 0,
+    active: false
+}
+
+const assertBalances = async (broker, userBalances) => {
+    const jrCoin = await JRCoin.deployed()
+    const swCoin = await SWCoin.deployed()
+    for (const user in userBalances) {
+        const assets = userBalances[user]
+        for (const asset in assets) {
+            const expectedAmount = assets[asset]
+            let assetAddress
+            if (asset === 'jrc') { assetAddress = jrCoin.address }
+            else if (asset === 'swc') { assetAddress = swCoin.address }
+            else { throw new Error('Unrecognized asset') }
+            const message = `expected ${expectedAmount} ${asset} for ${user}`
+            await assertTokenBalance(broker, user, assetAddress, expectedAmount, message)
+        }
+    }
+}
+
+const getSampleSwapParams = async ({ maker, taker, token, secret }) => {
+    if (secret === undefined) {
+        secret = 'password123'
+    }
+    const hashedSecret = '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
+    const evmTime = await getEvmTime()
+
+    const expiryDelay = 600
+    return {
+        maker,
+        taker,
+        token: token.address,
+        amount: 999,
+        secret,
+        hashedSecret,
+        expiryTime: evmTime + expiryDelay,
+        expiryDelay,
+        feeAsset: token.address,
+        feeAmount: 1,
+        active: true
+    }
+}
+
+const assertAddress = (value, expected) => {
+    assert.equal(value.toLowerCase(), expected.toLowerCase())
+}
+
+const assertAmount = (value, expected) => {
+    assert.equal(value.toString(), expected.toString())
+}
+
+const assertSwapExists = async (atomicBroker, swapParams) => {
+    const swapExists = await fetchSwapExistance(atomicBroker, swapParams)
+    assert.equal(swapExists, true)
+}
+
+const assertSwapDoesNotExist = async (atomicBroker, swapParams) => {
+    const swapExists = await fetchSwapExistance(atomicBroker, swapParams)
+    assert.equal(swapExists, false)
+}
+
+const increaseEvmTime = async (time) => (
+    new Promise((resolve, reject) => {
+        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
+            (err, _result) => {
+                if (err) return reject(err)
+
+                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
+                    (err, result) => {
+                        if (err) reject(err)
+                        else resolve(result)
+                    }
+                )
+            }
+        )
+    })
+)
+
+const getEvmTime = async () => {
+    const blockNumber = await web3.eth.getBlockNumber()
+    const block = await web3.eth.getBlock(blockNumber)
+    return block.timestamp
 }
 
 module.exports = {
@@ -316,7 +529,7 @@ module.exports = {
     signCancel,
     signFillOffer,
     emptyOfferParams,
-    getValidOfferParams,
+    getSampleOfferParams,
     makeOffer,
     fillOffer,
     signFillOffers,
@@ -329,5 +542,19 @@ module.exports = {
     assertEtherBalance,
     assertEventEmission,
     assertWalletEtherAmount,
-    assertWalletTokenAmount
+    assertWalletTokenAmount,
+    fundUser,
+    signCreateSwap,
+    createSwap,
+    executeSwap,
+    cancelSwap,
+    fetchSwapExistance,
+    getSampleSwapParams,
+    assertAddress,
+    assertAmount,
+    assertSwapExists,
+    assertSwapDoesNotExist,
+    assertBalances,
+    increaseEvmTime,
+    getEvmTime
 }

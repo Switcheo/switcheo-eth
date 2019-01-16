@@ -4,25 +4,8 @@ const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
 const { ETHER_ADDR, assertError, makeOffer, getOfferHash, assertOfferParams, assertEventEmission,
-    signCancel, getValidOfferParams, nonceGenerator } = require('./helpers')
+    signCancel, getSampleOfferParams, nonceGenerator } = require('../../utils/testUtils')
 const announceDelay = 604800
-
-increaseTime = async (time) => (
-    new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
-            (err, _result) => {
-                if (err) return reject(err)
-
-                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
-                    (err, result) => {
-                        if (err) reject(err)
-                        else resolve(result)
-                    }
-                )
-            }
-        )
-    })
-)
 
 contract('Test announceCancel', async () => {
     let broker, coordinator, user, accounts, sampleOffer, sampleOfferHash, initialEtherBalance
@@ -40,7 +23,7 @@ contract('Test announceCancel', async () => {
         initialEtherBalance = await broker.balances.call(user, ETHER_ADDR)
         assert.equal(initialEtherBalance, '1000000000000000000')
 
-        sampleOffer = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+        sampleOffer = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
         sampleOffer.offerAmount = 10
         sampleOffer.wantAsset = token.address
         sampleOffer.wantAmount = 20

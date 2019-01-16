@@ -5,7 +5,7 @@ const web3 = new Web3(Web3.givenProvider)
 const { BigNumber } = require('bignumber.js')
 
 const { ETHER_ADDR, REASON, nonceGenerator, assertError, assertEventEmission,
-    assertWalletEtherAmount, assertEtherBalance, withdraw, signWithdraw } = require('./helpers')
+    assertWalletEtherAmount, assertEtherBalance, withdraw, signWithdraw } = require('../../utils/testUtils')
 
 contract('Test withdraw', async () => {
     let broker, token, coordinator, user, accounts

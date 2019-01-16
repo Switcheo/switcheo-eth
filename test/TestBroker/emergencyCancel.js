@@ -2,9 +2,9 @@ const Broker = artifacts.require('Broker')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { ZERO_ADDR, ETHER_ADDR, REASON, nonceGenerator, emptyOfferParams, getValidOfferParams,
+const { ZERO_ADDR, ETHER_ADDR, REASON, nonceGenerator, emptyOfferParams, getSampleOfferParams,
     assertError, assertOfferParams, assertEtherBalance, assertEventEmission, makeOffer,
-    getOfferHash } = require('./helpers')
+    getOfferHash } = require('../../utils/testUtils')
 
 contract('Test emergencyCancel', async () => {
     let broker, user, accounts, coordinator, initialEtherBalance
@@ -24,7 +24,7 @@ contract('Test emergencyCancel', async () => {
 
     contract('test event emission', async () => {
         it('emits BalanceIncrease and Cancel events', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
@@ -53,7 +53,7 @@ contract('Test emergencyCancel', async () => {
 
     contract('when trading is frozen', async () => {
         it('cancels the offer', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
@@ -70,7 +70,7 @@ contract('Test emergencyCancel', async () => {
 
     contract('when trading is not frozen', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
