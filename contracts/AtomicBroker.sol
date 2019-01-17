@@ -109,6 +109,11 @@ contract AtomicBroker {
             "Invalid amount"
         );
 
+        require(
+            _expiryTime > now,
+            "Invalid expiry time"
+        );
+
         _validateAndAddHash(_hashedSecret);
 
         bytes32 msgHash = keccak256(abi.encodePacked(
