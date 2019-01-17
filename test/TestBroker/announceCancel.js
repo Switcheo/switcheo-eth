@@ -4,7 +4,7 @@ const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
 const { ETHER_ADDR, assertError, makeOffer, getOfferHash, assertOfferParams, assertEventEmission,
-    signCancel, getValidOfferParams, nonceGenerator } = require('./helpers')
+    signCancel, getValidOfferParams, nonceGenerator } = require('../../utils/brokerUtils')
 const announceDelay = 604800
 
 increaseTime = async (time) => (

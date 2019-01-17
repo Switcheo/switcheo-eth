@@ -2,7 +2,7 @@ const Broker = artifacts.require('Broker')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { ETHER_ADDR, REASON, assertError, assertEventEmission } = require('./helpers')
+const { ETHER_ADDR, REASON, assertError, assertEventEmission } = require('../../utils/brokerUtils')
 const announceDelay = 604800
 
 increaseTime = async (time) => (

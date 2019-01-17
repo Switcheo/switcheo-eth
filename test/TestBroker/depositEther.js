@@ -1,7 +1,7 @@
 const Broker = artifacts.require('Broker')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
-const { ETHER_ADDR, REASON, assertEventEmission } = require('./helpers')
+const { ETHER_ADDR, REASON, assertEventEmission } = require('../../utils/brokerUtils')
 
 contract('Test depositEther', async () => {
     let broker, user, accounts
