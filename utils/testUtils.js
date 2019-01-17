@@ -5,6 +5,10 @@ const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
 const OMG_ADDR = '0xd26114cd6EE289AccF82350c8d8487fedB8A0C07'
 
+const Broker = artifacts.require('Broker')
+const JRCoin = artifacts.require('JRCoin')
+const SWCoin = artifacts.require('SWCoin')
+
 const HEX_REASONS = {
     ReasonDeposit: '01',
 
@@ -301,6 +305,50 @@ const assertWalletTokenAmount = async (token, user, expectedAmount, message) => 
     assert.equal(amount.toString(), expectedAmount, message)
 }
 
+const fundUser = async ({ broker, user, coordinator }, { eth, jrc, swc }) => {
+    if (swc !== undefined) {
+        swCoin = await SWCoin.deployed()
+        await swCoin.mint.sendTransaction(user, swc)
+        await swCoin.approve.sendTransaction(broker.address, swc, { from: user })
+        await broker.depositERC20.sendTransaction(user, swCoin.address, swc, { from: coordinator })
+    }
+    if (jrc !== undefined) {
+        jrCoin = await JRCoin.deployed()
+        await jrCoin.mint.sendTransaction(user, jrc)
+        await jrCoin.approve.sendTransaction(broker.address, jrc, { from: user })
+        await broker.depositERC20.sendTransaction(user, jrCoin.address, jrc, { from: coordinator })
+    }
+    if (eth !== undefined) {
+        await broker.depositEther.sendTransaction({ from: user, value: eth })
+    }
+}
+
+const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee) => {
+    const message = web3.utils.soliditySha3(
+        { type: 'string', value: 'makeOffer' },
+        { type: 'address', value: maker },
+        { type: 'address', value: offerAsset },
+        { type: 'address', value: wantAsset },
+        { type: 'uint256', value: offerAmount },
+        { type: 'uint256', value: wantAmount },
+        { type: 'address', value: feeAsset },
+        { type: 'uint256', value: feeAmount },
+        { type: 'uint64', value: nonce }
+    )
+    if (signee === undefined) { signee = maker }
+    const signature = await web3.eth.sign(message, signee)
+    return getSignatureComponents(signature)
+}
+
+const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, txn, signature) => {
+    if (signature === undefined) {
+        signature = await signCreateSwap({ maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce })
+    }
+    const { v, r, s } = signature
+    await atomicBroker.createSwap.sendTransaction(maker, taker, token, amount, hashedSecret,
+        expiryTime, feeAsset, feeAmount, v, r, s, txn)
+}
+
 module.exports = {
     ZERO_ADDR,
     ETHER_ADDR,
@@ -329,5 +377,8 @@ module.exports = {
     assertEtherBalance,
     assertEventEmission,
     assertWalletEtherAmount,
-    assertWalletTokenAmount
+    assertWalletTokenAmount,
+    fundUser,
+    signCreateSwap,
+    createSwap
 }

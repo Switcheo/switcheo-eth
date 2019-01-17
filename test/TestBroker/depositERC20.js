@@ -4,7 +4,7 @@ const SWCoin = artifacts.require('SWCoin')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { REASON, assertEventEmission, assertError } = require('../../utils/brokerUtils')
+const { REASON, assertEventEmission, assertError } = require('../../utils/testUtils')
 
 contract('Test depositERC20', async () => {
     let broker, token, coordinator, user

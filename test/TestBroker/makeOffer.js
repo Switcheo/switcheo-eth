@@ -5,7 +5,7 @@ const web3 = new Web3(Web3.givenProvider)
 
 const { ETHER_ADDR, REASON, nonceGenerator, getValidOfferParams, assertError,
     assertOfferParams, assertTokenBalance, assertEtherBalance, assertEventEmission,
-    assertOfferDoesNotExist, makeOffer, signMakeOffer, signCancel, getOfferHash } = require('../../utils/brokerUtils')
+    assertOfferDoesNotExist, makeOffer, signMakeOffer, signCancel, getOfferHash } = require('../../utils/testUtils')
 
 contract('Test makeOffer', async () => {
     let broker, token, user, initialEtherBalance, accounts, coordinator

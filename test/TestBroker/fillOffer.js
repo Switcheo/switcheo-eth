@@ -7,7 +7,7 @@ const { BigNumber } = require('bignumber.js')
 
 const { ETHER_ADDR, REASON, nonceGenerator, getValidOfferParams, emptyOfferParams, getValidFillParams,
     assertError, assertOfferParams, assertEtherBalance, assertTokenBalance, assertEventEmission,
-    fetchOffer, makeOffer, getOfferHash, fillOffer, signFillOffer, withdraw  } = require('../../utils/brokerUtils')
+    fetchOffer, makeOffer, getOfferHash, fillOffer, signFillOffer, withdraw  } = require('../../utils/testUtils')
 
 contract('Test fillOffer', async () => {
     let broker, token, filler, user, accounts, coordinator, operator, sampleOffer, sampleOfferHash
