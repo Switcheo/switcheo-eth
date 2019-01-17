@@ -20,7 +20,7 @@ contract AtomicBroker {
         bool active;
     }
 
-    Broker broker;
+    Broker public broker;
 
     // The maximum announce delay in seconds
     // (7 days * 24 hours * 60 mins * 60 seconds)
@@ -95,7 +95,7 @@ contract AtomicBroker {
 
     modifier onlyOwner() {
         require(
-            msg.sender == address(broker.owner),
+            msg.sender == address(broker.owner()),
             "Invalid sender"
         );
         _;
@@ -233,7 +233,7 @@ contract AtomicBroker {
         if (feeAmount > 0) {
             broker.spendFrom(
                 address(this),
-                address(broker.operator),
+                address(broker.operator()),
                 feeAmount,
                 feeAsset,
                 ReasonSwapFeeGive,
@@ -255,7 +255,7 @@ contract AtomicBroker {
         );
 
         uint256 cancellationTime = swap.expiryTime;
-        if (msg.sender != address(broker.coordinator)) {
+        if (msg.sender != address(broker.coordinator())) {
             cancellationTime += cancelDelay;
         }
 
@@ -293,7 +293,7 @@ contract AtomicBroker {
         if (feeAmount > 0) {
             broker.spendFrom(
                 address(this),
-                address(broker.operator),
+                address(broker.operator()),
                 _cancelFeeAmount,
                 feeAsset,
                 ReasonSwapCancelFeeGive,
