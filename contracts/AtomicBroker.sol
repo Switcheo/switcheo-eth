@@ -79,12 +79,6 @@ contract AtomicBroker {
         cancelDelay = maxCancelDelay;
     }
 
-    function approveBroker()
-        external
-    {
-        broker.approveSpender(address(this));
-    }
-
     modifier notMoreThanMaxDelay(uint32 _delay) {
         require(
             _delay <= maxCancelDelay,
@@ -99,6 +93,12 @@ contract AtomicBroker {
             "Invalid sender"
         );
         _;
+    }
+
+    function approveBroker()
+        external
+    {
+        broker.approveSpender(address(this));
     }
 
     function setCancelDelay(uint32 _delay)
