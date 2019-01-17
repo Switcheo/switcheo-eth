@@ -1,23 +1,23 @@
 pragma solidity 0.4.25;
 
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "./Broker.sol"
+import "./Broker.sol";
 
 /// @title The Atomic Swap contract for Switcheo Exchange
 /// @author Switcheo Network
-contract AtomicSwap {
+contract AtomicBroker {
     using SafeMath for uint256;
 
     struct Swap {
-        address maker,
-        address taker,
-        address token,
-        address feeAsset,
-        bytes32 hashedSecret,
-        uint256 amount,
-        uint256 expiryTime,
-        uint256 feeAmount,
-        bool active
+        address maker;
+        address taker;
+        address token;
+        address feeAsset;
+        bytes32 hashedSecret;
+        uint256 amount;
+        uint256 expiryTime;
+        uint256 feeAmount;
+        bool active;
     }
 
     Broker broker;
@@ -75,12 +75,19 @@ contract AtomicSwap {
     constructor(address brokerAddress)
         public
     {
-        broker = new Broker(brokerAddress);
+        broker = Broker(brokerAddress);
+        cancelDelay = maxCancelDelay;
+    }
+
+    function approveBroker()
+        external
+    {
+        broker.approveSpender(address(this));
     }
 
     modifier notMoreThanMaxDelay(uint32 _delay) {
         require(
-            _delay <= maxAnnounceDelay,
+            _delay <= maxCancelDelay,
             "Invalid delay"
         );
         _;
@@ -88,7 +95,7 @@ contract AtomicSwap {
 
     modifier onlyOwner() {
         require(
-            msg.sender == broker.owner,
+            msg.sender == address(broker.owner),
             "Invalid sender"
         );
         _;
@@ -133,7 +140,7 @@ contract AtomicSwap {
             _hashedSecret,
             _expiryTime,
             _feeAsset,
-            _feeAmount,
+            _feeAmount
         ));
 
         require(
@@ -150,7 +157,7 @@ contract AtomicSwap {
             ReasonSwapHolderReceive
         );
 
-        if (feeAsset != token)
+        if (_feeAsset != _token)
         {
             broker.spendFrom(
                 _maker,
@@ -198,7 +205,7 @@ contract AtomicSwap {
         );
 
         require(
-            sha256(_preimage) == _hashedSecret,
+            sha256(abi.encodePacked(_preimage)) == _hashedSecret,
             "Invalid preimage"
         );
 
@@ -226,12 +233,12 @@ contract AtomicSwap {
         if (feeAmount > 0) {
             broker.spendFrom(
                 address(this),
-                broker.operator,
+                address(broker.operator),
                 feeAmount,
                 feeAsset,
                 ReasonSwapFeeGive,
                 ReasonSwapFeeReceive
-            )
+            );
         }
 
         emit ExecuteSwap(_hashedSecret);
@@ -248,7 +255,7 @@ contract AtomicSwap {
         );
 
         uint256 cancellationTime = swap.expiryTime;
-        if (msg.sender != broker.coordinator) {
+        if (msg.sender != address(broker.coordinator)) {
             cancellationTime += cancelDelay;
         }
 
@@ -260,7 +267,7 @@ contract AtomicSwap {
         require(
             _cancelFeeAmount <= swap.feeAmount,
             "Cancel fee must be less than swap fee"
-        )
+        );
 
         uint256 refundAmount = swap.amount;
         if (swap.token == swap.feeAsset) {
@@ -286,11 +293,11 @@ contract AtomicSwap {
         if (feeAmount > 0) {
             broker.spendFrom(
                 address(this),
-                broker.operator,
+                address(broker.operator),
                 _cancelFeeAmount,
                 feeAsset,
                 ReasonSwapCancelFeeGive,
-                ReasonCancelFeeReceive
+                ReasonSwapCancelFeeReceive
             );
 
         }
