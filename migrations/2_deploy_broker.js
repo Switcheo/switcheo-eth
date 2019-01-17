@@ -1,5 +1,5 @@
-var Broker = artifacts.require("Broker");
+const Broker = artifacts.require('Broker')
 
 module.exports = function(deployer) {
-    deployer.deploy(Broker);
+    deployer.deploy(Broker)
 };

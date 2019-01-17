@@ -1,5 +1,5 @@
-var JRCoin = artifacts.require("JRCoin");
+const JRCoin = artifacts.require('JRCoin')
 
 module.exports = function(deployer) {
-    deployer.deploy(JRCoin);
+    deployer.deploy(JRCoin)
 };
