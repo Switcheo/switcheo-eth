@@ -26,9 +26,6 @@ contract AtomicBroker {
     // (7 days * 24 hours * 60 mins * 60 seconds)
     uint32 constant maxCancelDelay = 604800;
 
-    // The time required to wait before a user can cancel a swap
-    uint32 public cancelDelay;
-
     // Creating a swap
     uint8 constant ReasonSwapMakerGive = 0x16;
     uint8 constant ReasonSwapHolderReceive = 0x17;
@@ -76,15 +73,6 @@ contract AtomicBroker {
         public
     {
         broker = Broker(brokerAddress);
-        cancelDelay = maxCancelDelay;
-    }
-
-    modifier notMoreThanMaxDelay(uint32 _delay) {
-        require(
-            _delay <= maxCancelDelay,
-            "Invalid delay"
-        );
-        _;
     }
 
     modifier onlyOwner() {
@@ -99,14 +87,6 @@ contract AtomicBroker {
         external
     {
         broker.approveSpender(address(this));
-    }
-
-    function setCancelDelay(uint32 _delay)
-        external
-        onlyOwner
-        notMoreThanMaxDelay(_delay)
-    {
-        cancelDelay = _delay;
     }
 
     function createSwap(
@@ -254,24 +234,24 @@ contract AtomicBroker {
             "Swap is inactive"
         );
 
-        uint256 cancellationTime = swap.expiryTime;
-        if (msg.sender != address(broker.coordinator())) {
-            cancellationTime += cancelDelay;
-        }
-
         require(
-            cancellationTime <= now,
+            swap.expiryTime <= now,
             "Cancellation time not yet reached"
         );
 
+        uint256 cancelFeeAmount = _cancelFeeAmount;
+        if (msg.sender != address(broker.coordinator())) {
+            cancelFeeAmount = swap.feeAmount;
+        }
+
         require(
-            _cancelFeeAmount <= swap.feeAmount,
+            cancelFeeAmount <= swap.feeAmount,
             "Cancel fee must be less than swap fee"
         );
 
         uint256 refundAmount = swap.amount;
         if (swap.token == swap.feeAsset) {
-            refundAmount -= _cancelFeeAmount;
+            refundAmount -= cancelFeeAmount;
         }
 
         address maker = swap.maker;
@@ -294,7 +274,7 @@ contract AtomicBroker {
             broker.spendFrom(
                 address(this),
                 address(broker.operator()),
-                _cancelFeeAmount,
+                cancelFeeAmount,
                 feeAsset,
                 ReasonSwapCancelFeeGive,
                 ReasonSwapCancelFeeReceive
@@ -302,7 +282,7 @@ contract AtomicBroker {
 
         }
 
-        uint256 refundFeeAmount = feeAmount - _cancelFeeAmount;
+        uint256 refundFeeAmount = feeAmount - cancelFeeAmount;
         if (token != feeAsset && refundFeeAmount > 0) {
             broker.spendFrom(
                 address(this),
