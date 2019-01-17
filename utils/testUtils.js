@@ -325,15 +325,15 @@ const fundUser = async ({ broker, user, coordinator }, { eth, jrc, swc }) => {
 
 const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee) => {
     const message = web3.utils.soliditySha3(
-        { type: 'string', value: 'makeOffer' },
+        { type: 'string', value: 'createSwap' },
         { type: 'address', value: maker },
-        { type: 'address', value: offerAsset },
-        { type: 'address', value: wantAsset },
-        { type: 'uint256', value: offerAmount },
-        { type: 'uint256', value: wantAmount },
+        { type: 'address', value: taker },
+        { type: 'address', value: token },
+        { type: 'uint256', value: amount },
+        { type: 'bytes32', value: hashedSecret },
+        { type: 'uint256', value: expiryTime },
         { type: 'address', value: feeAsset },
-        { type: 'uint256', value: feeAmount },
-        { type: 'uint64', value: nonce }
+        { type: 'uint256', value: feeAmount }
     )
     if (signee === undefined) { signee = maker }
     const signature = await web3.eth.sign(message, signee)
@@ -342,11 +342,45 @@ const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expir
 
 const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, txn, signature) => {
     if (signature === undefined) {
-        signature = await signCreateSwap({ maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce })
+        signature = await signCreateSwap({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount })
     }
     const { v, r, s } = signature
-    await atomicBroker.createSwap.sendTransaction(maker, taker, token, amount, hashedSecret,
+    return await atomicBroker.createSwap.sendTransaction(maker, taker, token, amount, hashedSecret,
         expiryTime, feeAsset, feeAmount, v, r, s, txn)
+}
+
+const fetchSwap = async (atomicBroker, hashedSecret) => {
+    const swap = await atomicBroker.swaps.call(hashedSecret)
+    return {
+        maker: swap[0],
+        taker: swap[1],
+        token: swap[2],
+        feeAsset: swap[3],
+        amount: swap[4],
+        expiryTime: swap[5],
+        feeAmount: swap[6],
+        active: swap[7]
+    }
+}
+
+const assertAddress = (value, expected) => {
+    assert.equal(value.toLowerCase(), expected.toLowerCase())
+}
+
+const assertAmount = (value, expected) => {
+    assert.equal(value.toString(), expected.toString())
+}
+
+const assertSwapParams = async (atomicBroker, { hashedSecret, maker, taker, token, feeAsset, amount, expiryTime, feeAmount, active }) => {
+    const swap = await fetchSwap(atomicBroker, hashedSecret)
+    assertAddress(swap.maker, maker)
+    assertAddress(swap.taker, taker)
+    assertAddress(swap.token, token)
+    assertAddress(swap.feeAsset, feeAsset)
+    assertAmount(swap.amount, amount)
+    assertAmount(swap.expiryTime, expiryTime)
+    assertAmount(swap.feeAmount, feeAmount)
+    assert.equal(swap.active, active)
 }
 
 module.exports = {
@@ -380,5 +414,7 @@ module.exports = {
     assertWalletTokenAmount,
     fundUser,
     signCreateSwap,
-    createSwap
+    createSwap,
+    fetchSwap,
+    assertSwapParams
 }

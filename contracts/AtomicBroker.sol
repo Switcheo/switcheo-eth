@@ -13,7 +13,6 @@ contract AtomicBroker {
         address taker;
         address token;
         address feeAsset;
-        bytes32 hashedSecret;
         uint256 amount;
         uint256 expiryTime;
         uint256 feeAmount;
