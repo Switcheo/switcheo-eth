@@ -425,6 +425,22 @@ const emptySwapParams = {
     active: false
 }
 
+const assertBalances = async (broker, userBalances) => {
+    const jrCoin = await JRCoin.deployed()
+    const swCoin = await SWCoin.deployed()
+    for (const user in userBalances) {
+        const assets = userBalances[user]
+        for (const asset in assets) {
+            const expectedAmount = assets[asset]
+            let assetAddress
+            if (asset === 'jrc') { assetAddress = jrCoin.address }
+            else if (asset === 'swc') { assetAddress = swCoin.address }
+            else { throw new Error('Unrecognized asset') }
+            await assertTokenBalance(broker, user, assetAddress, expectedAmount)
+        }
+    }
+}
+
 const getSampleSwapParams = ({ maker, taker, token, secret }) => {
     if (secret === undefined) {
         secret = '0x12'
@@ -506,5 +522,6 @@ module.exports = {
     assertAddress,
     assertAmount,
     assertSwapParams,
-    assertSwapDoesNotExist
+    assertSwapDoesNotExist,
+    assertBalances
 }
