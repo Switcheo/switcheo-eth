@@ -188,7 +188,7 @@ const emptyOfferParams = {
     nonce: 0
 }
 
-const getValidOfferParams = (nextNonce, maker, initialEtherBalance) => {
+const getSampleOfferParams = (nextNonce, maker, initialEtherBalance) => {
   const nonce = nextNonce()
 
   return {
@@ -363,6 +363,20 @@ const fetchSwap = async (atomicBroker, hashedSecret) => {
     }
 }
 
+const getSampleSwapParams = () => {
+    return {
+        maker,
+        taker,
+        token: jrCoin.address,
+        amount: 999,
+        hashedSecret: '0x123',
+        expiryTime: parseInt(Date.now() / 1000.0 + 60),
+        feeAsset: jrCoin.address,
+        feeAmount: 1,
+        active: true
+    }
+}
+
 const assertAddress = (value, expected) => {
     assert.equal(value.toLowerCase(), expected.toLowerCase())
 }
@@ -398,7 +412,7 @@ module.exports = {
     signCancel,
     signFillOffer,
     emptyOfferParams,
-    getValidOfferParams,
+    getSampleOfferParams,
     makeOffer,
     fillOffer,
     signFillOffers,
@@ -416,5 +430,8 @@ module.exports = {
     signCreateSwap,
     createSwap,
     fetchSwap,
+    getSampleSwapParams,
+    assertAddress,
+    assertAmount,
     assertSwapParams
 }

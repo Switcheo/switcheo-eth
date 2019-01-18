@@ -4,7 +4,7 @@ const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
 const { ETHER_ADDR, REASON, assertError, makeOffer, getOfferHash,
-    assertOfferParams, assertEventEmission, getValidOfferParams, emptyOfferParams,
+    assertOfferParams, assertEventEmission, getSampleOfferParams, emptyOfferParams,
     nonceGenerator, assertEtherBalance } = require('../../utils/testUtils')
 
 contract('Test fastCancel', async () => {
@@ -23,7 +23,7 @@ contract('Test fastCancel', async () => {
         initialEtherBalance = await broker.balances.call(user, ETHER_ADDR)
         assert.equal(initialEtherBalance, '1000000000000000000')
 
-        sampleOffer = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+        sampleOffer = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
         sampleOffer.offerAmount = 10
         sampleOffer.wantAsset = token.address
         sampleOffer.wantAmount = 20

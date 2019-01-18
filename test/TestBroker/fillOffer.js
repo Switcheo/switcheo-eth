@@ -5,7 +5,7 @@ const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 const { BigNumber } = require('bignumber.js')
 
-const { ETHER_ADDR, REASON, nonceGenerator, getValidOfferParams, emptyOfferParams, getValidFillParams,
+const { ETHER_ADDR, REASON, nonceGenerator, getSampleOfferParams, emptyOfferParams, getValidFillParams,
     assertError, assertOfferParams, assertEtherBalance, assertTokenBalance, assertEventEmission,
     fetchOffer, makeOffer, getOfferHash, fillOffer, signFillOffer, withdraw  } = require('../../utils/testUtils')
 
@@ -183,7 +183,7 @@ contract('Test fillOffer', async () => {
         await broker.depositERC20.sendTransaction(user, token.address, 30, { from: coordinator })
 
         // Offer -- offerAmount: 10 ETH, wantAmount: 20 JR
-        sampleOffer = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+        sampleOffer = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
         sampleOffer.offerAmount = 10
         sampleOffer.wantAsset = token.address
         sampleOffer.wantAmount = 20
@@ -797,7 +797,7 @@ contract('Test fillOffer', async () => {
     contract('when the offer does not exist', async () => {
         it('throws an error', async () => {
             const fillParams = getValidFillParams()
-            const offerParams = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const offerParams = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             fillParams.offerHash = getOfferHash(offerParams)
             await assertError(fillOffer, broker, fillParams)
             await assertInitialBalanceDistribution()
@@ -831,7 +831,7 @@ contract('Test fillOffer', async () => {
             // Operator -- 0 ETH, 0 JR
             // Maker -- 999999999999999990 ETH, 30 JR
             // Filler -- 0 ETH, 50 JR
-            const offerParams = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const offerParams = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             offerParams.offerAmount = 3
             offerParams.wantAsset = token.address
             offerParams.wantAmount = 10

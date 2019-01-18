@@ -3,7 +3,7 @@ const JRCoin = artifacts.require('JRCoin')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { ZERO_ADDR, ETHER_ADDR, REASON, nonceGenerator, emptyOfferParams, getValidOfferParams,
+const { ZERO_ADDR, ETHER_ADDR, REASON, nonceGenerator, emptyOfferParams, getSampleOfferParams,
     assertError, assertOfferParams, assertEtherBalance, assertTokenBalance, assertEventEmission,
     makeOffer, fillOffer, signCancel, getOfferHash, fetchOffer } = require('../../utils/testUtils')
 
@@ -33,7 +33,7 @@ contract('Test cancel', async () => {
     contract('test event emission', async () => {
         contract('when there are no fees', async () => {
             it('emits BalanceIncrease and Cancel events', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
@@ -58,7 +58,7 @@ contract('Test cancel', async () => {
 
         contract('when the fee asset is the same as the offer asset', async () => {
             it('emits BalanceIncrease, BalanceIncrease and Cancel events', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 2 })
@@ -96,7 +96,7 @@ contract('Test cancel', async () => {
 
         contract('when the fee asset different from the offer asset', async () => {
             it('emits BalanceIncrease, BalanceDecrease, BalanceIncrease and Cancel events', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: token.address, feeAmount: 7 })
@@ -145,7 +145,7 @@ contract('Test cancel', async () => {
     contract('test fees', async () => {
         contract('when the fee asset is the same as the offer asset', async () => {
             it('updates balances appropriately', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 await makeOffer(broker, params)
 
                 const offerHash = getOfferHash(params)
@@ -158,7 +158,7 @@ contract('Test cancel', async () => {
 
             contract('when the fee amount exceeds the availableAmount', async () => {
                 it('throws an error', async () => {
-                    const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                    const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                     params.offerAmount = '50'
                     params.offerAsset = ETHER_ADDR
                     params.wantAmount = '100'
@@ -193,7 +193,7 @@ contract('Test cancel', async () => {
 
         contract('when the fee asset is different from the offer asset', async () => {
             it('updates balances appropriately', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 await makeOffer(broker, params)
                 await assertTokenBalance(broker, user, token.address, '50')
 
@@ -209,7 +209,7 @@ contract('Test cancel', async () => {
 
             contract('when the user has insufficient balance to pay fees', async () => {
                 it('throws an error', async () => {
-                    const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                    const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                     await makeOffer(broker, params)
                     await assertTokenBalance(broker, user, token.address, '50')
 
@@ -228,7 +228,7 @@ contract('Test cancel', async () => {
 
     contract('when a valid offer hash is used', async () => {
         it('removes the offer from storage', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
 
@@ -243,7 +243,7 @@ contract('Test cancel', async () => {
 
     contract('when the offer is partially filled', async () => {
         it('refunds the available amount and not the offer amount', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.offerAmount = 10
             params.wantAsset = token.address
             params.wantAmount = 20
@@ -301,7 +301,7 @@ contract('Test cancel', async () => {
 
     contract('when the expectedAvailableAmount is incorrect', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
@@ -316,7 +316,7 @@ contract('Test cancel', async () => {
 
     contract('when the signature is invalid', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
@@ -331,7 +331,7 @@ contract('Test cancel', async () => {
 
     contract('when the sender is not the coordinator', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
@@ -346,7 +346,7 @@ contract('Test cancel', async () => {
 
     contract('when no offer matchers the offer hash', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 }, coordinator)
             await assertError(broker.cancel.sendTransaction, offerHash, '0', '0x0', 0, v, r, s)

@@ -184,7 +184,7 @@ const emptyOfferParams = {
     nonce: 0
 }
 
-const getValidOfferParams = (nextNonce, maker, initialEtherBalance) => {
+const getSampleOfferParams = (nextNonce, maker, initialEtherBalance) => {
   const nonce = nextNonce()
 
   return {
@@ -316,7 +316,7 @@ module.exports = {
     signCancel,
     signFillOffer,
     emptyOfferParams,
-    getValidOfferParams,
+    getSampleOfferParams,
     makeOffer,
     fillOffer,
     signFillOffers,

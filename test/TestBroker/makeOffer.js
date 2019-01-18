@@ -3,7 +3,7 @@ const JRCoin = artifacts.require('JRCoin')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
-const { ETHER_ADDR, REASON, nonceGenerator, getValidOfferParams, assertError,
+const { ETHER_ADDR, REASON, nonceGenerator, getSampleOfferParams, assertError,
     assertOfferParams, assertTokenBalance, assertEtherBalance, assertEventEmission,
     assertOfferDoesNotExist, makeOffer, signMakeOffer, signCancel, getOfferHash } = require('../../utils/testUtils')
 
@@ -31,7 +31,7 @@ contract('Test makeOffer', async () => {
     contract('test event emission', async () => {
         contract('when there are no fees', async () => {
             it('emits BalanceDecrease and Make events', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
@@ -57,7 +57,7 @@ contract('Test makeOffer', async () => {
 
         contract('when the fee asset is the same as the offerAsset', async () => {
             it('emits BalanceDecrease, BalanceIncrease and Make events', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 params.offerAsset = ETHER_ADDR
                 params.offerAmount = 100
                 params.feeAsset = ETHER_ADDR
@@ -100,7 +100,7 @@ contract('Test makeOffer', async () => {
 
         contract('when the fee asset is different from the offerAsset', async () => {
             it('emits BalanceDecrease, BalanceDecrease, BalanceIncrease and Make events', async () => {
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 params.offerAsset = ETHER_ADDR
                 params.offerAmount = 100
                 params.feeAsset = token.address
@@ -156,7 +156,7 @@ contract('Test makeOffer', async () => {
         contract('when the fee asset is the same as the offerAsset', async () => {
             it('updates balances appropriately', async () => {
                 await assertEtherBalance(broker, operator, '0')
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 params.offerAsset = ETHER_ADDR
                 params.offerAmount = 7
                 params.feeAsset = ETHER_ADDR
@@ -172,7 +172,7 @@ contract('Test makeOffer', async () => {
             contract('when the user has insufficient balance to pay fees', async () => {
                 it('throws an error', async () => {
                     await assertEtherBalance(broker, operator, '0')
-                    const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                    const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                     params.feeAsset = ETHER_ADDR
                     params.feeAmount = 3
 
@@ -189,7 +189,7 @@ contract('Test makeOffer', async () => {
             it('updates balances appropriately', async () => {
                 await assertTokenBalance(broker, operator, token.address, '0')
                 await assertTokenBalance(broker, user, token.address, '100')
-                const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                 params.feeAsset = token.address
                 params.feeAmount = 21
 
@@ -205,7 +205,7 @@ contract('Test makeOffer', async () => {
                 it('throws an error', async () => {
                     await assertTokenBalance(broker, operator, token.address, '0')
                     await assertTokenBalance(broker, user, token.address, '100')
-                    const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+                    const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
                     params.feeAsset = token.address
                     params.feeAmount = 101
 
@@ -220,7 +220,7 @@ contract('Test makeOffer', async () => {
 
     contract('when valid values are used', async () => {
         it('does not throw an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params, { from: coordinator })
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
@@ -229,7 +229,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the sender is not the coordinator', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await assertError(makeOffer, broker, params, { from: user })
             await assertOfferDoesNotExist(broker, params)
             await assertEtherBalance(broker, user, initialEtherBalance)
@@ -238,7 +238,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the signature is invalid', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             const signature = await signMakeOffer(params, coordinator)
             await assertError(makeOffer, broker, params, { from: coordinator }, signature)
             await assertOfferDoesNotExist(broker, params)
@@ -248,7 +248,7 @@ contract('Test makeOffer', async () => {
 
     contract('when offerAmount is 1', async () => {
         it('correctly reduces the maker\'s balance', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.offerAmount = 1
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
@@ -258,7 +258,7 @@ contract('Test makeOffer', async () => {
 
     contract('when offerAmount is the same as the maker\s balance', async () => {
         it('reduces the maker\'s balance to zero', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.offerAmount = initialEtherBalance
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
@@ -268,7 +268,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the offerAmount is more than the maker\'s balance', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.offerAmount = initialEtherBalance.plus(1)
             await assertError(makeOffer, broker, params)
             await assertOfferDoesNotExist(broker, params)
@@ -278,7 +278,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the offerAmount is not more than 0', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.offerAmount = 0
             await assertError(makeOffer, broker, params)
             await assertOfferDoesNotExist(broker, params)
@@ -289,7 +289,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the wantAmount is not more than 0', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.wantAmount = 0
             await assertError(makeOffer, broker, params)
             await assertOfferDoesNotExist(broker, params)
@@ -299,7 +299,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the offerAsset is the same as wantAsset', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             params.offerAsset = params.wantAsset
             await assertError(makeOffer, broker, params)
             await assertOfferDoesNotExist(broker, params)
@@ -309,7 +309,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the same maker + nonce pair is used twice', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertError(makeOffer, broker, params)
@@ -319,7 +319,7 @@ contract('Test makeOffer', async () => {
 
     contract('when the offer is created, then cancelled, then the same offer params is sent', async () => {
         it('throws an error', async () => {
-            const params = await getValidOfferParams(nextNonce, user, initialEtherBalance)
+            const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             await makeOffer(broker, params)
             await assertOfferParams(broker, params)
 
