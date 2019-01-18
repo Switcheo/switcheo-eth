@@ -1,3 +1,5 @@
+const sha256 = require('js-sha256').sha256
+
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
@@ -423,13 +425,19 @@ const emptySwapParams = {
     active: false
 }
 
-const getSampleSwapParams = ({ maker, taker, token }) => {
+const getSampleSwapParams = ({ maker, taker, token, secret }) => {
+    if (secret === undefined) {
+        secret = '0x12'
+    }
+    const hashedSecret = web3.utils.soliditySha3({ type: 'bytes32', value: secret })
+
     return {
         maker,
         taker,
         token: token.address,
         amount: 999,
-        hashedSecret: '0x1230000000000000000000000000000000000000000000000000000000000000',
+        secret,
+        hashedSecret,
         expiryTime: parseInt(Date.now() / 1000.0 + 60),
         feeAsset: token.address,
         feeAmount: 1,

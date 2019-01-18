@@ -59,7 +59,7 @@ contract AtomicBroker {
     );
 
     // Emitted when a swap is executed
-    event ExecuteSwap(bytes32 indexed hashedSecret);
+    event ExecuteSwap(bytes32 indexed hashedSecret, bytes32 secret);
 
     // Emitted when a swap is cancelled
     event CancelSwap(bytes32 indexed hashedSecret);
@@ -192,7 +192,7 @@ contract AtomicBroker {
         );
 
         require(
-            sha256(abi.encodePacked(_preimage)) == _hashedSecret,
+            keccak256(abi.encodePacked(_preimage)) == _hashedSecret,
             "Invalid preimage"
         );
 
@@ -228,7 +228,7 @@ contract AtomicBroker {
             );
         }
 
-        emit ExecuteSwap(_hashedSecret);
+        /* emit ExecuteSwap(_hashedSecret); */
     }
 
     function cancelSwap (bytes32 _hashedSecret, uint256 _cancelFeeAmount)
