@@ -57,9 +57,9 @@ contract AtomicBroker {
         address token,
         uint256 amount,
         bytes32 indexed hashedSecret,
-        uint256 _expiryTime,
-        address _feeAsset,
-        uint256 _feeAmount
+        uint256 expiryTime,
+        address feeAsset,
+        uint256 feeAmount
     );
 
     // Emitted when a swap is executed
@@ -131,6 +131,13 @@ contract AtomicBroker {
             _recoverAddress(msgHash, _v, _r, _s) == _maker,
             "Invalid signature"
         );
+
+        if (_feeAsset == _token) {
+            require(
+                _feeAmount < _amount,
+                "Fee amount exceeds amount"
+            );
+        }
 
         broker.spendFrom(
             _maker,

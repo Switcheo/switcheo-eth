@@ -66,6 +66,7 @@ const assertEventEmission = (emittedEvents, expectedEvents) => {
         for (const key in expectedArgs) {
             const actualArg = emittedEvent.args[key]
             const expectedArg = expectedArgs[key]
+            if (actualArg === undefined) { throw new Error('value for ' + key + ' is undefined') }
             assert.equal(actualArg.toString(), expectedArg, 'value for ' + key + ' is ' + expectedArg)
         }
     }
@@ -288,7 +289,7 @@ const assertOfferDoesNotExist = async (broker, offerParams) => {
 
 const assertTokenBalance = async (broker, user, tokenAddress, expectedBalance, message) => {
     const balance = await broker.balances.call(user, tokenAddress)
-    assert.equal(balance.toString(), expectedBalance, message)
+    assert.equal(balance.toString(), expectedBalance.toString(), message)
 }
 
 const assertEtherBalance = async (broker, user, expectedBalance, message) => {
@@ -340,12 +341,11 @@ const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expir
     return getSignatureComponents(signature)
 }
 
-const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, txn, signature) => {
-    if (signature === undefined) {
-        signature = await signCreateSwap({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount })
-    }
+const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, txn, signee) => {
+    if (signee === undefined) { signee = maker }
+    const signature = await signCreateSwap({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee)
     const { v, r, s } = signature
-    return await atomicBroker.createSwap.sendTransaction(maker, taker, token, amount, hashedSecret,
+    return await atomicBroker.createSwap(maker, taker, token, amount, hashedSecret,
         expiryTime, feeAsset, feeAmount, v, r, s, txn)
 }
 
@@ -363,15 +363,26 @@ const fetchSwap = async (atomicBroker, hashedSecret) => {
     }
 }
 
-const getSampleSwapParams = () => {
+const emptySwapParams = {
+    maker: ZERO_ADDR,
+    taker: ZERO_ADDR,
+    token: ZERO_ADDR,
+    amount: 0,
+    expiryTime: 0,
+    feeAsset: ZERO_ADDR,
+    feeAmount: 0,
+    active: false
+}
+
+const getSampleSwapParams = ({ maker, taker, token }) => {
     return {
         maker,
         taker,
-        token: jrCoin.address,
+        token: token.address,
         amount: 999,
-        hashedSecret: '0x123',
+        hashedSecret: '0x1230000000000000000000000000000000000000000000000000000000000000',
         expiryTime: parseInt(Date.now() / 1000.0 + 60),
-        feeAsset: jrCoin.address,
+        feeAsset: token.address,
         feeAmount: 1,
         active: true
     }
@@ -385,7 +396,7 @@ const assertAmount = (value, expected) => {
     assert.equal(value.toString(), expected.toString())
 }
 
-const assertSwapParams = async (atomicBroker, { hashedSecret, maker, taker, token, feeAsset, amount, expiryTime, feeAmount, active }) => {
+const assertSwapParams = async (atomicBroker, { maker, taker, token, feeAsset, amount, expiryTime, feeAmount, active }, hashedSecret) => {
     const swap = await fetchSwap(atomicBroker, hashedSecret)
     assertAddress(swap.maker, maker)
     assertAddress(swap.taker, taker)
@@ -395,6 +406,10 @@ const assertSwapParams = async (atomicBroker, { hashedSecret, maker, taker, toke
     assertAmount(swap.expiryTime, expiryTime)
     assertAmount(swap.feeAmount, feeAmount)
     assert.equal(swap.active, active)
+}
+
+const assertSwapDoesNotExist = async (atomicBroker, hashedSecret) => {
+    await assertSwapParams(atomicBroker, emptySwapParams, hashedSecret)
 }
 
 module.exports = {
@@ -433,5 +448,6 @@ module.exports = {
     getSampleSwapParams,
     assertAddress,
     assertAmount,
-    assertSwapParams
+    assertSwapParams,
+    assertSwapDoesNotExist
 }
