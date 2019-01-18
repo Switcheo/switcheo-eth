@@ -4,8 +4,8 @@ const SWCoin = artifacts.require('SWCoin')
 const AtomicBroker = artifacts.require('AtomicBroker')
 
 const { fundUser, createSwap, assertSwapParams, getSampleSwapParams,
-        assertTokenBalance, assertError, assertEventEmission,
-        assertBalances, REASON } = require('../../utils/testUtils')
+        assertError, assertEventEmission, assertBalances,
+        assertSwapDoesNotExist, REASON } = require('../../utils/testUtils')
 
 contract('Test executeSwap', async (accounts) => {
     let broker, atomicBroker, token, secondToken, swapParams
@@ -103,6 +103,7 @@ contract('Test executeSwap', async (accounts) => {
                 })
 
                 await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
+                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
 
                 await assertBalances(broker, {
                     [maker]: {
