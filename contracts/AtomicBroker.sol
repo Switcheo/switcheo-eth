@@ -59,7 +59,7 @@ contract AtomicBroker {
     );
 
     // Emitted when a swap is executed
-    event ExecuteSwap(bytes32 indexed hashedSecret, bytes32 secret);
+    event ExecuteSwap(bytes32 indexed hashedSecret);
 
     // Emitted when a swap is cancelled
     event CancelSwap(bytes32 indexed hashedSecret);
@@ -228,7 +228,7 @@ contract AtomicBroker {
             );
         }
 
-        /* emit ExecuteSwap(_hashedSecret); */
+        emit ExecuteSwap(_hashedSecret);
     }
 
     function cancelSwap (bytes32 _hashedSecret, uint256 _cancelFeeAmount)
