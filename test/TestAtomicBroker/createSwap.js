@@ -5,7 +5,7 @@ const AtomicBroker = artifacts.require('AtomicBroker')
 
 const { fundUser, createSwap, assertSwapParams, getSampleSwapParams,
         assertError, assertSwapDoesNotExist, assertTokenBalance,
-        assertEventEmission } = require('../../utils/testUtils')
+        assertEventEmission, REASON } = require('../../utils/testUtils')
 
 contract('Test createSwap', async (accounts) => {
     let broker, atomicBroker, token, secondToken
@@ -24,28 +24,110 @@ contract('Test createSwap', async (accounts) => {
     })
 
     contract('test event emission', async () => {
-        it('emits CreateSwap event', async () => {
+        it('emits BalanceDecrease, BalanceIncrease, CreateSwap events', async () => {
             const swapParams = getSampleSwapParams({ maker, taker, token })
-            const { logs } = await createSwap(atomicBroker, swapParams)
-            assertEventEmission(logs, [{
-                eventType: 'CreateSwap',
-                args: {
-                    maker: swapParams.maker,
-                    taker: swapParams.taker,
-                    token: swapParams.token,
-                    amount: swapParams.amount,
-                    hashedSecret: swapParams.hashedSecret,
-                    expiryTime: swapParams.expiryTime,
-                    feeAsset: swapParams.feeAsset,
-                    feeAmount: swapParams.feeAmount
+            const result = await createSwap(atomicBroker, swapParams)
+            assertEventEmission(result.receipt.logs, [
+                {
+                    eventType: 'BalanceDecrease',
+                    args: {
+                        user: swapParams.maker,
+                        token: swapParams.token,
+                        amount: 999,
+                        reason: REASON.ReasonSwapMakerGive
+                    }
+                },
+                {
+                    eventType: 'BalanceIncrease',
+                    args: {
+                        user: atomicBroker.address,
+                        token: swapParams.token,
+                        amount: 999,
+                        reason: REASON.ReasonSwapHolderReceive
+                    }
+                },
+                {
+                    eventType: 'CreateSwap',
+                    args: {
+                        maker: swapParams.maker,
+                        taker: swapParams.taker,
+                        token: swapParams.token,
+                        amount: swapParams.amount,
+                        hashedSecret: swapParams.hashedSecret,
+                        expiryTime: swapParams.expiryTime,
+                        feeAsset: swapParams.feeAsset,
+                        feeAmount: swapParams.feeAmount
+                    }
                 }
-            }])
+            ])
+        })
+
+        contract('when the fee asset is different from the swap token', async () => {
+            it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, CreateSwap events', async () => {
+                await fundUser({ broker, user: maker, coordinator }, { swc: 20 })
+                const swapParams = getSampleSwapParams({ maker, taker, token })
+                swapParams.feeAsset = secondToken.address
+                swapParams.feeAmount = 9
+                const result = await createSwap(atomicBroker, swapParams)
+                assertEventEmission(result.receipt.logs, [
+                    {
+                        eventType: 'BalanceDecrease',
+                        args: {
+                            user: swapParams.maker,
+                            token: swapParams.token,
+                            amount: 999,
+                            reason: REASON.ReasonSwapMakerGive
+                        }
+                    },
+                    {
+                        eventType: 'BalanceIncrease',
+                        args: {
+                            user: atomicBroker.address,
+                            token: swapParams.token,
+                            amount: 999,
+                            reason: REASON.ReasonSwapHolderReceive
+                        }
+                    },
+                    {
+                        eventType: 'BalanceDecrease',
+                        args: {
+                            user: swapParams.maker,
+                            token: swapParams.feeAsset,
+                            amount: 9,
+                            reason: REASON.ReasonSwapMakerFeeGive
+                        }
+                    },
+                    {
+                        eventType: 'BalanceIncrease',
+                        args: {
+                            user: atomicBroker.address,
+                            token: swapParams.feeAsset,
+                            amount: 9,
+                            reason: REASON.ReasonSwapHolderFeeReceive
+                        }
+                    },
+                    {
+                        eventType: 'CreateSwap',
+                        args: {
+                            maker: swapParams.maker,
+                            taker: swapParams.taker,
+                            token: swapParams.token,
+                            amount: swapParams.amount,
+                            hashedSecret: swapParams.hashedSecret,
+                            expiryTime: swapParams.expiryTime,
+                            feeAsset: swapParams.feeAsset,
+                            feeAmount: swapParams.feeAmount
+                        }
+                    }
+                ])
+            })
         })
     })
 
     contract('when valid values are used', async () => {
         it('creates a swap', async () => {
             await assertTokenBalance(broker, maker, token.address, 1000)
+            await assertTokenBalance(broker, atomicBroker.address, token.address, 0)
 
             const swapParams = getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
@@ -53,6 +135,30 @@ contract('Test createSwap', async (accounts) => {
 
             // check that the maker's balance is reduced
             await assertTokenBalance(broker, maker, token.address, 1)
+            // check that the atomicBroker's balance is increased
+            await assertTokenBalance(broker, atomicBroker.address, token.address, 999)
+        })
+    })
+
+    contract('when the feeAsset is different from the token', async () => {
+        it('updates balances appropriately', async () => {
+            await assertTokenBalance(broker, maker, token.address, 1000)
+            await assertTokenBalance(broker, atomicBroker.address, token.address, 0)
+            await fundUser({ broker, user: maker, coordinator }, { swc: 20 })
+
+            const swapParams = getSampleSwapParams({ maker, taker, token })
+            swapParams.amount = 950
+            swapParams.feeAsset = secondToken.address
+            swapParams.feeAmount = 9
+            await createSwap(atomicBroker, swapParams)
+            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+
+            // check that the maker's balance is reduced
+            await assertTokenBalance(broker, maker, token.address, 50)
+            await assertTokenBalance(broker, maker, secondToken.address, 11)
+            // check that the atomicBroker's balance is increased
+            await assertTokenBalance(broker, atomicBroker.address, token.address, 950)
+            await assertTokenBalance(broker, atomicBroker.address, secondToken.address, 9)
         })
     })
 

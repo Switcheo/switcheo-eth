@@ -21,29 +21,25 @@ contract AtomicBroker {
 
     Broker public broker;
 
-    // The maximum announce delay in seconds
-    // (7 days * 24 hours * 60 mins * 60 seconds)
-    uint32 constant maxCancelDelay = 604800;
-
     // Creating a swap
-    uint8 constant ReasonSwapMakerGive = 0x16;
-    uint8 constant ReasonSwapHolderReceive = 0x17;
-    uint8 constant ReasonSwapMakerFeeGive = 0x18;
-    uint8 constant ReasonSwapHolderFeeReceive = 0x19;
+    uint8 constant ReasonSwapMakerGive = 0x30;
+    uint8 constant ReasonSwapHolderReceive = 0x31;
+    uint8 constant ReasonSwapMakerFeeGive = 0x32;
+    uint8 constant ReasonSwapHolderFeeReceive = 0x33;
 
     // Executing a swap
-    uint8 constant ReasonSwapHolderGive = 0x20;
-    uint8 constant ReasonSwapTakerReceive = 0x21;
-    uint8 constant ReasonSwapFeeGive = 0x22;
-    uint8 constant ReasonSwapFeeReceive = 0x23;
+    uint8 constant ReasonSwapHolderGive = 0x34;
+    uint8 constant ReasonSwapTakerReceive = 0x35;
+    uint8 constant ReasonSwapFeeGive = 0x36;
+    uint8 constant ReasonSwapFeeReceive = 0x37;
 
     // Cancelling a swap
-    uint8 constant ReasonSwapCancelMakerReceive = 0x24;
-    uint8 constant ReasonSwapCancelHolderGive = 0x25;
-    uint8 constant ReasonSwapCancelFeeGive = 0x26;
-    uint8 constant ReasonSwapCancelFeeReceive = 0x27;
-    uint8 constant ReasonSwapCancelFeeRefundGive = 0x28;
-    uint8 constant ReasonSwapCancelFeeRefundReceive = 0x29;
+    uint8 constant ReasonSwapCancelMakerReceive = 0x38;
+    uint8 constant ReasonSwapCancelHolderGive = 0x39;
+    uint8 constant ReasonSwapCancelFeeGive = 0x3A;
+    uint8 constant ReasonSwapCancelFeeReceive = 0x3B;
+    uint8 constant ReasonSwapCancelFeeRefundGive = 0x3C;
+    uint8 constant ReasonSwapCancelFeeRefundReceive = 0x3D;
 
     // Swaps by: hashedSecret => swap
     mapping(bytes32 => Swap) public swaps;

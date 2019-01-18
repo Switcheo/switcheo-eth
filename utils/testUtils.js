@@ -1,13 +1,19 @@
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
+const abiDecoder = require('abi-decoder')
+
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
 const OMG_ADDR = '0xd26114cd6EE289AccF82350c8d8487fedB8A0C07'
 
 const Broker = artifacts.require('Broker')
+const AtomicBroker = artifacts.require('AtomicBroker')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
+
+abiDecoder.addABI(Broker.abi)
+abiDecoder.addABI(AtomicBroker.abi)
 
 const HEX_REASONS = {
     ReasonDeposit: '01',
@@ -28,7 +34,24 @@ const HEX_REASONS = {
 
     ReasonWithdraw: '09',
     ReasonWithdrawFeeGive: '14',
-    ReasonWithdrawFeeReceive: '15'
+    ReasonWithdrawFeeReceive: '15',
+
+    ReasonSwapMakerGive: '30',
+    ReasonSwapHolderReceive: '31',
+    ReasonSwapMakerFeeGive: '32',
+    ReasonSwapHolderFeeReceive: '33',
+
+    ReasonSwapHolderGive: '34',
+    ReasonSwapTakerReceive: '35',
+    ReasonSwapFeeGive: '36',
+    ReasonSwapFeeReceive: '37',
+
+    ReasonSwapCancelMakerReceive: '38',
+    ReasonSwapCancelHolderGive: '39',
+    ReasonSwapCancelFeeGive: '3A',
+    ReasonSwapCancelFeeReceive: '3B',
+    ReasonSwapCancelFeeRefundGive: '3C',
+    ReasonSwapCancelFeeRefundReceive: '3D'
 }
 
 const REASON = {}
@@ -50,9 +73,29 @@ const nonceGenerator = function*() {
     }
 }
 
+const decodeReceiptLogs = (receiptLogs) => {
+    const logs = abiDecoder.decodeLogs(receiptLogs)
+    const decodedLogs = []
+    for (const log of logs) {
+        const decodedLog = {
+            event: log.name,
+            args: {}
+        }
+        for (const event of log.events) {
+            decodedLog.args[event.name] = event.value
+        }
+        decodedLogs.push(decodedLog)
+    }
+    return decodedLogs
+}
+
 const assertEventEmission = (emittedEvents, expectedEvents) => {
     if (expectedEvents.length === 0) {
         throw new Error('expectedEvents is empty')
+    }
+    // decode the events if they are raw logs from the transaction receipt
+    if (emittedEvents[0].event === undefined) {
+        emittedEvents = decodeReceiptLogs(emittedEvents)
     }
     assert.equal(emittedEvents.length, expectedEvents.length, 'some events are not being tested')
     for (let i = 0; i < emittedEvents.length; i++) {
@@ -70,6 +113,12 @@ const assertEventEmission = (emittedEvents, expectedEvents) => {
             assert.equal(actualArg.toString(), expectedArg, 'value for ' + key + ' is ' + expectedArg)
         }
     }
+}
+
+// assertEventEmission works for events from a single contract
+// for
+const assertReceiptLogs = (logs, expectedLogs) => {
+
 }
 
 const assertError = async (method, ...args) => {

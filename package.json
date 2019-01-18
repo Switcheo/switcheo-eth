@@ -5,6 +5,7 @@
     "truffle-privatekey-provider": "^0.1.0"
   },
   "devDependencies": {
+    "abi-decoder": "^1.2.0",
     "bignumber.js": "^7.2.1",
     "web3": "^1.0.0-beta.35"
   }
