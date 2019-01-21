@@ -7,23 +7,6 @@ const { ETHER_ADDR, assertError, makeOffer, getOfferHash, assertOfferParams, ass
     signCancel, getSampleOfferParams, nonceGenerator } = require('../../utils/testUtils')
 const announceDelay = 604800
 
-increaseTime = async (time) => (
-    new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
-            (err, _result) => {
-                if (err) return reject(err)
-
-                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
-                    (err, result) => {
-                        if (err) reject(err)
-                        else resolve(result)
-                    }
-                )
-            }
-        )
-    })
-)
-
 contract('Test announceCancel', async () => {
     let broker, coordinator, user, accounts, sampleOffer, sampleOfferHash, initialEtherBalance
     const gen = nonceGenerator()

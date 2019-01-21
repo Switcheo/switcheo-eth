@@ -436,7 +436,8 @@ const assertBalances = async (broker, userBalances) => {
             if (asset === 'jrc') { assetAddress = jrCoin.address }
             else if (asset === 'swc') { assetAddress = swCoin.address }
             else { throw new Error('Unrecognized asset') }
-            await assertTokenBalance(broker, user, assetAddress, expectedAmount)
+            const message = `expected ${expectedAmount} ${asset} for ${user}`
+            await assertTokenBalance(broker, user, assetAddress, expectedAmount, message)
         }
     }
 }
@@ -454,7 +455,7 @@ const getSampleSwapParams = ({ maker, taker, token, secret }) => {
         amount: 999,
         secret,
         hashedSecret,
-        expiryTime: parseInt(Date.now() / 1000.0 + 60),
+        expiryTime: parseInt(Date.now() / 1000.0 + 600),
         feeAsset: token.address,
         feeAmount: 1,
         active: true
@@ -484,6 +485,23 @@ const assertSwapParams = async (atomicBroker, { maker, taker, token, feeAsset, a
 const assertSwapDoesNotExist = async (atomicBroker, hashedSecret) => {
     await assertSwapParams(atomicBroker, emptySwapParams, hashedSecret)
 }
+
+const increaseEvmTime = async (time) => (
+    new Promise((resolve, reject) => {
+        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
+            (err, _result) => {
+                if (err) return reject(err)
+
+                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
+                    (err, result) => {
+                        if (err) reject(err)
+                        else resolve(result)
+                    }
+                )
+            }
+        )
+    })
+)
 
 module.exports = {
     ZERO_ADDR,
@@ -523,5 +541,6 @@ module.exports = {
     assertAmount,
     assertSwapParams,
     assertSwapDoesNotExist,
-    assertBalances
+    assertBalances,
+    increaseEvmTime
 }

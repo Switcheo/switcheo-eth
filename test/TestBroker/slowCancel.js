@@ -5,25 +5,8 @@ const web3 = new Web3(Web3.givenProvider)
 
 const { ETHER_ADDR, REASON, assertError, makeOffer, getOfferHash,
     assertOfferParams, assertEventEmission, getSampleOfferParams, emptyOfferParams,
-    nonceGenerator, assertEtherBalance } = require('../../utils/testUtils')
+    nonceGenerator, assertEtherBalance, increaseEvmTime } = require('../../utils/testUtils')
 const announceDelay = 604800
-
-increaseTime = async (time) => (
-    new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
-            (err, _result) => {
-                if (err) return reject(err)
-
-                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
-                    (err, result) => {
-                        if (err) reject(err)
-                        else resolve(result)
-                    }
-                )
-            }
-        )
-    })
-)
 
 contract('Test slowCancel', async () => {
     let broker, coordinator, user, accounts, sampleOffer, sampleOfferHash, initialEtherBalance
@@ -56,7 +39,7 @@ contract('Test slowCancel', async () => {
     contract('test event emission', async () => {
         it('emits BalanceIncrease and Cancel events', async () => {
             await broker.announceCancel.sendTransaction(sampleOfferHash, { from: user })
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
             const { logs } = await broker.slowCancel(sampleOfferHash)
             assertEventEmission(logs, [{
                 eventType: 'BalanceIncrease',
@@ -81,7 +64,7 @@ contract('Test slowCancel', async () => {
             await broker.announceCancel.sendTransaction(sampleOfferHash, { from: user })
             const canCancelAt1 = await broker.announcedCancellations.call(sampleOfferHash)
             assert.notEqual(canCancelAt1.toNumber(), 0)
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
             await broker.slowCancel.sendTransaction(sampleOfferHash)
             await assertOfferParams(broker, emptyOfferParams, sampleOfferHash)
 
@@ -94,7 +77,7 @@ contract('Test slowCancel', async () => {
     contract('when insufficient time has passed', async () => {
         it('throws an error', async () => {
             await broker.announceCancel.sendTransaction(sampleOfferHash, { from: user })
-            await increaseTime(announceDelay - 1000)
+            await increaseEvmTime(announceDelay - 1000)
             await assertError(broker.slowCancel.sendTransaction, sampleOfferHash)
             await assertOfferParams(broker, sampleOffer, sampleOfferHash)
             await assertEtherBalance(broker, user, '999999999999999990')
@@ -103,7 +86,7 @@ contract('Test slowCancel', async () => {
 
     contract('when no cancellation has been announced', async () => {
         it('throws an error', async () => {
-            await increaseTime(announceDelay)
+            await increaseEvmTime(announceDelay)
             await assertError(broker.slowCancel.sendTransaction, sampleOfferHash)
             await assertOfferParams(broker, sampleOffer, sampleOfferHash)
             await assertEtherBalance(broker, user, '999999999999999990')
