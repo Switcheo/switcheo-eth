@@ -26,9 +26,9 @@ contract('Test executeSwap', async (accounts) => {
 
     contract('when the fee asset is the same as the swap token', async () => {
         beforeEach(async () => {
-            swapParams = getSampleSwapParams({ maker, taker, token })
+            swapParams = await getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
-            assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
         })
 
         contract('test event emission', async () => {
@@ -111,12 +111,12 @@ contract('Test executeSwap', async (accounts) => {
 
     contract('when the fee asset is not the same as the swap token', async () => {
         beforeEach(async () => {
-            swapParams = getSampleSwapParams({ maker, taker, token })
+            swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.feeAsset = secondToken.address
             swapParams.feeAmount = 11
             await fundUser({ broker, user: maker, coordinator }, { swc: 20 })
             await createSwap(atomicBroker, swapParams)
-            assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
         })
 
         contract('test event emission', async () => {

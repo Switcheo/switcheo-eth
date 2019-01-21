@@ -287,7 +287,6 @@ contract AtomicBroker {
                 ReasonSwapCancelFeeGive,
                 ReasonSwapCancelFeeReceive
             );
-
         }
 
         uint256 refundFeeAmount = feeAmount - cancelFeeAmount;

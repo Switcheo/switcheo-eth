@@ -25,7 +25,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('test event emission', async () => {
         it('emits BalanceDecrease, BalanceIncrease, CreateSwap events', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             const result = await createSwap(atomicBroker, swapParams)
             assertEventEmission(result.receipt.logs, [
                 {
@@ -65,7 +65,7 @@ contract('Test createSwap', async (accounts) => {
         contract('when the fee asset is different from the swap token', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, CreateSwap events', async () => {
                 await fundUser({ broker, user: maker, coordinator }, { swc: 20 })
-                const swapParams = getSampleSwapParams({ maker, taker, token })
+                const swapParams = await getSampleSwapParams({ maker, taker, token })
                 swapParams.feeAsset = secondToken.address
                 swapParams.feeAmount = 9
                 const result = await createSwap(atomicBroker, swapParams)
@@ -129,7 +129,7 @@ contract('Test createSwap', async (accounts) => {
             await assertTokenBalance(broker, maker, token.address, 1000)
             await assertTokenBalance(broker, atomicBroker.address, token.address, 0)
 
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
             await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
 
@@ -146,7 +146,7 @@ contract('Test createSwap', async (accounts) => {
             await assertTokenBalance(broker, atomicBroker.address, token.address, 0)
             await fundUser({ broker, user: maker, coordinator }, { swc: 20 })
 
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.amount = 950
             swapParams.feeAsset = secondToken.address
             swapParams.feeAmount = 9
@@ -164,7 +164,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('when amount is 0', async () => {
         it('throws an error', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.amount = 0
             await assertError(createSwap, atomicBroker, swapParams)
             await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
@@ -173,7 +173,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('when expiryTime is less than current time', async () => {
         it('throws an error', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.expiryTime = 0
             await assertError(createSwap, atomicBroker, swapParams)
             await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
@@ -182,7 +182,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('when hashedSecret has been used before', async () => {
         it('throws an error', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
             await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
 
@@ -199,7 +199,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('when the signature is invalid', async () => {
         it('throws an error', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             // use the coordinator as the signee
             await assertError(createSwap, atomicBroker, swapParams, undefined, coordinator)
             await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
@@ -208,7 +208,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('when the maker does not have sufficient funds for the swap amount', async () => {
         it('throws an error', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.amount = 1001
             await assertError(createSwap, atomicBroker, swapParams)
             await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
@@ -217,7 +217,7 @@ contract('Test createSwap', async (accounts) => {
 
     contract('when feeAsset == token and maker does not have sufficient funds for the fee', async () => {
         it('throws an error', async () => {
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.feeAmount = 1001
             await assertError(createSwap, atomicBroker, swapParams)
             await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
@@ -227,7 +227,7 @@ contract('Test createSwap', async (accounts) => {
     contract('when feeAsset != token and maker does not have sufficient funds for the fee', async () => {
         it('throws an error', async () => {
             fundUser({ broker, user: maker, coordinator }, { swc: 10 })
-            const swapParams = getSampleSwapParams({ maker, taker, token })
+            const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.feeAsset = secondToken.address
             swapParams.feeAmount = 11
 

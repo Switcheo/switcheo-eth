@@ -442,12 +442,14 @@ const assertBalances = async (broker, userBalances) => {
     }
 }
 
-const getSampleSwapParams = ({ maker, taker, token, secret }) => {
+const getSampleSwapParams = async ({ maker, taker, token, secret }) => {
     if (secret === undefined) {
         secret = 'password123'
     }
     const hashedSecret = '0x' + sha256(secret)
+    const evmTime = await getEvmTime()
 
+    const expiryDelay = 600
     return {
         maker,
         taker,
@@ -455,7 +457,8 @@ const getSampleSwapParams = ({ maker, taker, token, secret }) => {
         amount: 999,
         secret,
         hashedSecret,
-        expiryTime: parseInt(Date.now() / 1000.0 + 600),
+        expiryTime: evmTime + expiryDelay,
+        expiryDelay,
         feeAsset: token.address,
         feeAmount: 1,
         active: true
@@ -503,6 +506,12 @@ const increaseEvmTime = async (time) => (
     })
 )
 
+const getEvmTime = async () => {
+    const blockNumber = await web3.eth.getBlockNumber()
+    const block = await web3.eth.getBlock(blockNumber)
+    return block.timestamp
+}
+
 module.exports = {
     ZERO_ADDR,
     ETHER_ADDR,
@@ -542,5 +551,6 @@ module.exports = {
     assertSwapParams,
     assertSwapDoesNotExist,
     assertBalances,
-    increaseEvmTime
+    increaseEvmTime,
+    getEvmTime
 }
