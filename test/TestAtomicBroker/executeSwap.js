@@ -84,44 +84,20 @@ contract('Test executeSwap', async (accounts) => {
         contract('when valid values are used', async () => {
             it('executes a swap', async () => {
                 await assertBalances(broker, {
-                    [maker]: {
-                        jrc: 1,
-                        swc: 0
-                    },
-                    [taker]: {
-                        jrc: 0,
-                        swc: 0
-                    },
-                    [operator]: {
-                        jrc: 0,
-                        swc: 0
-                    },
-                    [atomicBroker.address]: {
-                        jrc: 999,
-                        swc: 0
-                    }
+                    [maker]: { jrc: 1, swc: 0 },
+                    [taker]: { jrc: 0, swc: 0 },
+                    [operator]: { jrc: 0, swc: 0 },
+                    [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
 
                 await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
                 await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
 
                 await assertBalances(broker, {
-                    [maker]: {
-                        jrc: 1,
-                        swc: 0
-                    },
-                    [taker]: {
-                        jrc: 998,
-                        swc: 0
-                    },
-                    [operator]: {
-                        jrc: 1,
-                        swc: 0
-                    },
-                    [atomicBroker.address]: {
-                        jrc: 0,
-                        swc: 0
-                    }
+                    [maker]: { jrc: 1, swc: 0 },
+                    [taker]: { jrc: 998, swc: 0 },
+                    [operator]: { jrc: 1, swc: 0 },
+                    [atomicBroker.address]: { jrc: 0, swc: 0 }
                 })
             })
         })
@@ -196,43 +172,19 @@ contract('Test executeSwap', async (accounts) => {
         contract('when valid values are used', async () => {
             it('updates balances appropriately', async () => {
                 await assertBalances(broker, {
-                    [maker]: {
-                        jrc: 1,
-                        swc: 9
-                    },
-                    [taker]: {
-                        jrc: 0,
-                        swc: 0
-                    },
-                    [operator]: {
-                        jrc: 0,
-                        swc: 0
-                    },
-                    [atomicBroker.address]: {
-                        jrc: 999,
-                        swc: 11
-                    }
+                    [maker]: { jrc: 1, swc: 9 },
+                    [taker]: { jrc: 0, swc: 0 },
+                    [operator]: { jrc: 0, swc: 0 },
+                    [atomicBroker.address]: { jrc: 999, swc: 11 }
                 })
 
                 await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
 
                 await assertBalances(broker, {
-                    [maker]: {
-                        jrc: 1,
-                        swc: 9
-                    },
-                    [taker]: {
-                        jrc: 999,
-                        swc: 0
-                    },
-                    [operator]: {
-                        jrc: 0,
-                        swc: 11
-                    },
-                    [atomicBroker.address]: {
-                        jrc: 0,
-                        swc: 0
-                    }
+                    [maker]: { jrc: 1, swc: 9 },
+                    [taker]: { jrc: 999, swc: 0 },
+                    [operator]: { jrc: 0, swc: 11 },
+                    [atomicBroker.address]: { jrc: 0, swc: 0 }
                 })
             })
         })
