@@ -443,9 +443,9 @@ const assertBalances = async (broker, userBalances) => {
 
 const getSampleSwapParams = ({ maker, taker, token, secret }) => {
     if (secret === undefined) {
-        secret = '0x12'
+        secret = 'password123'
     }
-    const hashedSecret = web3.utils.soliditySha3({ type: 'bytes32', value: secret })
+    const hashedSecret = '0x' + sha256(secret)
 
     return {
         maker,

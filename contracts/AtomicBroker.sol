@@ -180,9 +180,10 @@ contract AtomicBroker {
 
     function executeSwap (
         bytes32 _hashedSecret,
-        bytes32 _preimage
+        bytes _preimage
     )
         external
+        returns (bytes32)
     {
         Swap memory swap = swaps[_hashedSecret];
 
@@ -192,7 +193,7 @@ contract AtomicBroker {
         );
 
         require(
-            keccak256(abi.encodePacked(_preimage)) == _hashedSecret,
+            sha256(_preimage) == _hashedSecret,
             "Invalid preimage"
         );
 
