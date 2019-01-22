@@ -105,6 +105,26 @@ contract('Test cancelSwap', async (accounts) => {
             })
         })
 
+        contract('when the sender is not the coordinator', async () => {
+            it('the cancel fee argument is ignored, and the full fee amount is charged', async () => {
+                await increaseEvmTime(700)
+                await assertBalances(broker, {
+                    [maker]: { jrc: 1, swc: 0 },
+                    [taker]: { jrc: 0, swc: 0 },
+                    [operator]: { jrc: 0, swc: 0 },
+                    [atomicBroker.address]: { jrc: 999, swc: 0 }
+                })
+                await atomicBroker.cancelSwap(swapParams.hashedSecret, 2, { from: taker })
+                await assertBalances(broker, {
+                    [maker]: { jrc: 990, swc: 0 },
+                    [taker]: { jrc: 0, swc: 0 },
+                    [operator]: { jrc: 10, swc: 0 },
+                    [atomicBroker.address]: { jrc: 0, swc: 0 }
+                })
+                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            })
+        })
+
         contract('when the swap has already been executed', async () => {
             beforeEach(async () => {
                 await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
