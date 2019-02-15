@@ -5,6 +5,10 @@ import "./Broker.sol";
 
 /// @title The Atomic Swap contract for Switcheo Exchange
 /// @author Switcheo Network
+/// @notice This contract faciliates crosschain trades
+/// between users through a time locked Atomic Swap.
+/// The contract transfers assets by updating the balances
+/// in the Switcheo Broker contract.
 contract AtomicBroker {
     using SafeMath for uint256;
 
@@ -19,6 +23,7 @@ contract AtomicBroker {
         bool active;
     }
 
+    // The Switcheo Broker contract
     Broker public broker;
 
     // Creating a swap
@@ -64,6 +69,8 @@ contract AtomicBroker {
     // Emitted when a swap is cancelled
     event CancelSwap(bytes32 indexed hashedSecret);
 
+    /// @notice Initializes the Atomic Broker contract
+    /// @dev The broker is initialized to the Switcheo Broker
     constructor(address brokerAddress)
         public
     {
@@ -78,12 +85,43 @@ contract AtomicBroker {
         _;
     }
 
+    modifier onlyCoordinator() {
+        require(
+            msg.sender == address(broker.coordinator()),
+            "Invalid sender"
+        );
+        _;
+    }
+
+    /// @notice Approves the Broker contract to update balances for this contract
+    /// @dev The swap maker's balances are locked by transferring the balance to be
+    /// locked to this contract within the Broker contract.
+    /// To release the locked balances to the swap taker, this contract must approve
+    /// itself as a spender of its own balances within the Broker contract.
     function approveBroker()
         external
     {
         broker.approveSpender(address(this));
     }
 
+    /// @notice Creates a swap to initiate the transfer of assets.
+    /// @dev Creates a swap to transfer `_amount` of `_token` to `_taker`
+    /// The transfer is completed when executeSwap is called with the correct
+    /// preimage matching the `_hashedSecret`.
+    /// If executeSwap is not called, the transfer can be cancelled after
+    /// `expiryTime` has passed.
+    /// This operation can only be invoked by the coordinator.
+    /// @param _maker The address of the user that is making the swap
+    /// @param _taker The address of the user that is taking the swap
+    /// @param _token The address of the token to be transferred
+    /// @param _amount The number of tokens to be transferred
+    /// @param _hashedSecret The hash of the secret decided on by the maker
+    /// @param _expiryTime The epoch time of when the swap becomes cancellable
+    /// @param _feeAsset The address of the token to use for fee payment
+    /// @param _feeAmount The amount of tokens to pay as fees to the operator
+    /// @param _v The `v` component of the `_maker`'s signature
+    /// @param _r The `r` component of the `_maker`'s signature
+    /// @param _s The `s` component of the `_maker`'s signature
     function createSwap(
         address _maker,
         address _taker,
@@ -98,6 +136,7 @@ contract AtomicBroker {
         bytes32 _s
     )
         external
+        onlyCoordinator
     {
         require(
             _amount > 0,
@@ -178,6 +217,10 @@ contract AtomicBroker {
         );
     }
 
+    /// @notice Executes a swap that has been previously made using `createSwap`.
+    /// @dev Transfers the previously locked asset from createSwap to the swap taker
+    /// @param _hashedSecret The hash of the preimage
+    /// @param _preimage The preimage matching the _hashedSecret
     function executeSwap (
         bytes32 _hashedSecret,
         bytes _preimage
@@ -232,6 +275,17 @@ contract AtomicBroker {
         emit ExecuteSwap(_hashedSecret);
     }
 
+
+    /// @notice Cancels a swap that was previously made using `createSwap`.
+    /// @dev Cancels the swap with `_hashedSecret`, releasing the locked assets
+    /// back to the maker.
+    /// The `_cancelFeeAmount` is deducted from the `_feeAmount` that was set in `createSwap`.
+    /// The remaining fee amount is refunded to the user.
+    /// If the sender is not the coordinator, then the full _feeAmount is deducted.
+    /// This gives the coordinator control to incentivise users to complete a swap once initiated.
+    /// @param _hashedSecret The hashed secret of the swap to cancel
+    /// @param _cancelFeeAmount The number of tokens from the original `_feeAmount` to be deducted as
+    /// cancellation fees
     function cancelSwap (bytes32 _hashedSecret, uint256 _cancelFeeAmount)
         external
     {
