@@ -226,7 +226,6 @@ contract AtomicBroker {
         bytes _preimage
     )
         external
-        returns (bytes32)
     {
         Swap memory swap = swaps[_hashedSecret];
 
@@ -236,7 +235,7 @@ contract AtomicBroker {
         );
 
         require(
-            sha256(_preimage) == _hashedSecret,
+            sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret,
             "Invalid preimage"
         );
 

@@ -446,7 +446,7 @@ const getSampleSwapParams = async ({ maker, taker, token, secret }) => {
     if (secret === undefined) {
         secret = 'password123'
     }
-    const hashedSecret = '0x' + sha256(secret)
+    const hashedSecret = '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
     const evmTime = await getEvmTime()
 
     const expiryDelay = 600
