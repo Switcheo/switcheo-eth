@@ -167,17 +167,10 @@ contract AtomicBroker {
             "Invalid signature"
         );
 
-        if (_feeAsset == _token) {
-            require(
-                _feeAmount < _amount,
-                "Fee amount exceeds amount"
-            );
-        }
-
         broker.spendFrom(
             _maker,
             address(this),
-            _amount,
+            _feeAsset == _token ? _amount + _feeAmount : _amount,
             _token,
             ReasonSwapMakerGive,
             ReasonSwapHolderReceive
@@ -240,10 +233,6 @@ contract AtomicBroker {
         );
 
         uint256 takeAmount = swap.amount;
-        if (swap.token == swap.feeAsset) {
-            takeAmount -= swap.feeAmount;
-        }
-
         address taker = swap.taker;
         address token = swap.token;
         address feeAsset = swap.feeAsset;
@@ -312,7 +301,7 @@ contract AtomicBroker {
 
         uint256 refundAmount = swap.amount;
         if (swap.token == swap.feeAsset) {
-            refundAmount -= cancelFeeAmount;
+            refundAmount += (swap.feeAmount - cancelFeeAmount);
         }
 
         address maker = swap.maker;

@@ -27,6 +27,7 @@ contract('Test executeSwap', async (accounts) => {
     contract('when the fee asset is the same as the swap token', async () => {
         beforeEach(async () => {
             swapParams = await getSampleSwapParams({ maker, taker, token })
+            swapParams.amount = 998
             await createSwap(atomicBroker, swapParams)
             await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
         })
