@@ -26,7 +26,6 @@ contract('Test createSwap', async (accounts) => {
     contract('test event emission', async () => {
         it('emits BalanceDecrease, BalanceIncrease, CreateSwap events', async () => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
-            swapParams.amount = 998
             const result = await createSwap(atomicBroker, swapParams)
             assertEventEmission(result.receipt.logs, [
                 {
@@ -131,7 +130,6 @@ contract('Test createSwap', async (accounts) => {
             await assertTokenBalance(broker, atomicBroker.address, token.address, 0)
 
             const swapParams = await getSampleSwapParams({ maker, taker, token })
-            swapParams.amount = 998
             await createSwap(atomicBroker, swapParams)
             await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
 
