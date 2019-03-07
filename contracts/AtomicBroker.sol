@@ -77,14 +77,6 @@ contract AtomicBroker {
         broker = Broker(brokerAddress);
     }
 
-    modifier onlyOwner() {
-        require(
-            msg.sender == address(broker.owner()),
-            "Invalid sender"
-        );
-        _;
-    }
-
     modifier onlyCoordinator() {
         require(
             msg.sender == address(broker.coordinator()),
