@@ -1,6 +1,5 @@
 const Broker = artifacts.require('Broker')
 const AtomicBroker = artifacts.require('AtomicBroker')
-const truffleConfig = require('../truffle')
 
 module.exports = function(deployer, network, accounts) {
     deployer.then(async () => {
