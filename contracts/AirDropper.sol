@@ -3,6 +3,8 @@ pragma solidity 0.4.25;
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "./Broker.sol";
 
+/// @title The AirDropper contract to send ether to users
+/// @author Switcheo Network
 contract AirDropper {
     using SafeMath for uint256;
 
@@ -12,6 +14,7 @@ contract AirDropper {
     // A record of which hashes have been used before
     mapping(bytes32 => bool) public usedHashes;
 
+    // Emitted when ether is sent
     event SendEther(bytes32 indexed id, address indexed receiver, uint256 amount);
 
     /// @notice Initializes the AirDropper contract
@@ -30,8 +33,13 @@ contract AirDropper {
         _;
     }
 
+    /// @notice The payable method to allow this contract to receive ether
     function depositEther() external payable {}
 
+    /// @notice Sends ether to a receiving address.
+    /// @param _id The unique identifier to prevent double spends
+    /// @param _receiver The address of the receiver
+    /// @param _amount The amount of ether to send
     function sendEther(
         bytes32 _id,
         address _receiver,
