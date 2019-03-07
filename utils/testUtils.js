@@ -11,11 +11,13 @@ const OMG_ADDR = '0xd26114cd6EE289AccF82350c8d8487fedB8A0C07'
 
 const Broker = artifacts.require('Broker')
 const AtomicBroker = artifacts.require('AtomicBroker')
+const AirDropper = artifacts.require('AirDropper')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 
 abiDecoder.addABI(Broker.abi)
 abiDecoder.addABI(AtomicBroker.abi)
+abiDecoder.addABI(AirDropper.abi)
 
 const HEX_REASONS = {
     ReasonDeposit: '01',
