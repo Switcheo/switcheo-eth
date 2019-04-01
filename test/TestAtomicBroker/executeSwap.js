@@ -14,6 +14,7 @@ contract('Test executeSwap', async (accounts) => {
     const operator = accounts[0]
     const maker = accounts[1]
     const taker = accounts[2]
+    const bob = accounts[3]
 
     beforeEach(async () => {
         broker = await Broker.deployed()
@@ -98,6 +99,27 @@ contract('Test executeSwap', async (accounts) => {
                     [taker]: { jrc: 998, swc: 0 },
                     [operator]: { jrc: 1, swc: 0 },
                     [atomicBroker.address]: { jrc: 0, swc: 0 }
+                })
+            })
+
+            contract('when the sender is not the coordinator', async () => {
+                it('executes the swap', async () => {
+                    await assertBalances(broker, {
+                        [maker]: { jrc: 1, swc: 0 },
+                        [taker]: { jrc: 0, swc: 0 },
+                        [operator]: { jrc: 0, swc: 0 },
+                        [atomicBroker.address]: { jrc: 999, swc: 0 }
+                    })
+
+                    const executeSwapResult = await executeSwap(atomicBroker, swapParams, { from: bob })
+                    await assertSwapDoesNotExist(atomicBroker, swapParams)
+
+                    await assertBalances(broker, {
+                        [maker]: { jrc: 1, swc: 0 },
+                        [taker]: { jrc: 998, swc: 0 },
+                        [operator]: { jrc: 1, swc: 0 },
+                        [atomicBroker.address]: { jrc: 0, swc: 0 }
+                    })
                 })
             })
         })

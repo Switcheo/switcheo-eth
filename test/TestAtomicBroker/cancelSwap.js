@@ -14,6 +14,7 @@ contract('Test cancelSwap', async (accounts) => {
     const operator = accounts[0]
     const maker = accounts[1]
     const taker = accounts[2]
+    const bob = accounts[3]
 
     beforeEach(async () => {
         broker = await Broker.deployed()
@@ -114,7 +115,7 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
-                await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 }, { from: taker })
+                await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 }, { from: bob })
                 await assertBalances(broker, {
                     [maker]: { jrc: 990, swc: 0 },
                     [taker]: { jrc: 0, swc: 0 },
