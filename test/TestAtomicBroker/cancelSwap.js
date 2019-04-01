@@ -3,7 +3,7 @@ const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const AtomicBroker = artifacts.require('AtomicBroker')
 
-const { fundUser, createSwap, assertSwapParams, getSampleSwapParams,
+const { fundUser, createSwap, cancelSwap, executeSwap, assertSwapExists, getSampleSwapParams,
         assertError, assertEventEmission, assertBalances, REASON,
         increaseEvmTime, assertSwapDoesNotExist } = require('../../utils/testUtils')
 
@@ -30,13 +30,13 @@ contract('Test cancelSwap', async (accounts) => {
             swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.feeAmount = 10
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
         })
 
         contract('test event emission', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, CancelSwap events', async () => {
                 await increaseEvmTime(700)
-                const result = await atomicBroker.cancelSwap(swapParams.hashedSecret, 2)
+                const result = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 })
 
                 assertEventEmission(result.receipt.logs, [
                     {
@@ -94,14 +94,14 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
-                await atomicBroker.cancelSwap(swapParams.hashedSecret, 2)
+                const cancelSwapResult = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 })
                 await assertBalances(broker, {
                     [maker]: { jrc: 998, swc: 0 },
                     [taker]: { jrc: 0, swc: 0 },
                     [operator]: { jrc: 2, swc: 0 },
                     [atomicBroker.address]: { jrc: 0, swc: 0 }
                 })
-                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+                await assertSwapDoesNotExist(atomicBroker, swapParams)
             })
         })
 
@@ -114,21 +114,21 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
-                await atomicBroker.cancelSwap(swapParams.hashedSecret, 2, { from: taker })
+                await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 }, { from: taker })
                 await assertBalances(broker, {
                     [maker]: { jrc: 990, swc: 0 },
                     [taker]: { jrc: 0, swc: 0 },
                     [operator]: { jrc: 10, swc: 0 },
                     [atomicBroker.address]: { jrc: 0, swc: 0 }
                 })
-                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+                await assertSwapDoesNotExist(atomicBroker, swapParams)
             })
         })
 
         contract('when the swap has already been executed', async () => {
             beforeEach(async () => {
-                await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
-                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+                await executeSwap(atomicBroker, swapParams)
+                await assertSwapDoesNotExist(atomicBroker, swapParams)
             })
 
             it('it raises an error', async () => {
@@ -139,7 +139,7 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 10, swc: 0 },
                     [atomicBroker.address]: { jrc: 0, swc: 0 }
                 })
-                await assertError(atomicBroker.cancelSwap, swapParams.hashedSecret, 2)
+                await assertError(cancelSwap, atomicBroker, { ...swapParams, cancelFeeAmount: 2 })
                 await assertBalances(broker, {
                     [maker]: { jrc: 1, swc: 0 },
                     [taker]: { jrc: 989, swc: 0 },
@@ -158,7 +158,7 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
-                await assertError(atomicBroker.cancelSwap, swapParams.hashedSecret, 2)
+                await assertError(cancelSwap, atomicBroker, { ...swapParams, cancelFeeAmount: 2 })
                 await assertBalances(broker, {
                     [maker]: { jrc: 1, swc: 0 },
                     [taker]: { jrc: 0, swc: 0 },
@@ -177,7 +177,7 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
-                await assertError(atomicBroker.cancelSwap, swapParams.hashedSecret, 12)
+                await assertError(cancelSwap, atomicBroker, { ...swapParams, cancelFeeAmount: 12 })
                 await assertBalances(broker, {
                     [maker]: { jrc: 1, swc: 0 },
                     [taker]: { jrc: 0, swc: 0 },
@@ -195,13 +195,13 @@ contract('Test cancelSwap', async (accounts) => {
             swapParams.feeAsset = secondToken.address
             swapParams.feeAmount = 16
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
         })
 
         contract('test event emission', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, CancelSwap events', async () => {
                 await increaseEvmTime(700)
-                const result = await atomicBroker.cancelSwap(swapParams.hashedSecret, 5)
+                const result = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 5 })
 
                 assertEventEmission(result.receipt.logs, [
                     {
@@ -277,14 +277,14 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 16 }
                 })
-                await atomicBroker.cancelSwap(swapParams.hashedSecret, 5)
+                await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 5 })
                 await assertBalances(broker, {
                     [maker]: { jrc: 1000, swc: 15 },
                     [taker]: { jrc: 0, swc: 0 },
                     [operator]: { jrc: 0, swc: 5 },
                     [atomicBroker.address]: { jrc: 0, swc: 0 }
                 })
-                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+                await assertSwapDoesNotExist(atomicBroker, swapParams)
             })
         })
     })

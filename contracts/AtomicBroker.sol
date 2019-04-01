@@ -12,17 +12,6 @@ import "./Broker.sol";
 contract AtomicBroker {
     using SafeMath for uint256;
 
-    struct Swap {
-        address maker;
-        address taker;
-        address token;
-        address feeAsset;
-        uint256 amount;
-        uint256 expiryTime;
-        uint256 feeAmount;
-        bool active;
-    }
-
     // The Switcheo Broker contract
     Broker public broker;
 
@@ -46,8 +35,8 @@ contract AtomicBroker {
     uint8 constant ReasonSwapCancelFeeRefundGive = 0x3C;
     uint8 constant ReasonSwapCancelFeeRefundReceive = 0x3D;
 
-    // Swaps by: hashedSecret => swap
-    mapping(bytes32 => Swap) public swaps;
+    // Swaps by: swapHash => swapIsActive
+    mapping(bytes32 => bool) public swaps;
     // A record of which hashes have been used before
     mapping(bytes32 => bool) public usedHashes;
 
@@ -142,8 +131,7 @@ contract AtomicBroker {
 
         _validateAndAddHash(_hashedSecret);
 
-        bytes32 msgHash = keccak256(abi.encodePacked(
-            "createSwap",
+        bytes32 msgHash = _hashSwapParams(
             _maker,
             _taker,
             _token,
@@ -152,7 +140,7 @@ contract AtomicBroker {
             _expiryTime,
             _feeAsset,
             _feeAmount
-        ));
+        );
 
         require(
             _recoverAddress(msgHash, _v, _r, _s) == _maker,
@@ -187,15 +175,7 @@ contract AtomicBroker {
             );
         }
 
-        Swap storage swap = swaps[_hashedSecret];
-        swap.maker = _maker;
-        swap.taker = _taker;
-        swap.token = _token;
-        swap.amount = _amount;
-        swap.feeAsset = _feeAsset;
-        swap.feeAmount = _feeAmount;
-        swap.expiryTime = _expiryTime;
-        swap.active = true;
+        swaps[msgHash] = true;
 
         emit CreateSwap(
             _maker,
@@ -210,19 +190,44 @@ contract AtomicBroker {
     }
 
     /// @notice Executes a swap that has been previously made using `createSwap`.
-    /// @dev Transfers the previously locked asset from createSwap to the swap taker
-    /// @param _hashedSecret The hash of the preimage
+    /// @dev Transfers the previously locked asset from createSwap to the swap taker.
+    /// The original swap parameters need to be resent as only the hash of these
+    /// parameters are stored in `swaps`.
+    /// @param _maker The address of the user that is making the swap
+    /// @param _taker The address of the user that is taking the swap
+    /// @param _token The address of the token to be transferred
+    /// @param _amount The number of tokens to be transferred
+    /// @param _hashedSecret The hash of the secret decided on by the maker
+    /// @param _expiryTime The epoch time of when the swap becomes cancellable
+    /// @param _feeAsset The address of the token to use for fee payment
+    /// @param _feeAmount The amount of tokens to pay as fees to the operator
     /// @param _preimage The preimage matching the _hashedSecret
     function executeSwap (
+        address _maker,
+        address _taker,
+        address _token,
+        uint256 _amount,
         bytes32 _hashedSecret,
+        uint256 _expiryTime,
+        address _feeAsset,
+        uint256 _feeAmount,
         bytes _preimage
     )
         external
     {
-        Swap memory swap = swaps[_hashedSecret];
+        bytes32 msgHash = _hashSwapParams(
+            _maker,
+            _taker,
+            _token,
+            _amount,
+            _hashedSecret,
+            _expiryTime,
+            _feeAsset,
+            _feeAmount
+        );
 
         require(
-            swap.active,
+            swaps[msgHash] == true,
             "Swap is inactive"
         );
 
@@ -231,33 +236,28 @@ contract AtomicBroker {
             "Invalid preimage"
         );
 
-        uint256 takeAmount = swap.amount;
-        if (swap.token == swap.feeAsset) {
-            takeAmount -= swap.feeAmount;
+        uint256 takeAmount = _amount;
+        if (_token == _feeAsset) {
+            takeAmount -= _feeAmount;
         }
 
-        address taker = swap.taker;
-        address token = swap.token;
-        address feeAsset = swap.feeAsset;
-        uint256 feeAmount = swap.feeAmount;
-
-        delete swaps[_hashedSecret];
+        delete swaps[msgHash];
 
         broker.spendFrom(
             address(this),
-            taker,
+            _taker,
             takeAmount,
-            token,
+            _token,
             ReasonSwapHolderGive,
             ReasonSwapTakerReceive
         );
 
-        if (feeAmount > 0) {
+        if (_feeAmount > 0) {
             broker.spendFrom(
                 address(this),
                 address(broker.operator()),
-                feeAmount,
-                feeAsset,
+                _feeAmount,
+                _feeAsset,
                 ReasonSwapFeeGive,
                 ReasonSwapFeeReceive
             );
@@ -268,85 +268,135 @@ contract AtomicBroker {
 
 
     /// @notice Cancels a swap that was previously made using `createSwap`.
-    /// @dev Cancels the swap with `_hashedSecret`, releasing the locked assets
+    /// @dev Cancels the swap with matching msgHash, releasing the locked assets
     /// back to the maker.
-    /// The `_cancelFeeAmount` is deducted from the `_feeAmount` that was set in `createSwap`.
+    /// The original swap parameters need to be resent as only the hash of these
+    /// parameters are stored in `swaps`.
+    /// The `_cancelFeeAmount` is deducted from the `_feeAmount` of the original swap.
     /// The remaining fee amount is refunded to the user.
     /// If the sender is not the coordinator, then the full _feeAmount is deducted.
     /// This gives the coordinator control to incentivise users to complete a swap once initiated.
-    /// @param _hashedSecret The hashed secret of the swap to cancel
+    /// @param _maker The address of the user that is making the swap
+    /// @param _taker The address of the user that is taking the swap
+    /// @param _token The address of the token to be transferred
+    /// @param _amount The number of tokens to be transferred
+    /// @param _hashedSecret The hash of the secret decided on by the maker
+    /// @param _expiryTime The epoch time of when the swap becomes cancellable
+    /// @param _feeAsset The address of the token to use for fee payment
+    /// @param _feeAmount The amount of tokens to pay as fees to the operator
     /// @param _cancelFeeAmount The number of tokens from the original `_feeAmount` to be deducted as
     /// cancellation fees
-    function cancelSwap (bytes32 _hashedSecret, uint256 _cancelFeeAmount)
+    function cancelSwap (
+        address _maker,
+        address _taker,
+        address _token,
+        uint256 _amount,
+        bytes32 _hashedSecret,
+        uint256 _expiryTime,
+        address _feeAsset,
+        uint256 _feeAmount,
+        uint256 _cancelFeeAmount
+    )
         external
     {
-        Swap memory swap = swaps[_hashedSecret];
-
         require(
-            swap.active,
-            "Swap is inactive"
+            _expiryTime <= now,
+            "Cancellation time not yet reached"
+        );
+
+        bytes32 msgHash = _hashSwapParams(
+            _maker,
+            _taker,
+            _token,
+            _amount,
+            _hashedSecret,
+            _expiryTime,
+            _feeAsset,
+            _feeAmount
         );
 
         require(
-            swap.expiryTime <= now,
-            "Cancellation time not yet reached"
+            swaps[msgHash] == true,
+            "Swap is inactive"
         );
 
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (msg.sender != address(broker.coordinator())) {
-            cancelFeeAmount = swap.feeAmount;
+            cancelFeeAmount = _feeAmount;
         }
 
         require(
-            cancelFeeAmount <= swap.feeAmount,
+            cancelFeeAmount <= _feeAmount,
             "Cancel fee must be less than swap fee"
         );
 
-        uint256 refundAmount = swap.amount;
-        if (swap.token == swap.feeAsset) {
+        uint256 refundAmount = _amount;
+        if (_token == _feeAsset) {
             refundAmount -= cancelFeeAmount;
         }
 
-        address maker = swap.maker;
-        address token = swap.token;
-        address feeAsset = swap.feeAsset;
-        uint256 feeAmount = swap.feeAmount;
-
-        delete swaps[_hashedSecret];
+        delete swaps[msgHash];
 
         broker.spendFrom(
             address(this),
-            maker,
+            _maker,
             refundAmount,
-            token,
+            _token,
             ReasonSwapCancelHolderGive,
             ReasonSwapCancelMakerReceive
         );
 
-        if (feeAmount > 0) {
+        if (_feeAmount > 0) {
             broker.spendFrom(
                 address(this),
                 address(broker.operator()),
                 cancelFeeAmount,
-                feeAsset,
+                _feeAsset,
                 ReasonSwapCancelFeeGive,
                 ReasonSwapCancelFeeReceive
             );
         }
 
-        uint256 refundFeeAmount = feeAmount - cancelFeeAmount;
-        if (token != feeAsset && refundFeeAmount > 0) {
+        uint256 refundFeeAmount = _feeAmount - cancelFeeAmount;
+        if (_token != _feeAsset && refundFeeAmount > 0) {
             broker.spendFrom(
                 address(this),
-                maker,
+                _maker,
                 refundFeeAmount,
-                feeAsset,
+                _feeAsset,
                 ReasonSwapCancelFeeRefundGive,
                 ReasonSwapCancelFeeRefundReceive
             );
         }
 
         emit CancelSwap(_hashedSecret);
+    }
+
+    function _hashSwapParams(
+        address _maker,
+        address _taker,
+        address _token,
+        uint256 _amount,
+        bytes32 _hashedSecret,
+        uint256 _expiryTime,
+        address _feeAsset,
+        uint256 _feeAmount
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encodePacked(
+            "swap",
+            _maker,
+            _taker,
+            _token,
+            _amount,
+            _hashedSecret,
+            _expiryTime,
+            _feeAsset,
+            _feeAmount
+        ));
     }
 
     /// @dev Performs an `ecrecover` operation for signed message hashes

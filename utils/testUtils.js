@@ -377,9 +377,9 @@ const fundUser = async ({ broker, user, coordinator }, { eth, jrc, swc }) => {
     }
 }
 
-const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee) => {
+const hashSwapParams = ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }) => {
     const message = web3.utils.soliditySha3(
-        { type: 'string', value: 'createSwap' },
+        { type: 'string', value: 'swap' },
         { type: 'address', value: maker },
         { type: 'address', value: taker },
         { type: 'address', value: token },
@@ -389,6 +389,11 @@ const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expir
         { type: 'address', value: feeAsset },
         { type: 'uint256', value: feeAmount }
     )
+    return message
+}
+
+const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee) => {
+    const message = hashSwapParams({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount })
     if (signee === undefined) { signee = maker }
     const signature = await web3.eth.sign(message, signee)
     return getSignatureComponents(signature)
@@ -402,18 +407,19 @@ const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSec
         expiryTime, feeAsset, feeAmount, v, r, s, txn)
 }
 
-const fetchSwap = async (atomicBroker, hashedSecret) => {
-    const swap = await atomicBroker.swaps.call(hashedSecret)
-    return {
-        maker: swap[0],
-        taker: swap[1],
-        token: swap[2],
-        feeAsset: swap[3],
-        amount: swap[4],
-        expiryTime: swap[5],
-        feeAmount: swap[6],
-        active: swap[7]
-    }
+const executeSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, secret }, txn) => {
+    return await atomicBroker.executeSwap(maker, taker, token, amount, hashedSecret,
+        expiryTime, feeAsset, feeAmount, secret, txn)
+}
+
+const cancelSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, cancelFeeAmount }, txn) => {
+    return await atomicBroker.cancelSwap(maker, taker, token, amount, hashedSecret,
+        expiryTime, feeAsset, feeAmount, cancelFeeAmount, txn)
+}
+
+const fetchSwapExistance = async (atomicBroker, swapParams) => {
+    const swapHash = hashSwapParams(swapParams)
+    return await atomicBroker.swaps.call(swapHash)
 }
 
 const emptySwapParams = {
@@ -475,20 +481,14 @@ const assertAmount = (value, expected) => {
     assert.equal(value.toString(), expected.toString())
 }
 
-const assertSwapParams = async (atomicBroker, { maker, taker, token, feeAsset, amount, expiryTime, feeAmount, active }, hashedSecret) => {
-    const swap = await fetchSwap(atomicBroker, hashedSecret)
-    assertAddress(swap.maker, maker)
-    assertAddress(swap.taker, taker)
-    assertAddress(swap.token, token)
-    assertAddress(swap.feeAsset, feeAsset)
-    assertAmount(swap.amount, amount)
-    assertAmount(swap.expiryTime, expiryTime)
-    assertAmount(swap.feeAmount, feeAmount)
-    assert.equal(swap.active, active)
+const assertSwapExists = async (atomicBroker, swapParams) => {
+    const swapExists = await fetchSwapExistance(atomicBroker, swapParams)
+    assert.equal(swapExists, true)
 }
 
-const assertSwapDoesNotExist = async (atomicBroker, hashedSecret) => {
-    await assertSwapParams(atomicBroker, emptySwapParams, hashedSecret)
+const assertSwapDoesNotExist = async (atomicBroker, swapParams) => {
+    const swapExists = await fetchSwapExistance(atomicBroker, swapParams)
+    assert.equal(swapExists, false)
 }
 
 const increaseEvmTime = async (time) => (
@@ -546,11 +546,13 @@ module.exports = {
     fundUser,
     signCreateSwap,
     createSwap,
-    fetchSwap,
+    executeSwap,
+    cancelSwap,
+    fetchSwapExistance,
     getSampleSwapParams,
     assertAddress,
     assertAmount,
-    assertSwapParams,
+    assertSwapExists,
     assertSwapDoesNotExist,
     assertBalances,
     increaseEvmTime,
