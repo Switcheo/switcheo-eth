@@ -3,7 +3,7 @@ const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const AtomicBroker = artifacts.require('AtomicBroker')
 
-const { fundUser, createSwap, assertSwapParams, getSampleSwapParams,
+const { fundUser, createSwap, executeSwap, assertSwapExists, getSampleSwapParams,
         assertError, assertEventEmission, assertBalances,
         assertSwapDoesNotExist, REASON } = require('../../utils/testUtils')
 
@@ -28,12 +28,12 @@ contract('Test executeSwap', async (accounts) => {
         beforeEach(async () => {
             swapParams = await getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
         })
 
         contract('test event emission', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, ExecuteSwap events', async () => {
-                const result = await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
+                const result = await executeSwap(atomicBroker, swapParams)
                 assertEventEmission(result.receipt.logs, [
                     {
                         eventType: 'BalanceDecrease',
@@ -90,8 +90,8 @@ contract('Test executeSwap', async (accounts) => {
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
 
-                await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
-                await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+                const executeSwapResult = await executeSwap(atomicBroker, swapParams)
+                await assertSwapDoesNotExist(atomicBroker, swapParams)
 
                 await assertBalances(broker, {
                     [maker]: { jrc: 1, swc: 0 },
@@ -104,7 +104,7 @@ contract('Test executeSwap', async (accounts) => {
 
         contract('when the preimage does not match the hashedSecret', async () => {
             it('throws an error', async () => {
-                assertError(atomicBroker.executeSwap, swapParams.hashedSecret, '0xabc')
+                assertError(executeSwap, atomicBroker, swapParams, '0xabc')
             })
         })
     })
@@ -116,12 +116,12 @@ contract('Test executeSwap', async (accounts) => {
             swapParams.feeAmount = 11
             await fundUser({ broker, user: maker, coordinator }, { swc: 20 })
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
         })
 
         contract('test event emission', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, ExecuteSwap events', async () => {
-                const result = await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
+                const result = await executeSwap(atomicBroker, swapParams)
                 assertEventEmission(result.receipt.logs, [
                     {
                         eventType: 'BalanceDecrease',
@@ -178,7 +178,7 @@ contract('Test executeSwap', async (accounts) => {
                     [atomicBroker.address]: { jrc: 999, swc: 11 }
                 })
 
-                await atomicBroker.executeSwap(swapParams.hashedSecret, swapParams.secret)
+                await executeSwap(atomicBroker, swapParams)
 
                 await assertBalances(broker, {
                     [maker]: { jrc: 1, swc: 9 },

@@ -3,7 +3,7 @@ const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const AtomicBroker = artifacts.require('AtomicBroker')
 
-const { fundUser, createSwap, assertSwapParams, getSampleSwapParams,
+const { fundUser, createSwap, assertSwapExists, getSampleSwapParams,
         assertError, assertSwapDoesNotExist, assertTokenBalance,
         assertEventEmission, REASON } = require('../../utils/testUtils')
 
@@ -131,7 +131,7 @@ contract('Test createSwap', async (accounts) => {
 
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
 
             // check that the maker's balance is reduced
             await assertTokenBalance(broker, maker, token.address, 1)
@@ -151,7 +151,7 @@ contract('Test createSwap', async (accounts) => {
             swapParams.feeAsset = secondToken.address
             swapParams.feeAmount = 9
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
 
             // check that the maker's balance is reduced
             await assertTokenBalance(broker, maker, token.address, 50)
@@ -167,7 +167,7 @@ contract('Test createSwap', async (accounts) => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.amount = 0
             await assertError(createSwap, atomicBroker, swapParams)
-            await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            await assertSwapDoesNotExist(atomicBroker, swapParams)
         })
     })
 
@@ -176,7 +176,7 @@ contract('Test createSwap', async (accounts) => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.expiryTime = 0
             await assertError(createSwap, atomicBroker, swapParams)
-            await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            await assertSwapDoesNotExist(atomicBroker, swapParams)
         })
     })
 
@@ -184,7 +184,7 @@ contract('Test createSwap', async (accounts) => {
         it('throws an error', async () => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
 
             // should fail because the hashedSecret is already used
             await fundUser({ broker, user: maker, coordinator }, { jrc: 1000 })
@@ -193,7 +193,7 @@ contract('Test createSwap', async (accounts) => {
             // should succeed because a new hashedSecret is used
             swapParams.hashedSecret = '0x456'
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
         })
     })
 
@@ -202,7 +202,7 @@ contract('Test createSwap', async (accounts) => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             // use the coordinator as the signee
             await assertError(createSwap, atomicBroker, swapParams, undefined, coordinator)
-            await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            await assertSwapDoesNotExist(atomicBroker, swapParams)
         })
     })
 
@@ -211,7 +211,7 @@ contract('Test createSwap', async (accounts) => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.amount = 1001
             await assertError(createSwap, atomicBroker, swapParams)
-            await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            await assertSwapDoesNotExist(atomicBroker, swapParams)
         })
     })
 
@@ -220,7 +220,7 @@ contract('Test createSwap', async (accounts) => {
             const swapParams = await getSampleSwapParams({ maker, taker, token })
             swapParams.feeAmount = 1001
             await assertError(createSwap, atomicBroker, swapParams)
-            await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            await assertSwapDoesNotExist(atomicBroker, swapParams)
         })
     })
 
@@ -233,12 +233,12 @@ contract('Test createSwap', async (accounts) => {
 
             // should fail because feeAmount is too high
             await assertError(createSwap, atomicBroker, swapParams)
-            await assertSwapDoesNotExist(atomicBroker, swapParams.hashedSecret)
+            await assertSwapDoesNotExist(atomicBroker, swapParams)
 
             // should succeed because user has sufficient funds
             swapParams.feeAmount = 10
             await createSwap(atomicBroker, swapParams)
-            await assertSwapParams(atomicBroker, swapParams, swapParams.hashedSecret)
+            await assertSwapExists(atomicBroker, swapParams)
         })
     })
 })
