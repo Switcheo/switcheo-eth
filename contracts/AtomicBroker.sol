@@ -92,8 +92,8 @@ contract AtomicBroker {
     /// If executeSwap is not called, the transfer can be cancelled after
     /// `expiryTime` has passed.
     /// This operation can only be invoked by the coordinator.
-    /// @param _maker The address of the user that is making the swap
-    /// @param _taker The address of the user that is taking the swap
+    /// @param _maker The address of the user making the swap
+    /// @param _taker The address of the user taking the swap
     /// @param _token The address of the token to be transferred
     /// @param _amount The number of tokens to be transferred
     /// @param _hashedSecret The hash of the secret decided on by the maker
@@ -154,6 +154,7 @@ contract AtomicBroker {
             );
         }
 
+        // Lock swap amount into this contract
         broker.spendFrom(
             _maker,
             address(this),
@@ -163,6 +164,7 @@ contract AtomicBroker {
             ReasonSwapHolderReceive
         );
 
+        // Lock fee amount into this contract
         if (_feeAsset != _token)
         {
             broker.spendFrom(
@@ -175,6 +177,7 @@ contract AtomicBroker {
             );
         }
 
+        // Mark swap as active
         swaps[msgHash] = true;
 
         emit CreateSwap(
@@ -189,12 +192,12 @@ contract AtomicBroker {
         );
     }
 
-    /// @notice Executes a swap that has been previously made using `createSwap`.
+    /// @notice Executes a swap that had been previously made using `createSwap`.
     /// @dev Transfers the previously locked asset from createSwap to the swap taker.
     /// The original swap parameters need to be resent as only the hash of these
     /// parameters are stored in `swaps`.
-    /// @param _maker The address of the user that is making the swap
-    /// @param _taker The address of the user that is taking the swap
+    /// @param _maker The address of the user making the swap
+    /// @param _taker The address of the user taking the swap
     /// @param _token The address of the token to be transferred
     /// @param _amount The number of tokens to be transferred
     /// @param _hashedSecret The hash of the secret decided on by the maker
@@ -237,12 +240,15 @@ contract AtomicBroker {
         );
 
         uint256 takeAmount = _amount;
+
         if (_token == _feeAsset) {
             takeAmount -= _feeAmount;
         }
 
+        // Mark swap as inactive
         delete swaps[msgHash];
 
+        // Transfer take amount to taker
         broker.spendFrom(
             address(this),
             _taker,
@@ -252,6 +258,7 @@ contract AtomicBroker {
             ReasonSwapTakerReceive
         );
 
+        // Transfer fee amount to operator
         if (_feeAmount > 0) {
             broker.spendFrom(
                 address(this),
@@ -267,17 +274,17 @@ contract AtomicBroker {
     }
 
 
-    /// @notice Cancels a swap that was previously made using `createSwap`.
+    /// @notice Cancels a swap that had been previously made using `createSwap`.
     /// @dev Cancels the swap with matching msgHash, releasing the locked assets
     /// back to the maker.
     /// The original swap parameters need to be resent as only the hash of these
     /// parameters are stored in `swaps`.
     /// The `_cancelFeeAmount` is deducted from the `_feeAmount` of the original swap.
     /// The remaining fee amount is refunded to the user.
-    /// If the sender is not the coordinator, then the full _feeAmount is deducted.
+    /// If the sender is not the coordinator, then the full `_feeAmount` is deducted.
     /// This gives the coordinator control to incentivise users to complete a swap once initiated.
-    /// @param _maker The address of the user that is making the swap
-    /// @param _taker The address of the user that is taking the swap
+    /// @param _maker The address of the user making the swap
+    /// @param _taker The address of the user taking the swap
     /// @param _token The address of the token to be transferred
     /// @param _amount The number of tokens to be transferred
     /// @param _hashedSecret The hash of the secret decided on by the maker
@@ -321,6 +328,8 @@ contract AtomicBroker {
         );
 
         uint256 cancelFeeAmount = _cancelFeeAmount;
+
+        // Charge the maximum cancelFeeAmount if not invoked by the coordinator
         if (msg.sender != address(broker.coordinator())) {
             cancelFeeAmount = _feeAmount;
         }
@@ -331,12 +340,15 @@ contract AtomicBroker {
         );
 
         uint256 refundAmount = _amount;
+
         if (_token == _feeAsset) {
             refundAmount -= cancelFeeAmount;
         }
 
+        // Mark the swap as inactive
         delete swaps[msgHash];
 
+        // Refund the swap maker
         broker.spendFrom(
             address(this),
             _maker,
@@ -346,7 +358,8 @@ contract AtomicBroker {
             ReasonSwapCancelMakerReceive
         );
 
-        if (_feeAmount > 0) {
+        // Transfer cancel fee to operator
+        if (cancelFeeAmount > 0) {
             broker.spendFrom(
                 address(this),
                 address(broker.operator()),
@@ -357,6 +370,8 @@ contract AtomicBroker {
             );
         }
 
+        // If the fee asset is different from the swap asset
+        // then the remaining fee must be separately refunded to the maker
         uint256 refundFeeAmount = _feeAmount - cancelFeeAmount;
         if (_token != _feeAsset && refundFeeAmount > 0) {
             broker.spendFrom(
