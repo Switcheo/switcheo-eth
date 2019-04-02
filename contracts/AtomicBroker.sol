@@ -147,6 +147,8 @@ contract AtomicBroker {
             "Invalid signature"
         );
 
+        // This is needed because the _feeAmount is deducted from the locked _amount
+        // when the swap is executed
         if (_feeAsset == _token) {
             require(
                 _feeAmount < _amount,
