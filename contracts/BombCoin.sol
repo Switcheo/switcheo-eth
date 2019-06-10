@@ -2,9 +2,40 @@
  *Submitted for verification at Etherscan.io on 2019-02-11
 */
 
-pragma solidity ^0.5.0;
+pragma solidity 0.4.25;
 
-import "openzeppelin-solidity/contracts/math/SafeMath.sol";
+library SafeMathCustom {
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        if (a == 0) {
+            return 0;
+        }
+        uint256 c = a * b;
+        assert(c / a == b);
+        return c;
+    }
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a / b;
+        return c;
+    }
+
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        assert(b <= a);
+        return a - b;
+    }
+
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        assert(c >= a);
+        return c;
+    }
+
+    function ceil(uint256 a, uint256 m) internal pure returns (uint256) {
+        uint256 c = add(a,m);
+        uint256 d = sub(c,1);
+        return mul(div(d,m),m);
+    }
+}
 
 interface IERC20 {
   function totalSupply() external view returns (uint256);
@@ -45,7 +76,7 @@ contract ERC20Detailed is IERC20 {
 
 contract BOMBv3 is ERC20Detailed {
 
-    using SafeMath for uint256;
+    using SafeMathCustom for uint256;
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowed;
 
