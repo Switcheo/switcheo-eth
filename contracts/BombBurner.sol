@@ -75,6 +75,9 @@ contract BombBurner {
             "Invalid approval transaction hash"
         );
 
+        delete preparedBurnAmounts[_depositer];
+        delete preparedBurnHashes[_depositer];
+
         broker.spendFrom(
             _depositer,
             address(this),
