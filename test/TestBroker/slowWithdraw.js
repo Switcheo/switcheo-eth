@@ -28,7 +28,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
             assertEventEmission(r1.logs, [{
                 eventType: 'WithdrawAnnounce',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     token: ETHER_ADDR,
                     amount: '1000000000000000000'
                 }
@@ -40,7 +40,7 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
             assertEventEmission(r2.logs, [{
                 eventType: 'BalanceDecrease',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     token: ETHER_ADDR,
                     amount: '1000000000000000000',
                     reason: REASON.ReasonWithdraw

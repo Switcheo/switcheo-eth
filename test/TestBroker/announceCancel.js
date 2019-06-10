@@ -21,7 +21,7 @@ contract('Test announceCancel', async () => {
 
         await broker.depositEther.sendTransaction({ from: user, value: web3.utils.toWei('1', 'ether') })
         initialEtherBalance = await broker.balances.call(user, ETHER_ADDR)
-        assert.equal(initialEtherBalance, '1000000000000000000')
+        assert.equal(initialEtherBalance.toString(), '1000000000000000000')
 
         sampleOffer = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
         sampleOffer.offerAmount = 10
@@ -36,11 +36,11 @@ contract('Test announceCancel', async () => {
 
     contract('test event emission', async () => {
         it('emits CancelAnnounce event', async () => {
-            const { logs } = await broker.announceCancel(sampleOfferHash, { from: user })
+            const { receipt: { rawLogs: logs } } = await broker.announceCancel(sampleOfferHash, { from: user })
             assertEventEmission(logs, [{
                 eventType: 'CancelAnnounce',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     offerHash: sampleOfferHash
                 }
             }])
@@ -67,7 +67,7 @@ contract('Test announceCancel', async () => {
     contract('when the offer no longer exists', async () => {
         it('throws an error', async () => {
             const { v, r, s } = await signCancel({ offerParams: sampleOffer, feeAsset: ETHER_ADDR, feeAmount: 0 })
-            await broker.cancel.sendTransaction(sampleOfferHash, sampleOffer.offerAmount, '0x0', 0, v, r, s, { from: coordinator })
+            await broker.cancel.sendTransaction(sampleOfferHash, sampleOffer.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
             await assertError(broker.announceCancel.sendTransaction, sampleOfferHash, { from: coordinator })
             const canCancelAt = await broker.announcedCancellations.call(sampleOfferHash)
             assert.equal(canCancelAt.toString(), '0')

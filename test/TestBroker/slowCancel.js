@@ -40,11 +40,11 @@ contract('Test slowCancel', async () => {
         it('emits BalanceIncrease and Cancel events', async () => {
             await broker.announceCancel.sendTransaction(sampleOfferHash, { from: user })
             await increaseEvmTime(announceDelay)
-            const { logs } = await broker.slowCancel(sampleOfferHash)
+            const { receipt: { rawLogs: logs } } = await broker.slowCancel(sampleOfferHash)
             assertEventEmission(logs, [{
                 eventType: 'BalanceIncrease',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     token: ETHER_ADDR,
                     amount: '10',
                     reason: REASON.ReasonCancel
@@ -52,7 +52,7 @@ contract('Test slowCancel', async () => {
             }, {
                 eventType: 'Cancel',
                 args: {
-                    maker: user.toLowerCase(),
+                    maker: user,
                     offerHash: sampleOfferHash
                 }
             }])

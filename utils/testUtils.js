@@ -4,6 +4,7 @@ const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
 const abiDecoder = require('abi-decoder')
+const { BigNumber } = require('bignumber.js')
 
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
@@ -114,15 +115,10 @@ const assertEventEmission = (emittedEvents, expectedEvents) => {
             const actualArg = emittedEvent.args[key]
             const expectedArg = expectedArgs[key]
             if (actualArg === undefined) { throw new Error('value for ' + key + ' is undefined') }
-            assert.equal(actualArg.toString(), expectedArg, 'value for ' + key + ' is ' + expectedArg)
+            assert.equal(actualArg.toString().toLowerCase(), expectedArg.toString().toLowerCase(),
+              'value for ' + key + ' is ' + expectedArg)
         }
     }
-}
-
-// assertEventEmission works for events from a single contract
-// for
-const assertReceiptLogs = (logs, expectedLogs) => {
-
 }
 
 const assertError = async (method, ...args) => {
@@ -133,10 +129,10 @@ const assertError = async (method, ...args) => {
     error = e
   }
   assert.notEqual(error, null, "expected an error but none was caught")
-  if (error.message.indexOf('VM Exception while processing transaction') !== 0) {
-      console.log('error.message', error.message)
+  if (error.message.indexOf('Returned error: VM Exception while processing transaction') < 0) {
+      console.log('Found error with wrong message:', error.message)
   }
-  assert.equal(error.message.indexOf('VM Exception while processing transaction'), 0, 'Throws contract "require" error')
+  assert.equal(error.message.indexOf('Returned error: VM Exception while processing transaction'), 0, 'Expected revert but none was thrown')
 }
 
 const assertRevert = async (promise) => {
@@ -249,7 +245,7 @@ const getSampleOfferParams = (nextNonce, maker, initialEtherBalance) => {
       maker,
       offerAsset: ETHER_ADDR,
       wantAsset: OMG_ADDR,
-      offerAmount: initialEtherBalance.minus(1),
+      offerAmount: new BigNumber(initialEtherBalance).minus(1).toString(),
       wantAmount: 20,
       feeAsset: ETHER_ADDR,
       feeAmount: 0,
@@ -270,29 +266,40 @@ const fetchOffer = async (broker, offerHash) => {
     }
 }
 
-const makeOffer = async (broker, { maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce }, txn, signature) => {
+const makeOffer = async (broker, { maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce }, signature) => {
     if (signature === undefined) {
         signature = await signMakeOffer({ maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce })
     }
     const { v, r, s } = signature
-    await broker.makeOffer.sendTransaction(maker, offerAsset, wantAsset,
-        offerAmount, wantAmount, feeAsset, feeAmount, nonce, v, r, s, txn)
+    await broker.makeOffer(maker, offerAsset, wantAsset,
+        offerAmount, wantAmount, feeAsset, feeAmount, nonce, v, r, s)
 }
 
-const fillOffer = async (broker, { filler, offerHash, amountToTake, feeAsset, feeAmount, nonce }, txn, signature) => {
+const makeOfferFrom = async (broker, { maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce }, from) => {
+    const { v, r, s } = await signMakeOffer({ maker, offerAsset, wantAsset, offerAmount, wantAmount, feeAsset, feeAmount, nonce })
+    await broker.makeOffer(maker, offerAsset, wantAsset,
+        offerAmount, wantAmount, feeAsset, feeAmount, nonce, v, r, s, { from })
+}
+
+const fillOffer = async (broker, { filler, offerHash, amountToTake, feeAsset, feeAmount, nonce }, signature) => {
     if (signature === undefined) {
         signature = await signFillOffer({ filler, offerHash, amountToTake, feeAsset, feeAmount, nonce })
     }
     const { v, r, s } = signature
-    await broker.fillOffer.sendTransaction(filler, offerHash, amountToTake, feeAsset, feeAmount, nonce, v, r, s, txn)
+    await broker.fillOffer(filler, offerHash, amountToTake, feeAsset, feeAmount, nonce, v, r, s)
 }
 
-const fillOffers = async (broker, { filler, offerHashes, amountsToTake, feeAsset, feeAmount, nonce }, txn, signature) => {
+const fillOfferFrom = async (broker, { filler, offerHash, amountToTake, feeAsset, feeAmount, nonce }, from) => {
+    const { v, r, s } = await signFillOffer({ filler, offerHash, amountToTake, feeAsset, feeAmount, nonce })
+    await broker.fillOffer(filler, offerHash, amountToTake, feeAsset, feeAmount, nonce, v, r, s, { from })
+}
+
+const fillOffers = async (broker, { filler, offerHashes, amountsToTake, feeAsset, feeAmount, nonce }, signature) => {
     if (signature === undefined) {
         signature = await signFillOffers({ filler, offerHashes, amountsToTake, feeAsset, feeAmount, nonce })
     }
     const { v, r, s } = signature
-    return await broker.fillOffers(filler, offerHashes, amountsToTake, feeAsset, feeAmount, nonce, v, r, s, txn)
+    return await broker.fillOffers(filler, offerHashes, amountsToTake, feeAsset, feeAmount, nonce, v, r, s)
 }
 
 const signWithdraw = async ({ withdrawer, token, amount, feeAsset, feeAmount, nonce }, signee) => {
@@ -310,12 +317,17 @@ const signWithdraw = async ({ withdrawer, token, amount, feeAsset, feeAmount, no
     return getSignatureComponents(signature)
 }
 
-const withdraw = async (broker, { withdrawer, token, amount, feeAsset, feeAmount, nonce }, txn, signature) => {
+const withdraw = async (broker, { withdrawer, token, amount, feeAsset, feeAmount, nonce }, signature) => {
     if (signature === undefined) {
         signature = await signWithdraw({ withdrawer, token, amount, feeAsset, feeAmount, nonce })
     }
     const { v, r, s } = signature
-    return broker.withdraw(withdrawer, token, amount, feeAsset, feeAmount, nonce, v, r, s, txn)
+    return broker.withdraw(withdrawer, token, amount, feeAsset, feeAmount, nonce, v, r, s)
+}
+
+const withdrawFrom= async (broker, { withdrawer, token, amount, feeAsset, feeAmount, nonce }, from) => {
+    const { v, r, s } = await signWithdraw({ withdrawer, token, amount, feeAsset, feeAmount, nonce })
+    return broker.withdraw(withdrawer, token, amount, feeAsset, feeAmount, nonce, v, r, s, { from })
 }
 
 
@@ -362,18 +374,18 @@ const assertWalletTokenAmount = async (token, user, expectedAmount, message) => 
 const fundUser = async ({ broker, user, coordinator }, { eth, jrc, swc }) => {
     if (swc !== undefined) {
         swCoin = await SWCoin.deployed()
-        await swCoin.mint.sendTransaction(user, swc)
-        await swCoin.approve.sendTransaction(broker.address, swc, { from: user })
-        await broker.depositERC20.sendTransaction(user, swCoin.address, swc, { from: coordinator })
+        await swCoin.mint(user, swc)
+        await swCoin.approve(broker.address, swc, { from: user })
+        await broker.depositERC20(user, swCoin.address, swc, { from: coordinator })
     }
     if (jrc !== undefined) {
         jrCoin = await JRCoin.deployed()
-        await jrCoin.mint.sendTransaction(user, jrc)
-        await jrCoin.approve.sendTransaction(broker.address, jrc, { from: user })
-        await broker.depositERC20.sendTransaction(user, jrCoin.address, jrc, { from: coordinator })
+        await jrCoin.mint(user, jrc)
+        await jrCoin.approve(broker.address, jrc, { from: user })
+        await broker.depositERC20(user, jrCoin.address, jrc, { from: coordinator })
     }
     if (eth !== undefined) {
-        await broker.depositEther.sendTransaction({ from: user, value: eth })
+        await broker.depositEther({ from: user, value: eth })
     }
 }
 
@@ -399,22 +411,27 @@ const signCreateSwap = async ({ maker, taker, token, amount, hashedSecret, expir
     return getSignatureComponents(signature)
 }
 
-const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, txn, signee) => {
+const createSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee) => {
     if (signee === undefined) { signee = maker }
     const signature = await signCreateSwap({ maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount }, signee)
     const { v, r, s } = signature
     return await atomicBroker.createSwap(maker, taker, token, amount, hashedSecret,
-        expiryTime, feeAsset, feeAmount, v, r, s, txn)
+        expiryTime, feeAsset, feeAmount, v, r, s)
 }
 
-const executeSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, secret }, txn) => {
+const executeSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, secret }) => {
     return await atomicBroker.executeSwap(maker, taker, token, amount, hashedSecret,
-        expiryTime, feeAsset, feeAmount, secret, txn)
+        expiryTime, feeAsset, feeAmount, secret)
 }
 
-const cancelSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, cancelFeeAmount }, txn) => {
+const cancelSwap = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, cancelFeeAmount }) => {
     return await atomicBroker.cancelSwap(maker, taker, token, amount, hashedSecret,
-        expiryTime, feeAsset, feeAmount, cancelFeeAmount, txn)
+        expiryTime, feeAsset, feeAmount, cancelFeeAmount)
+}
+
+const cancelSwapFrom = async (atomicBroker, { maker, taker, token, amount, hashedSecret, expiryTime, feeAsset, feeAmount, cancelFeeAmount }, from) => {
+  return await atomicBroker.cancelSwap(maker, taker, token, amount, hashedSecret,
+      expiryTime, feeAsset, feeAmount, cancelFeeAmount, { from })
 }
 
 const fetchSwapExistance = async (atomicBroker, swapParams) => {
@@ -450,11 +467,13 @@ const assertBalances = async (broker, userBalances) => {
     }
 }
 
+const hashSecret = (secret) => '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
+
 const getSampleSwapParams = async ({ maker, taker, token, secret }) => {
     if (secret === undefined) {
         secret = 'password123'
     }
-    const hashedSecret = '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
+    const hashedSecret = hashSecret(secret)
     const evmTime = await getEvmTime()
 
     const expiryDelay = 600
@@ -463,7 +482,7 @@ const getSampleSwapParams = async ({ maker, taker, token, secret }) => {
         taker,
         token: token.address,
         amount: 999,
-        secret,
+        secret: web3.utils.utf8ToHex(secret),
         hashedSecret,
         expiryTime: evmTime + expiryDelay,
         expiryDelay,
@@ -491,22 +510,10 @@ const assertSwapDoesNotExist = async (atomicBroker, swapParams) => {
     assert.equal(swapExists, false)
 }
 
-const increaseEvmTime = async (time) => (
-    new Promise((resolve, reject) => {
-        web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_increaseTime", params: [time], id: new Date().getTime() },
-            (err, _result) => {
-                if (err) return reject(err)
-
-                web3.currentProvider.sendAsync({ jsonrpc: "2.0", method: "evm_mine", params: [], id: new Date().getTime() },
-                    (err, result) => {
-                        if (err) reject(err)
-                        else resolve(result)
-                    }
-                )
-            }
-        )
-    })
-)
+const increaseEvmTime = async (time) => {
+  await web3.currentProvider.send('evm_increaseTime', [time])
+  await web3.currentProvider.send('evm_mine', [])
+}
 
 const getEvmTime = async () => {
     const blockNumber = await web3.eth.getBlockNumber()
@@ -531,11 +538,14 @@ module.exports = {
     emptyOfferParams,
     getSampleOfferParams,
     makeOffer,
+    makeOfferFrom,
     fillOffer,
+    fillOfferFrom,
     signFillOffers,
     fillOffers,
     signWithdraw,
     withdraw,
+    withdrawFrom,
     assertOfferDoesNotExist,
     assertOfferParams,
     assertTokenBalance,
@@ -548,7 +558,9 @@ module.exports = {
     createSwap,
     executeSwap,
     cancelSwap,
+    cancelSwapFrom,
     fetchSwapExistance,
+    hashSecret,
     getSampleSwapParams,
     assertAddress,
     assertAmount,

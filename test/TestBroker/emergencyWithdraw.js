@@ -25,11 +25,11 @@ contract('Test emergencyWithdraw', async () => {
     contract('test event emission', async () => {
         it('emits BalanceDecrease event', async () => {
             await broker.setState.sendTransaction(1)
-            const { logs } = await broker.emergencyWithdraw(user, ETHER_ADDR, initialEtherBalance)
+            const { receipt: { rawLogs: logs } } = await broker.emergencyWithdraw(user, ETHER_ADDR, initialEtherBalance)
             assertEventEmission(logs, [{
                 eventType: 'BalanceDecrease',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     token: ETHER_ADDR,
                     amount: '1000000000000000000',
                     reason: REASON.ReasonWithdraw

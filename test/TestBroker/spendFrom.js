@@ -80,7 +80,7 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
             })
 
             it('emits an approval event', async function () {
-                const { logs } = await this.broker.approveSpender(spender, { from })
+                const { receipt: { rawLogs: logs } } = await this.broker.approveSpender(spender, { from })
                 assertEventEmission(logs, [{
                     eventType: 'SpenderApprove',
                     args: {
@@ -119,7 +119,7 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
                 })
 
                 it('emits a rescind event', async function () {
-                    const { logs } = await this.broker.rescindApproval(spender, { from })
+                    const { receipt: { rawLogs: logs } } = await this.broker.rescindApproval(spender, { from })
                     assertEventEmission(logs, [{
                         eventType: 'SpenderRescind',
                         args: {
@@ -185,7 +185,7 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
                         });
 
                         it('emits increase and decrease balance event', async function () {
-                            const { logs } = await this.broker.spendFrom(from, to, amount, ETHER_ADDR, decreaseReason, increaseReason, { from: spender });
+                            const { receipt: { rawLogs: logs } } = await this.broker.spendFrom(from, to, amount, ETHER_ADDR, decreaseReason, increaseReason, { from: spender });
                             const expectedEvents = [
                                 {
                                     eventType: 'BalanceDecrease',

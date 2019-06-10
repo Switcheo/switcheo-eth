@@ -35,7 +35,7 @@ contract('Test executeSwap', async (accounts) => {
         contract('test event emission', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, ExecuteSwap events', async () => {
                 const result = await executeSwap(atomicBroker, swapParams)
-                assertEventEmission(result.receipt.logs, [
+                assertEventEmission(result.receipt.rawLogs, [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
@@ -144,7 +144,7 @@ contract('Test executeSwap', async (accounts) => {
         contract('test event emission', async () => {
             it('emits BalanceDecrease, BalanceIncrease, BalanceDecrease, BalanceIncrease, ExecuteSwap events', async () => {
                 const result = await executeSwap(atomicBroker, swapParams)
-                assertEventEmission(result.receipt.logs, [
+                assertEventEmission(result.receipt.rawLogs, [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
