@@ -49,8 +49,13 @@ contract BombBurner {
         onlyCoordinator
     {
         require(
-            bomb.allowance(_depositer, address(broker)) == _depositAmount,
+            _depositAmount > 0,
             "Invalid deposit amount"
+        );
+
+        require(
+            bomb.allowance(_depositer, address(broker)) == _depositAmount,
+            "Invalid approval amount"
         );
 
         preparedBurnAmounts[_depositer] = bomb.findOnePercent(_depositAmount);
@@ -66,13 +71,18 @@ contract BombBurner {
         onlyCoordinator
     {
         require(
-            preparedBurnAmounts[_depositer] == _burnAmount,
+            _burnAmount == preparedBurnAmounts[_depositer],
             "Invalid burn amount"
         );
 
         require(
-            preparedBurnHashes[_depositer] == _approvalTransactionHash,
+            _approvalTransactionHash == preparedBurnHashes[_depositer],
             "Invalid approval transaction hash"
+        );
+
+        require(
+            bomb.allowance(_depositer, address(broker)) == 0,
+            "Invalid approved amount"
         );
 
         delete preparedBurnAmounts[_depositer];
