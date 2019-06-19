@@ -20,9 +20,6 @@ contract NukeBurner {
     mapping(address => uint256) public preparedBurnAmounts;
     mapping(address => bytes32) public preparedBurnHashes;
 
-    // Emitted when ether is sent
-    event SendEther(bytes32 indexed id, address indexed receiver, uint256 amount);
-
     /// @notice Initializes the AirDropper contract
     /// @dev The broker is initialized to the Switcheo Broker
     constructor(address brokerAddress, address tokenAddress)
