@@ -1,16 +1,16 @@
 pragma solidity 0.4.25;
 
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "./BombCoin.sol";
+import "openzeppelin-solidity/contracts/token/ERC20/StandardToken.sol";
 import "./Broker.sol";
 
-/// @title The BombBurner contract to burn 1% of tokens on approve+transfer
+/// @title The NukeBurner contract to burn 2% of tokens on approve+transfer
 /// @author Switcheo Network
-contract BombBurner {
+contract NukeBurner {
     using SafeMath for uint256;
 
     // The Switcheo Broker contract
-    BOMBv3 public bomb;
+    StandardToken public nuke;
     Broker public broker;
 
     uint8 constant ReasonDepositBurnGive = 0x40;
@@ -25,11 +25,11 @@ contract BombBurner {
 
     /// @notice Initializes the AirDropper contract
     /// @dev The broker is initialized to the Switcheo Broker
-    constructor(address brokerAddress, address bombAddress)
+    constructor(address brokerAddress, address tokenAddress)
         public
     {
         broker = Broker(brokerAddress);
-        bomb = BOMBv3(bombAddress);
+        nuke = StandardToken(tokenAddress);
     }
 
     modifier onlyCoordinator() {
@@ -54,11 +54,11 @@ contract BombBurner {
         );
 
         require(
-            bomb.allowance(_depositer, address(broker)) == _depositAmount,
+            nuke.allowance(_depositer, address(broker)) == _depositAmount,
             "Invalid approval amount"
         );
 
-        preparedBurnAmounts[_depositer] = bomb.findOnePercent(_depositAmount);
+        preparedBurnAmounts[_depositer] = _depositAmount.div(50);
         preparedBurnHashes[_depositer] = _approvalTransactionHash;
     }
 
@@ -81,7 +81,7 @@ contract BombBurner {
         );
 
         require(
-            bomb.allowance(_depositer, address(broker)) == 0,
+            nuke.allowance(_depositer, address(broker)) == 0,
             "Invalid approved amount"
         );
 
@@ -92,7 +92,7 @@ contract BombBurner {
             _depositer,
             address(this),
             _burnAmount,
-            address(bomb),
+            address(nuke),
             ReasonDepositBurnGive,
             ReasonDepositBurnReceive
         );
