@@ -20,7 +20,7 @@ contract NukeBurner {
     mapping(address => uint256) public preparedBurnAmounts;
     mapping(address => bytes32) public preparedBurnHashes;
 
-    event PrepareBurn(address indexed depositer, uint256 depositAmount, bytes32 indexed approvalTransactionHash);
+    event PrepareBurn(address indexed depositer, uint256 depositAmount, bytes32 indexed approvalTransactionHash, uint256 burnAmount);
     event ExecuteBurn(address indexed depositer, uint256 burnAmount, bytes32 indexed approvalTransactionHash);
 
     /// @notice Initializes the AirDropper contract
@@ -61,7 +61,7 @@ contract NukeBurner {
         preparedBurnAmounts[_depositer] = _depositAmount.div(50);
         preparedBurnHashes[_depositer] = _approvalTransactionHash;
 
-        emit PrepareBurn(_depositer, _depositAmount, _approvalTransactionHash);
+        emit PrepareBurn(_depositer, _depositAmount, _approvalTransactionHash, preparedBurnAmounts[_depositer]);
     }
 
     function executeBurn(
