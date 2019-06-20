@@ -20,6 +20,9 @@ contract NukeBurner {
     mapping(address => uint256) public preparedBurnAmounts;
     mapping(address => bytes32) public preparedBurnHashes;
 
+    event PrepareBurn(address indexed depositer, uint256 depositAmount, bytes32 indexed approvalTransactionHash);
+    event ExecuteBurn(address indexed depositer, uint256 burnAmount, bytes32 indexed approvalTransactionHash);
+
     /// @notice Initializes the AirDropper contract
     /// @dev The broker is initialized to the Switcheo Broker
     constructor(address brokerAddress, address tokenAddress)
@@ -57,6 +60,8 @@ contract NukeBurner {
 
         preparedBurnAmounts[_depositer] = _depositAmount.div(50);
         preparedBurnHashes[_depositer] = _approvalTransactionHash;
+
+        emit PrepareBurn(_depositer, _depositAmount, _approvalTransactionHash);
     }
 
     function executeBurn(
@@ -93,5 +98,7 @@ contract NukeBurner {
             ReasonDepositBurnGive,
             ReasonDepositBurnReceive
         );
+
+        emit ExecuteBurn(_depositer, _burnAmount, _approvalTransactionHash);
     }
 }
