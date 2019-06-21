@@ -20,11 +20,10 @@ contract BombBurner {
     mapping(address => uint256) public preparedBurnAmounts;
     mapping(address => bytes32) public preparedBurnHashes;
 
-    // Emitted when ether is sent
-    event SendEther(bytes32 indexed id, address indexed receiver, uint256 amount);
+    event PrepareBurn(address indexed depositer, uint256 depositAmount, bytes32 indexed approvalTransactionHash, uint256 burnAmount);
+    event ExecuteBurn(address indexed depositer, uint256 burnAmount, bytes32 indexed approvalTransactionHash);
 
-    /// @notice Initializes the AirDropper contract
-    /// @dev The broker is initialized to the Switcheo Broker
+    /// @notice Initializes the BombBurner contract
     constructor(address brokerAddress, address bombAddress)
         public
     {
@@ -60,6 +59,8 @@ contract BombBurner {
 
         preparedBurnAmounts[_depositer] = bomb.findOnePercent(_depositAmount);
         preparedBurnHashes[_depositer] = _approvalTransactionHash;
+
+        emit PrepareBurn(_depositer, _depositAmount, _approvalTransactionHash, preparedBurnAmounts[_depositer]);
     }
 
     function executeBurn(
@@ -96,5 +97,7 @@ contract BombBurner {
             ReasonDepositBurnGive,
             ReasonDepositBurnReceive
         );
+
+        emit ExecuteBurn(_depositer, _burnAmount, _approvalTransactionHash);
     }
 }

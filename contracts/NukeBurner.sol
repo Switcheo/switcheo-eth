@@ -23,8 +23,7 @@ contract NukeBurner {
     event PrepareBurn(address indexed depositer, uint256 depositAmount, bytes32 indexed approvalTransactionHash, uint256 burnAmount);
     event ExecuteBurn(address indexed depositer, uint256 burnAmount, bytes32 indexed approvalTransactionHash);
 
-    /// @notice Initializes the AirDropper contract
-    /// @dev The broker is initialized to the Switcheo Broker
+    /// @notice Initializes the NukeBurner contract
     constructor(address brokerAddress, address tokenAddress)
         public
     {
