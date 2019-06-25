@@ -32,11 +32,11 @@ contract('Test emergencyCancel', async () => {
             await broker.setState.sendTransaction(1)
 
             const offerHash = getOfferHash(params)
-            const { logs } = await broker.emergencyCancel(offerHash, params.offerAmount, { from: coordinator })
-            assertEventEmission(logs, [{
+            const result = await broker.emergencyCancel(offerHash, params.offerAmount, { from: coordinator })
+            assertEventEmission(result, [{
                 eventType: 'BalanceIncrease',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     token: ETHER_ADDR,
                     amount: '999999999999999999',
                     reason: REASON.ReasonCancel
@@ -44,7 +44,7 @@ contract('Test emergencyCancel', async () => {
             }, {
                 eventType: 'Cancel',
                 args: {
-                    maker: user.toLowerCase(),
+                    maker: user,
                     offerHash
                 }
             }])

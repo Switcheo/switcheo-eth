@@ -5,7 +5,7 @@ const web3 = new Web3(Web3.givenProvider)
 const { BigNumber } = require('bignumber.js')
 
 const { ETHER_ADDR, REASON, nonceGenerator, assertError, assertEventEmission,
-    assertWalletEtherAmount, assertEtherBalance, withdraw, signWithdraw } = require('../../utils/testUtils')
+    assertWalletEtherAmount, assertEtherBalance, withdraw, withdrawFrom, signWithdraw } = require('../../utils/testUtils')
 
 contract('Test withdraw', async () => {
     let broker, token, coordinator, user, accounts
@@ -42,11 +42,11 @@ contract('Test withdraw', async () => {
                     feeAmount: '0',
                     nonce: nextNonce()
                 }
-                const { logs } = await withdraw(broker, params)
-                assertEventEmission(logs, [{
+                const result = await withdraw(broker, params)
+                assertEventEmission(result, [{
                     eventType: 'BalanceDecrease',
                     args: {
-                        user: user.toLowerCase(),
+                        user: user,
                         token: ETHER_ADDR,
                         amount: '1000000000000000000',
                         reason: REASON.ReasonWithdraw
@@ -66,12 +66,12 @@ contract('Test withdraw', async () => {
                     feeAmount: '7',
                     nonce: nextNonce()
                 }
-                const { logs } = await withdraw(broker, params)
+                const result = await withdraw(broker, params)
                 const expectedEvents = [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: ETHER_ADDR,
                             amount: '1000000000000000000',
                             reason: REASON.ReasonWithdraw
@@ -80,14 +80,14 @@ contract('Test withdraw', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: ETHER_ADDR,
                             amount: '7',
                             reason: REASON.ReasonWithdrawFeeReceive
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -101,12 +101,12 @@ contract('Test withdraw', async () => {
                     feeAmount: '20',
                     nonce: nextNonce()
                 }
-                const { logs } = await withdraw(broker, params)
+                const result = await withdraw(broker, params)
                 const expectedEvents = [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: ETHER_ADDR,
                             amount: '1000000000000000000',
                             reason: REASON.ReasonWithdraw
@@ -115,7 +115,7 @@ contract('Test withdraw', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: token.address,
                             amount: '20',
                             reason: REASON.ReasonWithdrawFeeGive
@@ -124,14 +124,14 @@ contract('Test withdraw', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: token.address,
                             amount: '20',
                             reason: REASON.ReasonWithdrawFeeReceive
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
     })
@@ -393,7 +393,7 @@ contract('Test withdraw', async () => {
                 nonce: nextNonce()
             }
             const signature = await signWithdraw(params, coordinator)
-            await assertError(withdraw, broker, params, undefined, signature)
+            await assertError(withdraw, broker, params, signature)
             await assertEtherBalance(broker, user, '900000000000000000', 'User\'s balance did not change')
             await assertWalletEtherAmount(user, remainingWalletEther.toString(), 'User\'s personal wallet amount did not change')
             await assertWalletEtherAmount(broker.address, '900000000000000000', 'Broker\'s balance did not change')
@@ -474,7 +474,7 @@ contract('Test withdraw', async () => {
                 feeAmount: '0',
                 nonce: nextNonce()
             }
-            await assertError(withdraw, broker, params, { from: user })
+            await assertError(withdrawFrom, broker, params, user)
             await assertEtherBalance(broker, user, '1000000000000000000', 'User\'s balance did not change')
             const updatedWalletEther = new BigNumber(await web3.eth.getBalance(user))
             assert(updatedWalletEther.isLessThan(initialWalletEther), 'User\'s personal wallet amount did not increase')

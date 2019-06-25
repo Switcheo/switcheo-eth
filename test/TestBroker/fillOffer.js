@@ -5,9 +5,9 @@ const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 const { BigNumber } = require('bignumber.js')
 
-const { ETHER_ADDR, REASON, nonceGenerator, getSampleOfferParams, emptyOfferParams, getValidFillParams,
+const { ETHER_ADDR, REASON, nonceGenerator, getSampleOfferParams, emptyOfferParams,
     assertError, assertOfferParams, assertEtherBalance, assertTokenBalance, assertEventEmission,
-    fetchOffer, makeOffer, getOfferHash, fillOffer, signFillOffer, withdraw  } = require('../../utils/testUtils')
+    fetchOffer, makeOffer, getOfferHash, fillOffer, fillOfferFrom, signFillOffer, withdraw  } = require('../../utils/testUtils')
 
 contract('Test fillOffer', async () => {
     let broker, token, filler, user, accounts, coordinator, operator, sampleOffer, sampleOfferHash
@@ -212,7 +212,7 @@ contract('Test fillOffer', async () => {
                 // amountToTakeAfterFees: 3 ETH - 1 ETH = 2 ETH
                 const signature = await signFillOffer(fillParams)
                 const { v, r, s } = signature
-                const { logs } = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
+                const result = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
                     fillParams.feeAsset, fillParams.feeAmount, fillParams.nonce, v, r, s)
                 const offer = await fetchOffer(broker, fillParams.offerHash)
 
@@ -225,7 +225,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: token.address,
                             amount: '6',
                             reason: REASON.ReasonFillerGive
@@ -234,7 +234,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: token.address,
                             amount: '6',
                             reason: REASON.ReasonMakerReceive
@@ -243,7 +243,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: ETHER_ADDR,
                             amount: '2',
                             reason: REASON.ReasonFillerReceive
@@ -252,7 +252,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: ETHER_ADDR,
                             amount: '1',
                             reason: REASON.ReasonFillerFeeReceive
@@ -261,15 +261,15 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'Fill',
                         args: {
-                            filler: filler.toLowerCase(),
+                            filler: filler,
                             offerHash: sampleOfferHash,
                             amountFilled: '6',
                             amountTaken: '3',
-                            maker: user.toLowerCase()
+                            maker: user
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -292,7 +292,7 @@ contract('Test fillOffer', async () => {
                 // amountToTakeAfterFees: 3 ETH
                 const signature = await signFillOffer(fillParams)
                 const { v, r, s } = signature
-                const { logs } = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
+                const result = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
                     fillParams.feeAsset, fillParams.feeAmount, fillParams.nonce, v, r, s)
                 const offer = await fetchOffer(broker, fillParams.offerHash)
 
@@ -305,7 +305,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: token.address,
                             amount: '6',
                             reason: REASON.ReasonFillerGive
@@ -314,7 +314,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: token.address,
                             amount: '6',
                             reason: REASON.ReasonMakerReceive
@@ -323,7 +323,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: ETHER_ADDR,
                             amount: '3',
                             reason: REASON.ReasonFillerReceive
@@ -332,7 +332,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: token.address,
                             amount: '18',
                             reason: REASON.ReasonFillerFeeGive
@@ -341,7 +341,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: token.address,
                             amount: '18',
                             reason: REASON.ReasonFillerFeeReceive
@@ -350,15 +350,15 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'Fill',
                         args: {
-                            filler: filler.toLowerCase(),
+                            filler: filler,
                             offerHash: sampleOfferHash,
                             amountFilled: '6',
                             amountTaken: '3',
-                            maker: user.toLowerCase()
+                            maker: user
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -380,7 +380,7 @@ contract('Test fillOffer', async () => {
                 // amountToTakeAfterFees: 3 ETH
                 const signature = await signFillOffer(fillParams)
                 const { v, r, s } = signature
-                const { logs } = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
+                const result = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
                     fillParams.feeAsset, fillParams.feeAmount, fillParams.nonce, v, r, s)
                 const offer = await fetchOffer(broker, fillParams.offerHash)
 
@@ -393,7 +393,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: token.address,
                             amount: '6',
                             reason: REASON.ReasonFillerGive
@@ -402,7 +402,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: token.address,
                             amount: '6',
                             reason: REASON.ReasonMakerReceive
@@ -411,7 +411,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: ETHER_ADDR,
                             amount: '3',
                             reason: REASON.ReasonFillerReceive
@@ -420,7 +420,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: filler.toLowerCase(),
+                            user: filler,
                             token: swToken.address,
                             amount: '27',
                             reason: REASON.ReasonFillerFeeGive
@@ -429,7 +429,7 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: swToken.address,
                             amount: '27',
                             reason: REASON.ReasonFillerFeeReceive
@@ -438,15 +438,15 @@ contract('Test fillOffer', async () => {
                     {
                         eventType: 'Fill',
                         args: {
-                            filler: filler.toLowerCase(),
+                            filler: filler,
                             offerHash: sampleOfferHash,
                             amountFilled: '6',
                             amountTaken: '3',
-                            maker: user.toLowerCase()
+                            maker: user
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
     })
@@ -778,7 +778,7 @@ contract('Test fillOffer', async () => {
     contract('when the sender is not the coordinator', async () => {
         it('throws an error', async () => {
             const fillParams = getValidFillParams()
-            await assertError(fillOffer, broker, fillParams, { from: user })
+            await assertError(fillOfferFrom, broker, fillParams, user)
             await assertInitialBalanceDistribution()
             await assertNoAssetsWereLost()
         })
@@ -788,7 +788,7 @@ contract('Test fillOffer', async () => {
         it('throws an error', async () => {
             const fillParams = getValidFillParams()
             const signature = await signFillOffer(fillParams, coordinator)
-            await assertError(fillOffer, broker, fillParams, { from: coordinator }, signature)
+            await assertError(fillOffer, broker, fillParams, signature)
             await assertInitialBalanceDistribution()
             await assertNoAssetsWereLost()
         })

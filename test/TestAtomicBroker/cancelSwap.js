@@ -3,7 +3,7 @@ const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const AtomicBroker = artifacts.require('AtomicBroker')
 
-const { fundUser, createSwap, cancelSwap, executeSwap, assertSwapExists, getSampleSwapParams,
+const { fundUser, createSwap, cancelSwap, cancelSwapFrom, executeSwap, assertSwapExists, getSampleSwapParams,
         assertError, assertEventEmission, assertBalances, REASON,
         increaseEvmTime, assertSwapDoesNotExist } = require('../../utils/testUtils')
 
@@ -39,7 +39,7 @@ contract('Test cancelSwap', async (accounts) => {
                 await increaseEvmTime(700)
                 const result = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 })
 
-                assertEventEmission(result.receipt.logs, [
+                assertEventEmission(result, [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
@@ -115,7 +115,7 @@ contract('Test cancelSwap', async (accounts) => {
                     [operator]: { jrc: 0, swc: 0 },
                     [atomicBroker.address]: { jrc: 999, swc: 0 }
                 })
-                await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 }, { from: bob })
+                await cancelSwapFrom(atomicBroker, { ...swapParams, cancelFeeAmount: 2 }, bob)
                 await assertBalances(broker, {
                     [maker]: { jrc: 990, swc: 0 },
                     [taker]: { jrc: 0, swc: 0 },
@@ -204,7 +204,7 @@ contract('Test cancelSwap', async (accounts) => {
                 await increaseEvmTime(700)
                 const result = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 5 })
 
-                assertEventEmission(result.receipt.logs, [
+                assertEventEmission(result, [
                     {
                         eventType: 'BalanceDecrease',
                         args: {

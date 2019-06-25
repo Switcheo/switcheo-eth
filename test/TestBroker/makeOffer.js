@@ -2,10 +2,11 @@ const Broker = artifacts.require('Broker')
 const JRCoin = artifacts.require('JRCoin')
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
+const { BigNumber } = require('bignumber.js')
 
 const { ETHER_ADDR, REASON, nonceGenerator, getSampleOfferParams, assertError,
     assertOfferParams, assertTokenBalance, assertEtherBalance, assertEventEmission,
-    assertOfferDoesNotExist, makeOffer, signMakeOffer, signCancel, getOfferHash } = require('../../utils/testUtils')
+    assertOfferDoesNotExist, makeOffer, signMakeOffer, makeOfferFrom, signCancel, getOfferHash } = require('../../utils/testUtils')
 
 contract('Test makeOffer', async () => {
     let broker, token, user, initialEtherBalance, accounts, coordinator
@@ -35,12 +36,12 @@ contract('Test makeOffer', async () => {
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
-                const { logs } = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
+                const result = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
                     params.offerAmount, params.wantAmount, params.feeAsset, params.feeAmount, params.nonce, v, r, s)
-                assertEventEmission(logs, [{
+                assertEventEmission(result, [{
                     eventType: 'BalanceDecrease',
                     args: {
-                        user: user.toLowerCase(),
+                        user: user,
                         token: ETHER_ADDR,
                         amount: '999999999999999999',
                         reason: REASON.ReasonMakerGive
@@ -48,7 +49,7 @@ contract('Test makeOffer', async () => {
                 }, {
                     eventType: 'Make',
                     args: {
-                        maker: user.toLowerCase(),
+                        maker: user,
                         offerHash: offerHash
                     }
                 }])
@@ -65,13 +66,13 @@ contract('Test makeOffer', async () => {
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
-                const { logs } = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
+                const result = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
                     params.offerAmount, params.wantAmount, params.feeAsset, params.feeAmount, params.nonce, v, r, s)
                 const expectedEvents = [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: ETHER_ADDR,
                             amount: '120',
                             reason: REASON.ReasonMakerGive
@@ -80,7 +81,7 @@ contract('Test makeOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: ETHER_ADDR,
                             amount: '20',
                             reason: REASON.ReasonMakerFeeReceive
@@ -89,12 +90,12 @@ contract('Test makeOffer', async () => {
                     {
                         eventType: 'Make',
                         args: {
-                            maker: user.toLowerCase(),
+                            maker: user,
                             offerHash: offerHash
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -108,13 +109,13 @@ contract('Test makeOffer', async () => {
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
-                const { logs } = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
+                const result = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
                     params.offerAmount, params.wantAmount, params.feeAsset, params.feeAmount, params.nonce, v, r, s)
                 const expectedEvents = [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: ETHER_ADDR,
                             amount: '100',
                             reason: REASON.ReasonMakerGive
@@ -123,7 +124,7 @@ contract('Test makeOffer', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: token.address,
                             amount: '7',
                             reason: REASON.ReasonMakerFeeGive
@@ -132,7 +133,7 @@ contract('Test makeOffer', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: token.address,
                             amount: '7',
                             reason: REASON.ReasonMakerFeeReceive
@@ -141,12 +142,12 @@ contract('Test makeOffer', async () => {
                     {
                         eventType: 'Make',
                         args: {
-                            maker: user.toLowerCase(),
+                            maker: user,
                             offerHash: offerHash
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
 
         })
@@ -162,7 +163,7 @@ contract('Test makeOffer', async () => {
                 params.feeAsset = ETHER_ADDR
                 params.feeAmount = 3
 
-                await makeOffer(broker, params, { from: coordinator })
+                await makeOffer(broker, params)
 
                 await assertOfferParams(broker, params)
                 await assertEtherBalance(broker, user, '999999999999999990')
@@ -176,7 +177,7 @@ contract('Test makeOffer', async () => {
                     params.feeAsset = ETHER_ADDR
                     params.feeAmount = 3
 
-                    await assertError(makeOffer, broker, params, { from: user })
+                    await assertError(makeOffer, broker, params)
 
                     await assertOfferDoesNotExist(broker, params)
                     await assertEtherBalance(broker, user, initialEtherBalance)
@@ -193,7 +194,7 @@ contract('Test makeOffer', async () => {
                 params.feeAsset = token.address
                 params.feeAmount = 21
 
-                await makeOffer(broker, params, { from: coordinator })
+                await makeOffer(broker, params)
 
                 await assertOfferParams(broker, params)
                 await assertEtherBalance(broker, user, '1')
@@ -209,7 +210,7 @@ contract('Test makeOffer', async () => {
                     params.feeAsset = token.address
                     params.feeAmount = 101
 
-                    await assertError(makeOffer, broker, params, { from: user })
+                    await assertError(makeOffer, broker, params)
 
                     await assertOfferDoesNotExist(broker, params)
                     await assertEtherBalance(broker, user, initialEtherBalance)
@@ -221,7 +222,7 @@ contract('Test makeOffer', async () => {
     contract('when valid values are used', async () => {
         it('does not throw an error', async () => {
             const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
-            await makeOffer(broker, params, { from: coordinator })
+            await makeOffer(broker, params)
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
         })
@@ -230,7 +231,7 @@ contract('Test makeOffer', async () => {
     contract('when the sender is not the coordinator', async () => {
         it('throws an error', async () => {
             const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
-            await assertError(makeOffer, broker, params, { from: user })
+            await assertError(makeOfferFrom, broker, params, user)
             await assertOfferDoesNotExist(broker, params)
             await assertEtherBalance(broker, user, initialEtherBalance)
         })
@@ -240,7 +241,7 @@ contract('Test makeOffer', async () => {
         it('throws an error', async () => {
             const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             const signature = await signMakeOffer(params, coordinator)
-            await assertError(makeOffer, broker, params, { from: coordinator }, signature)
+            await assertError(makeOffer, broker, params, signature)
             await assertOfferDoesNotExist(broker, params)
             await assertEtherBalance(broker, user, initialEtherBalance)
         })
@@ -269,7 +270,7 @@ contract('Test makeOffer', async () => {
     contract('when the offerAmount is more than the maker\'s balance', async () => {
         it('throws an error', async () => {
             const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
-            params.offerAmount = initialEtherBalance.plus(1)
+            params.offerAmount = new BigNumber(initialEtherBalance).plus(1).toString()
             await assertError(makeOffer, broker, params)
             await assertOfferDoesNotExist(broker, params)
             await assertEtherBalance(broker, user, initialEtherBalance)
@@ -325,7 +326,7 @@ contract('Test makeOffer', async () => {
 
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-            await broker.cancel.sendTransaction(offerHash, params.offerAmount, '0x0', 0, v, r, s, { from: coordinator })
+            await broker.cancel.sendTransaction(offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
             await assertEtherBalance(broker, user, '1000000000000000000')
 
             await assertError(makeOffer, broker, params)

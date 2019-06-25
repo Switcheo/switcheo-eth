@@ -37,11 +37,11 @@ contract('Test cancel', async () => {
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-                const { logs } = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
-                assertEventEmission(logs, [{
+                const result = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
+                assertEventEmission(result, [{
                     eventType: 'BalanceIncrease',
                     args: {
-                        user: user.toLowerCase(),
+                        user: user,
                         token: ETHER_ADDR,
                         amount: '999999999999999999',
                         reason: REASON.ReasonCancel
@@ -49,7 +49,7 @@ contract('Test cancel', async () => {
                 }, {
                     eventType: 'Cancel',
                     args: {
-                        maker: user.toLowerCase(),
+                        maker: user,
                         offerHash
                     }
                 }])
@@ -62,12 +62,12 @@ contract('Test cancel', async () => {
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 2 })
-                const { logs } = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 2, v, r, s, { from: coordinator })
+                const result = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 2, v, r, s, { from: coordinator })
                 const expectedEvents = [
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: ETHER_ADDR,
                             amount: '999999999999999997',
                             reason: REASON.ReasonCancel
@@ -76,7 +76,7 @@ contract('Test cancel', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: ETHER_ADDR,
                             amount: '2',
                             reason: REASON.ReasonCancelFeeReceive
@@ -85,12 +85,12 @@ contract('Test cancel', async () => {
                     {
                         eventType: 'Cancel',
                         args: {
-                            maker: user.toLowerCase(),
+                            maker: user,
                             offerHash
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -100,12 +100,12 @@ contract('Test cancel', async () => {
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: token.address, feeAmount: 7 })
-                const { logs } = await broker.cancel(offerHash, params.offerAmount, token.address, 7, v, r, s, { from: coordinator })
+                const result = await broker.cancel(offerHash, params.offerAmount, token.address, 7, v, r, s, { from: coordinator })
                 const expectedEvents = [
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: ETHER_ADDR,
                             amount: '999999999999999999',
                             reason: REASON.ReasonCancel
@@ -114,7 +114,7 @@ contract('Test cancel', async () => {
                     {
                         eventType: 'BalanceDecrease',
                         args: {
-                            user: user.toLowerCase(),
+                            user: user,
                             token: token.address,
                             amount: '7',
                             reason: REASON.ReasonCancelFeeGive
@@ -123,7 +123,7 @@ contract('Test cancel', async () => {
                     {
                         eventType: 'BalanceIncrease',
                         args: {
-                            user: operator.toLowerCase(),
+                            user: operator,
                             token: token.address,
                             amount: '7',
                             reason: REASON.ReasonCancelFeeReceive
@@ -132,12 +132,12 @@ contract('Test cancel', async () => {
                     {
                         eventType: 'Cancel',
                         args: {
-                            maker: user.toLowerCase(),
+                            maker: user,
                             offerHash
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
     })
@@ -234,7 +234,7 @@ contract('Test cancel', async () => {
 
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-            await broker.cancel.sendTransaction(offerHash, params.offerAmount, '0x0', 0, v, r, s, { from: coordinator })
+            await broker.cancel.sendTransaction(offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
 
             await assertOfferParams(broker, emptyOfferParams, offerHash)
             await assertEtherBalance(broker, user, '1000000000000000000')
@@ -283,7 +283,7 @@ contract('Test cancel', async () => {
             assert.equal(o1.availableAmount.toString(), '7')
 
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-            await broker.cancel.sendTransaction(offerHash, '7', '0x0', 0, v, r, s, { from: coordinator })
+            await broker.cancel.sendTransaction(offerHash, '7', ETHER_ADDR, 0, v, r, s, { from: coordinator })
 
             await assertEtherBalance(broker, user, '999999999999999997')
             await assertTokenBalance(broker, user, token.address, '56')
@@ -308,7 +308,7 @@ contract('Test cancel', async () => {
 
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-            await assertError(broker.cancel.sendTransaction, offerHash, '3', '0x0', 0, v, r, s, { from: coordinator })
+            await assertError(broker.cancel.sendTransaction, offerHash, '3', ETHER_ADDR, 0, v, r, s, { from: coordinator })
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
         })
@@ -323,7 +323,7 @@ contract('Test cancel', async () => {
 
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 }, coordinator)
-            await assertError(broker.cancel.sendTransaction, offerHash, params.offerAmount, '0x0', 0, v, r, s, { from: coordinator })
+            await assertError(broker.cancel.sendTransaction, offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
         })
@@ -338,7 +338,7 @@ contract('Test cancel', async () => {
 
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-            await assertError(broker.cancel.sendTransaction, offerHash, params.offerAmount, '0x0', 0, v, r, s, { from: user })
+            await assertError(broker.cancel.sendTransaction, offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: user })
             await assertOfferParams(broker, params)
             await assertEtherBalance(broker, user, '1')
         })
@@ -349,7 +349,7 @@ contract('Test cancel', async () => {
             const params = await getSampleOfferParams(nextNonce, user, initialEtherBalance)
             const offerHash = getOfferHash(params)
             const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 }, coordinator)
-            await assertError(broker.cancel.sendTransaction, offerHash, '0', '0x0', 0, v, r, s)
+            await assertError(broker.cancel.sendTransaction, offerHash, '0', ETHER_ADDR, 0, v, r, s)
         })
     })
 })

@@ -15,11 +15,11 @@ contract('Test depositEther', async () => {
     contract('test event emission', async () => {
         it('emits BalanceIncrease event', async () => {
             const amount = web3.utils.toWei('1', 'ether')
-            const { logs } = await broker.depositEther({ from: user, value: amount })
-            assertEventEmission(logs, [{
+            const result = await broker.depositEther({ from: user, value: amount })
+            assertEventEmission(result, [{
                 eventType: 'BalanceIncrease',
                 args: {
-                    user: user.toLowerCase(),
+                    user: user,
                     token: ETHER_ADDR,
                     amount: '1000000000000000000',
                     reason: REASON.ReasonDeposit

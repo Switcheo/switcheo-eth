@@ -45,6 +45,11 @@ module.exports = {
             enabled: true,
             runs: 200
         }
+    },
+    compilers: {
+        solc: {
+            version: "0.4.25",
+        },
     }
     // See <http://truffleframework.com/docs/advanced/configuration>
     // to customize your Truffle configuration!

@@ -80,8 +80,8 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
             })
 
             it('emits an approval event', async function () {
-                const { logs } = await this.broker.approveSpender(spender, { from })
-                assertEventEmission(logs, [{
+                const result = await this.broker.approveSpender(spender, { from })
+                assertEventEmission(result, [{
                     eventType: 'SpenderApprove',
                     args: {
                         user: from,
@@ -119,8 +119,8 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
                 })
 
                 it('emits a rescind event', async function () {
-                    const { logs } = await this.broker.rescindApproval(spender, { from })
-                    assertEventEmission(logs, [{
+                    const result = await this.broker.rescindApproval(spender, { from })
+                    assertEventEmission(result, [{
                         eventType: 'SpenderRescind',
                         args: {
                             user: from,
@@ -185,7 +185,7 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
                         });
 
                         it('emits increase and decrease balance event', async function () {
-                            const { logs } = await this.broker.spendFrom(from, to, amount, ETHER_ADDR, decreaseReason, increaseReason, { from: spender });
+                            const result = await this.broker.spendFrom(from, to, amount, ETHER_ADDR, decreaseReason, increaseReason, { from: spender });
                             const expectedEvents = [
                                 {
                                     eventType: 'BalanceDecrease',
@@ -206,7 +206,7 @@ contract('Broker', function ([coordinator, notOwner, spender, from, to]) {
                                     }
                                 },
                             ]
-                            assertEventEmission(logs, expectedEvents)
+                            assertEventEmission(result, expectedEvents)
                         });
                     });
 
