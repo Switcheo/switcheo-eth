@@ -42,8 +42,8 @@ contract('Test withdraw', async () => {
                     feeAmount: '0',
                     nonce: nextNonce()
                 }
-                const { receipt: { rawLogs: logs } } = await withdraw(broker, params)
-                assertEventEmission(logs, [{
+                const result = await withdraw(broker, params)
+                assertEventEmission(result, [{
                     eventType: 'BalanceDecrease',
                     args: {
                         user: user,
@@ -66,7 +66,7 @@ contract('Test withdraw', async () => {
                     feeAmount: '7',
                     nonce: nextNonce()
                 }
-                const { receipt: { rawLogs: logs } } = await withdraw(broker, params)
+                const result = await withdraw(broker, params)
                 const expectedEvents = [
                     {
                         eventType: 'BalanceDecrease',
@@ -87,7 +87,7 @@ contract('Test withdraw', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -101,7 +101,7 @@ contract('Test withdraw', async () => {
                     feeAmount: '20',
                     nonce: nextNonce()
                 }
-                const { receipt: { rawLogs: logs } } = await withdraw(broker, params)
+                const result = await withdraw(broker, params)
                 const expectedEvents = [
                     {
                         eventType: 'BalanceDecrease',
@@ -131,7 +131,7 @@ contract('Test withdraw', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
     })

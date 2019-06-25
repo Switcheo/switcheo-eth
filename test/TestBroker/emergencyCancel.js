@@ -32,8 +32,8 @@ contract('Test emergencyCancel', async () => {
             await broker.setState.sendTransaction(1)
 
             const offerHash = getOfferHash(params)
-            const { receipt: { rawLogs: logs } } = await broker.emergencyCancel(offerHash, params.offerAmount, { from: coordinator })
-            assertEventEmission(logs, [{
+            const result = await broker.emergencyCancel(offerHash, params.offerAmount, { from: coordinator })
+            assertEventEmission(result, [{
                 eventType: 'BalanceIncrease',
                 args: {
                     user: user,

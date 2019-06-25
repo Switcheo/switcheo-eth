@@ -36,9 +36,9 @@ contract('Test makeOffer', async () => {
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
-                const { receipt: { rawLogs: logs } } = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
+                const result = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
                     params.offerAmount, params.wantAmount, params.feeAsset, params.feeAmount, params.nonce, v, r, s)
-                assertEventEmission(logs, [{
+                assertEventEmission(result, [{
                     eventType: 'BalanceDecrease',
                     args: {
                         user: user,
@@ -66,7 +66,7 @@ contract('Test makeOffer', async () => {
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
-                const { receipt: { rawLogs: logs } } = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
+                const result = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
                     params.offerAmount, params.wantAmount, params.feeAsset, params.feeAmount, params.nonce, v, r, s)
                 const expectedEvents = [
                     {
@@ -95,7 +95,7 @@ contract('Test makeOffer', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -109,7 +109,7 @@ contract('Test makeOffer', async () => {
                 const offerHash = getOfferHash(params)
                 const signature = await signMakeOffer(params)
                 const { v, r, s } = signature
-                const { receipt: { rawLogs: logs } } = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
+                const result = await broker.makeOffer(params.maker, params.offerAsset, params.wantAsset,
                     params.offerAmount, params.wantAmount, params.feeAsset, params.feeAmount, params.nonce, v, r, s)
                 const expectedEvents = [
                     {
@@ -147,7 +147,7 @@ contract('Test makeOffer', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
 
         })

@@ -37,8 +37,8 @@ contract('Test cancel', async () => {
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 0 })
-                const { receipt: { rawLogs: logs } } = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
-                assertEventEmission(logs, [{
+                const result = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 0, v, r, s, { from: coordinator })
+                assertEventEmission(result, [{
                     eventType: 'BalanceIncrease',
                     args: {
                         user: user,
@@ -62,7 +62,7 @@ contract('Test cancel', async () => {
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: ETHER_ADDR, feeAmount: 2 })
-                const { receipt: { rawLogs: logs } } = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 2, v, r, s, { from: coordinator })
+                const result = await broker.cancel(offerHash, params.offerAmount, ETHER_ADDR, 2, v, r, s, { from: coordinator })
                 const expectedEvents = [
                     {
                         eventType: 'BalanceIncrease',
@@ -90,7 +90,7 @@ contract('Test cancel', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -100,7 +100,7 @@ contract('Test cancel', async () => {
                 await makeOffer(broker, params)
                 const offerHash = getOfferHash(params)
                 const { v, r, s } = await signCancel({ offerParams: params, feeAsset: token.address, feeAmount: 7 })
-                const { receipt: { rawLogs: logs } } = await broker.cancel(offerHash, params.offerAmount, token.address, 7, v, r, s, { from: coordinator })
+                const result = await broker.cancel(offerHash, params.offerAmount, token.address, 7, v, r, s, { from: coordinator })
                 const expectedEvents = [
                     {
                         eventType: 'BalanceIncrease',
@@ -137,7 +137,7 @@ contract('Test cancel', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
     })

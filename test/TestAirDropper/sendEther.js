@@ -21,7 +21,7 @@ contract('Test createSwap', async (accounts) => {
     contract('test event emission', async () => {
         it('emits a SendEther event', async () => {
             const result = await airDropper.sendEther(id, receiver, 1000)
-            assertEventEmission(result.receipt.rawLogs, [
+            assertEventEmission(result, [
                 {
                     eventType: 'SendEther',
                     args: {

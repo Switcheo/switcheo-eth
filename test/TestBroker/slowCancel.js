@@ -40,8 +40,8 @@ contract('Test slowCancel', async () => {
         it('emits BalanceIncrease and Cancel events', async () => {
             await broker.announceCancel.sendTransaction(sampleOfferHash, { from: user })
             await increaseEvmTime(announceDelay)
-            const { receipt: { rawLogs: logs } } = await broker.slowCancel(sampleOfferHash)
-            assertEventEmission(logs, [{
+            const result = await broker.slowCancel(sampleOfferHash)
+            assertEventEmission(result, [{
                 eventType: 'BalanceIncrease',
                 args: {
                     user: user,

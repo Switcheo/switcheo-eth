@@ -36,8 +36,8 @@ contract('Test announceCancel', async () => {
 
     contract('test event emission', async () => {
         it('emits CancelAnnounce event', async () => {
-            const { receipt: { rawLogs: logs } } = await broker.announceCancel(sampleOfferHash, { from: user })
-            assertEventEmission(logs, [{
+            const result = await broker.announceCancel(sampleOfferHash, { from: user })
+            assertEventEmission(result, [{
                 eventType: 'CancelAnnounce',
                 args: {
                     user: user,

@@ -27,8 +27,9 @@ contract('Test depositERC20', async () => {
     contract('test event emission', async () => {
         it('emits BalanceIncrease event', async () => {
             await token.approve.sendTransaction(broker.address, 42, { from: user })
-            const receipt = await broker.depositERC20(user, token.address, 20, { from: coordinator })
-            assertEventEmission(receipt.logs, [{
+            const result = await broker.depositERC20(user, token.address, 20, { from: coordinator })
+            result.receipt.logs = result.logs
+            assertEventEmission(result, [{
                 eventType: 'BalanceIncrease',
                 args: {
                     user: user,

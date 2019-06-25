@@ -24,8 +24,8 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
         })
 
         it('emits WithdrawAnnounce and BalanceDecrease event', async () => {
-            const r1 = await broker.announceWithdraw(ETHER_ADDR, ethersDeposited, { from: user })
-            assertEventEmission(r1.logs, [{
+            const result1 = await broker.announceWithdraw(ETHER_ADDR, ethersDeposited, { from: user })
+            assertEventEmission(result1, [{
                 eventType: 'WithdrawAnnounce',
                 args: {
                     user: user,
@@ -36,8 +36,8 @@ contract('Test announceWithdraw + slowWithdraw', async () => {
 
             await increaseEvmTime(announceDelay)
 
-            const r2 = await broker.slowWithdraw(user, ETHER_ADDR, ethersDeposited, { from: user })
-            assertEventEmission(r2.logs, [{
+            const result2 = await broker.slowWithdraw(user, ETHER_ADDR, ethersDeposited, { from: user })
+            assertEventEmission(result2, [{
                 eventType: 'BalanceDecrease',
                 args: {
                     user: user,

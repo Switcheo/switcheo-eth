@@ -39,7 +39,7 @@ contract('Test cancelSwap', async (accounts) => {
                 await increaseEvmTime(700)
                 const result = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 2 })
 
-                assertEventEmission(result.receipt.rawLogs, [
+                assertEventEmission(result, [
                     {
                         eventType: 'BalanceDecrease',
                         args: {
@@ -204,7 +204,7 @@ contract('Test cancelSwap', async (accounts) => {
                 await increaseEvmTime(700)
                 const result = await cancelSwap(atomicBroker, { ...swapParams, cancelFeeAmount: 5 })
 
-                assertEventEmission(result.receipt.rawLogs, [
+                assertEventEmission(result, [
                     {
                         eventType: 'BalanceDecrease',
                         args: {

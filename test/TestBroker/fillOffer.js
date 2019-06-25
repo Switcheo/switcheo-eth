@@ -212,7 +212,7 @@ contract('Test fillOffer', async () => {
                 // amountToTakeAfterFees: 3 ETH - 1 ETH = 2 ETH
                 const signature = await signFillOffer(fillParams)
                 const { v, r, s } = signature
-                const { receipt: { rawLogs: logs } } = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
+                const result = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
                     fillParams.feeAsset, fillParams.feeAmount, fillParams.nonce, v, r, s)
                 const offer = await fetchOffer(broker, fillParams.offerHash)
 
@@ -269,7 +269,7 @@ contract('Test fillOffer', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -292,7 +292,7 @@ contract('Test fillOffer', async () => {
                 // amountToTakeAfterFees: 3 ETH
                 const signature = await signFillOffer(fillParams)
                 const { v, r, s } = signature
-                const { receipt: { rawLogs: logs } } = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
+                const result = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
                     fillParams.feeAsset, fillParams.feeAmount, fillParams.nonce, v, r, s)
                 const offer = await fetchOffer(broker, fillParams.offerHash)
 
@@ -358,7 +358,7 @@ contract('Test fillOffer', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
 
@@ -380,7 +380,7 @@ contract('Test fillOffer', async () => {
                 // amountToTakeAfterFees: 3 ETH
                 const signature = await signFillOffer(fillParams)
                 const { v, r, s } = signature
-                const { receipt: { rawLogs: logs } } = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
+                const result = await broker.fillOffer(fillParams.filler, fillParams.offerHash, fillParams.amountToTake,
                     fillParams.feeAsset, fillParams.feeAmount, fillParams.nonce, v, r, s)
                 const offer = await fetchOffer(broker, fillParams.offerHash)
 
@@ -446,7 +446,7 @@ contract('Test fillOffer', async () => {
                         }
                     }
                 ]
-                assertEventEmission(logs, expectedEvents)
+                assertEventEmission(result, expectedEvents)
             })
         })
     })

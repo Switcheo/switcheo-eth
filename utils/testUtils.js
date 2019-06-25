@@ -94,7 +94,11 @@ const decodeReceiptLogs = (receiptLogs) => {
     return decodedLogs
 }
 
-const assertEventEmission = (emittedEvents, expectedEvents) => {
+const assertEventEmission = (result, expectedEvents) => {
+    let emittedEvents
+    if (result.receipt.logs) { emittedEvents = result.receipt.logs }
+    if (result.receipt.rawLogs) { emittedEvents = result.receipt.rawLogs }
+
     if (expectedEvents.length === 0) {
         throw new Error('expectedEvents is empty')
     }
@@ -132,7 +136,7 @@ const assertError = async (method, ...args) => {
   if (error.message.indexOf('Returned error: VM Exception while processing transaction') < 0) {
       console.log('Found error with wrong message:', error.message)
   }
-  assert.equal(error.message.indexOf('Returned error: VM Exception while processing transaction'), 0, 'Expected revert but none was thrown')
+  assert.equal(error.message.indexOf('VM Exception while processing transaction'), 0, 'Expected revert but none was thrown')
 }
 
 const assertRevert = async (promise) => {

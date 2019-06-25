@@ -38,8 +38,8 @@ contract('Test fastCancel', async () => {
     contract('test event emission', async () => {
         it('emits BalanceIncrease and Cancel events', async () => {
             await broker.announceCancel.sendTransaction(sampleOfferHash, { from: user })
-            const { receipt: { rawLogs: logs } } = await broker.fastCancel(sampleOfferHash, sampleOffer.offerAmount)
-            assertEventEmission(logs, [{
+            const result = await broker.fastCancel(sampleOfferHash, sampleOffer.offerAmount)
+            assertEventEmission(result, [{
                 eventType: 'BalanceIncrease',
                 args: {
                     user: user,
