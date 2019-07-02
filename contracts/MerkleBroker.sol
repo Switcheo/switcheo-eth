@@ -13,14 +13,11 @@ contract MerkleBroker {
     constructor()
         public
     {
+        root = 0xf36f7832f885a8ec6a05b41cc48042ca29fa8e6b8ca37224864b5b6031ced4cd;
     }
 
     function testHash(bytes32[] _path) external {
-        bytes32 result = _path[0];
-
-        for (uint32 i = 1; i < _path.length; i++) {
-            result = keccak256(abi.encodePacked(result, _path[i]));
-        }
+        root = keccak256(abi.encodePacked(_path));
 
         emit TestHash();
     }
