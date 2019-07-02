@@ -7,20 +7,30 @@ contract MerkleBroker {
 
     bytes32 public root;
     uint256 public leafCount;
-    address public prefix;
+
+    event TestHash();
 
     constructor()
         public
     {
-        prefix = address(this);
+    }
+
+    function testHash(bytes32[] _path) external {
+        bytes32 result = _path[0];
+
+        for (uint32 i = 1; i < _path.length; i++) {
+            result = keccak256(abi.encodePacked(result, _path[i]));
+        }
+
+        emit TestHash();
     }
 
     function deposit(
         address _user,
         address _asset_id,
         uint256 _amount,
-        uint256 _position,
-        bytes32[] _path
+        uint256 _position
+        /* bytes32[] _path */
     )
         external
     {
@@ -30,7 +40,7 @@ contract MerkleBroker {
         if (leafCount == 0) {
             root = _hashBalance(_user, _asset_id, _amount);
             leafCount = 1;
-            return
+            return;
         }
 
         require(
@@ -49,14 +59,14 @@ contract MerkleBroker {
     function _hashBalance(
         address _user,
         address _asset_id,
-        uint256 _amount,
+        uint256 _amount
     )
         private
-        pure
+        view
         returns (bytes32)
     {
         return keccak256(abi.encodePacked(
-            prefix,
+            address(this),
             "balance",
             _user,
             _asset_id,
