@@ -84,7 +84,7 @@ contract MerkleBroker {
 
         emit BalanceDecrease(_users[1], _assets[1], fillAmount);
         emit BalanceIncrease(_users[0], _assets[1], fillAmount);
-        emit BalanceDecrease(_users[1], _assets[1], _amounts[2]);
+        emit BalanceIncrease(_users[1], _assets[0], _amounts[2]);
     }
 }
         /* address[] calldata _users, // _users[0]: maker, _users[1]: taker
