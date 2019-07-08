@@ -32,59 +32,117 @@ contract MerkleBroker {
         address[] calldata _users, // _users[0]: maker, _users[1]: taker
         address[] calldata _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset
         uint256[] calldata _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount
-        uint64[] calldata _nonces // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+        uint64[] calldata _nonces, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+        uint8[] calldata _v,
+        bytes32[] calldata _r,
+        bytes32[] calldata _s
     )
         external
     {
-        bytes32 offerHash = keccak256(abi.encodePacked(
-            "makeOffer",
-            _users[0], // maker
-            _assets[0], // offerAsset
-            _assets[1], // wantAsset
-            _amounts[0], // offerAmount
-            _amounts[1], // wantAmount
-            _nonces[0] // offerNonce
-        ));
+        bytes32 offerHash = _makeOffer(_users, _assets, _amounts, _nonces[0], _v[0], _r[0], _s[0]);
 
-        bytes32 fillHash = keccak256(abi.encodePacked(
-            "fillOffer",
-            _users[1], // taker
-            offerHash, // offerHash
-            _amounts[2], // takeAmount
-            _nonces[1] // fillNonce
-        ));
+        // taker, offerHash, takeAmount, fillNonce
+        _validateFill(_users[1], offerHash, _amounts[2], _nonces[1], _v[1], _r[1], _s[1]);
 
-        // require fillHash to be unused
-        require(usedHashes[fillHash] == false, "Hash already used")
-        usedHashes[fillHash] = true
+        _fill(_users, _assets, _amounts);
+    }
 
-        uint256 availableAmount = usedHashes[offerHash] ? offers[offerHash] : _amounts[0]
-
-        // make offer by deducting offer amount from user
-        if (usedHashes[offerHash] == false) {
-            balances[_users[0]][_assets[0]] = balances[_users[0]][_assets[0]].sub(_amounts[0]);
-            usedHashes[offerHash] = true;
-        }
-
+    function _fill(
+        address[] memory _users, // _users[0]: maker, _users[1]: taker
+        address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset
+        uint256[] memory _amounts // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount
+    )
+        private
+    {
         // fillAmount / takeAmount = wantAmount / offerAmount
         // fillAmount = takeAmount * wantAmount / offerAmount
         uint256 fillAmount = (_amounts[2].mul(_amounts[1])).div(_amounts[0]);
-
-        // deduct fillAmount from taker
-        balances[_users[1]][_assets[1]] = balances[_users[1]][_assets[1]].sub(fillAmount);
-
-        // credit maker for fillAmount
-        balances[_users[0]][_assets[1]] = balances[_users[0]][_assets[1]].add(fillAmount);
-
-        // reduce available offer amount
-        offers[offerHash] = availableAmount.sub(_amounts[2]);
-
-        // credit taker for takeAmount
-        balances[_users[1]][_assets[0]] = balances[_users[1]][_assets[0]].add(_amounts[2]);
+        _decreaseBalance(_users[1], _assets[1], fillAmount);
+        _increaseBalance(_users[0], _assets[1], fillAmount);
+        _increaseBalance(_users[1], _assets[0], _amounts[2]);
 
         emit BalanceDecrease(_users[1], _assets[1], fillAmount);
         emit BalanceIncrease(_users[0], _assets[1], fillAmount);
         emit BalanceIncrease(_users[1], _assets[0], _amounts[2]);
+    }
+
+    function _makeOffer(
+        address[] memory _users, // _users[0]: maker, _users[1]: taker
+        address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset
+        uint256[] memory _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount
+        uint64 _offerNonce, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s
+    )
+        private
+        returns (bytes32)
+    {
+        bytes32 offerHash = keccak256(abi.encodePacked(
+            "makeOffer",
+            _users[0],
+            _assets[0],
+            _assets[1],
+            _amounts[0],
+            _amounts[1],
+            _offerNonce
+        ));
+
+        require(_recoverAddress(offerHash, _v, _r, _s) == _users[0], 'Invalid signature');
+
+        offers[offerHash] = usedHashes[offerHash] ? offers[offerHash].sub(_amounts[2]) : _amounts[0];
+
+        // make offer by deducting offer amount from user
+        if (usedHashes[offerHash] == false) {
+            _decreaseBalance(_users[0], _assets[0], _amounts[0]);
+            usedHashes[offerHash] = true;
+            emit BalanceDecrease(_users[0], _assets[0], _amounts[0]);
+        }
+
+        return offerHash;
+    }
+
+    function _decreaseBalance(address _user, address _asset, uint256 _amount) private {
+        balances[_user][_asset] = balances[_user][_asset].sub(_amount);
+    }
+
+    function _increaseBalance(address _user, address _asset, uint256 _amount) private {
+        balances[_user][_asset] = balances[_user][_asset].add(_amount);
+    }
+
+    function _validateFill(
+        address _taker,
+        bytes32 _offerHash,
+        uint256 _takeAmount,
+        uint64 _fillNonce,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s
+    )
+        private
+    {
+        bytes32 fillHash = keccak256(abi.encodePacked(
+            "fillOffer",
+            _taker,
+            _offerHash,
+            _takeAmount,
+            _fillNonce
+        ));
+
+        require(_recoverAddress(fillHash, _v, _r, _s) == _taker, 'Invalid signature');
+
+        // require fillHash to be unused
+        require(usedHashes[fillHash] == false, "Hash already used");
+        usedHashes[fillHash] = true;
+    }
+
+    function _recoverAddress(bytes32 _hash, uint8 _v, bytes32 _r, bytes32 _s)
+        private
+        pure
+        returns (address)
+    {
+        bytes32 prefixedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
+        return ecrecover(prefixedHash, _v, _r, _s);
     }
 }
         /* address[] calldata _users, // _users[0]: maker, _users[1]: taker
