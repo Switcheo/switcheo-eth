@@ -1,8 +1,8 @@
 /**
- *Submitted for verification at Etherscan.io on 2019-06-05
+ *Submitted for verification at Etherscan.io on 2019-02-11
 */
 
-pragma solidity ^0.4.25;
+pragma solidity 0.5.0;
 
 interface IERC20 {
   function totalSupply() external view returns (uint256);
@@ -51,45 +51,40 @@ library SafeMath {
 
 contract ERC20Detailed is IERC20 {
 
-  uint8 private _Tokendecimals;
-  string private _Tokenname;
-  string private _Tokensymbol;
+  string private _name;
+  string private _symbol;
+  uint8 private _decimals;
 
   constructor(string memory name, string memory symbol, uint8 decimals) public {
-
-   _Tokendecimals = decimals;
-    _Tokenname = name;
-    _Tokensymbol = symbol;
-
+    _name = name;
+    _symbol = symbol;
+    _decimals = decimals;
   }
 
   function name() public view returns(string memory) {
-    return _Tokenname;
+    return _name;
   }
 
   function symbol() public view returns(string memory) {
-    return _Tokensymbol;
+    return _symbol;
   }
 
   function decimals() public view returns(uint8) {
-    return _Tokendecimals;
+    return _decimals;
   }
 }
 
-/**end here**/
-
-contract HalfLife is ERC20Detailed {
+contract BOMBv3 is ERC20Detailed {
 
   using SafeMath for uint256;
-  mapping (address => uint256) private _HalflifeTokenBalances;
+  mapping (address => uint256) private _balances;
   mapping (address => mapping (address => uint256)) private _allowed;
-  string constant tokenName = "HalfLife";
-  string constant tokenSymbol = "NUKE";
-  uint8  constant tokenDecimals = 18;
-  uint256 _totalSupply = 1000000000000000000000000;
 
-
-
+  string constant tokenName = "BOMB";
+  string constant tokenSymbol = "BOMB";
+  uint8  constant tokenDecimals = 0;
+  uint256 _totalSupply = 1000000;
+  uint256 public basePercent = 100;
 
   constructor() public payable ERC20Detailed(tokenName, tokenSymbol, tokenDecimals) {
     _mint(msg.sender, _totalSupply);
@@ -100,29 +95,33 @@ contract HalfLife is ERC20Detailed {
   }
 
   function balanceOf(address owner) public view returns (uint256) {
-    return _HalflifeTokenBalances[owner];
+    return _balances[owner];
   }
 
   function allowance(address owner, address spender) public view returns (uint256) {
     return _allowed[owner][spender];
   }
 
-
+  function findOnePercent(uint256 value) public view returns (uint256)  {
+    uint256 roundValue = value.ceil(basePercent);
+    uint256 onePercent = roundValue.mul(basePercent).div(10000);
+    return onePercent;
+  }
 
   function transfer(address to, uint256 value) public returns (bool) {
-    require(value <= _HalflifeTokenBalances[msg.sender]);
+    require(value <= _balances[msg.sender]);
     require(to != address(0));
 
-    uint256 HalflifeTokenDecay = value.div(50);
-    uint256 tokensToTransfer = value.sub(HalflifeTokenDecay);
+    uint256 tokensToBurn = findOnePercent(value);
+    uint256 tokensToTransfer = value.sub(tokensToBurn);
 
-    _HalflifeTokenBalances[msg.sender] = _HalflifeTokenBalances[msg.sender].sub(value);
-    _HalflifeTokenBalances[to] = _HalflifeTokenBalances[to].add(tokensToTransfer);
+    _balances[msg.sender] = _balances[msg.sender].sub(value);
+    _balances[to] = _balances[to].add(tokensToTransfer);
 
-    _totalSupply = _totalSupply.sub(HalflifeTokenDecay);
+    _totalSupply = _totalSupply.sub(tokensToBurn);
 
     emit Transfer(msg.sender, to, tokensToTransfer);
-    emit Transfer(msg.sender, address(0), HalflifeTokenDecay);
+    emit Transfer(msg.sender, address(0), tokensToBurn);
     return true;
   }
 
@@ -140,22 +139,22 @@ contract HalfLife is ERC20Detailed {
   }
 
   function transferFrom(address from, address to, uint256 value) public returns (bool) {
-    require(value <= _HalflifeTokenBalances[from]);
+    require(value <= _balances[from]);
     require(value <= _allowed[from][msg.sender]);
     require(to != address(0));
 
-    _HalflifeTokenBalances[from] = _HalflifeTokenBalances[from].sub(value);
+    _balances[from] = _balances[from].sub(value);
 
-    uint256 HalflifeTokenDecay = value.div(50);
-    uint256 tokensToTransfer = value.sub(HalflifeTokenDecay);
+    uint256 tokensToBurn = findOnePercent(value);
+    uint256 tokensToTransfer = value.sub(tokensToBurn);
 
-    _HalflifeTokenBalances[to] = _HalflifeTokenBalances[to].add(tokensToTransfer);
-    _totalSupply = _totalSupply.sub(HalflifeTokenDecay);
+    _balances[to] = _balances[to].add(tokensToTransfer);
+    _totalSupply = _totalSupply.sub(tokensToBurn);
 
     _allowed[from][msg.sender] = _allowed[from][msg.sender].sub(value);
 
     emit Transfer(from, to, tokensToTransfer);
-    emit Transfer(from, address(0), HalflifeTokenDecay);
+    emit Transfer(from, address(0), tokensToBurn);
 
     return true;
   }
@@ -176,7 +175,7 @@ contract HalfLife is ERC20Detailed {
 
   function _mint(address account, uint256 amount) internal {
     require(amount != 0);
-    _HalflifeTokenBalances[account] = _HalflifeTokenBalances[account].add(amount);
+    _balances[account] = _balances[account].add(amount);
     emit Transfer(address(0), account, amount);
   }
 
@@ -186,9 +185,9 @@ contract HalfLife is ERC20Detailed {
 
   function _burn(address account, uint256 amount) internal {
     require(amount != 0);
-    require(amount <= _HalflifeTokenBalances[account]);
+    require(amount <= _balances[account]);
     _totalSupply = _totalSupply.sub(amount);
-    _HalflifeTokenBalances[account] = _HalflifeTokenBalances[account].sub(amount);
+    _balances[account] = _balances[account].sub(amount);
     emit Transfer(account, address(0), amount);
   }
 
