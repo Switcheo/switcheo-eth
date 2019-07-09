@@ -44,6 +44,8 @@ async function trade (merkleBroker, { users, assets, amounts, nonces }) {
         { type: 'address', value: users[1] },
         { type: 'bytes32', value: offerHash },
         { type: 'uint256', value: amounts[2] },
+        { type: 'address', value: assets[2] },
+        { type: 'uint256', value: amounts[3] },
         { type: 'uint64', value: nonces[1] }
     )
 
@@ -64,9 +66,10 @@ contract('Example', async (accounts) => {
     let merkleBroker
     const t1 = '0xb1ccdb544f603af631525ec406245909ad6e1b60'
     const t2 = '0x931d387731bbbc988b312206c74f77d004d6b84b'
+    const coordinator = accounts[0]
     const maker = accounts[1]
     const taker = accounts[2]
-    const userMap = { maker, taker }
+    const userMap = { maker, taker, coordinator }
     const assetMap = { t1, t2 }
 
     beforeEach(async () => {
@@ -76,17 +79,18 @@ contract('Example', async (accounts) => {
     contract('trade', async () => {
         it('performs a trade', async () => {
             await merkleBroker.deposit(maker, t1, 100) // 46005 for gas use
-            await merkleBroker.deposit(taker, t2, 5)
+            await merkleBroker.deposit(taker, t2, 10)
+            await merkleBroker.deposit(coordinator, t1, 1)
             await printBalances(merkleBroker, userMap, assetMap)
 
             const users = [maker, taker]
-            const assets = [t1, t2]
-            const amounts = [100, 50, 10]
+            const assets = [t1, t2, t1]
+            const amounts = [100, 50, 10, 2]
             const nonces = [67, 89]
-            const result = await trade(merkleBroker, { users, assets, amounts, nonces }) // 125192
 
+            // 187178 gas, if coordinator already has asset then 172178 gas
+            const result = await trade(merkleBroker, { users, assets, amounts, nonces })
             await printBalances(merkleBroker, userMap, assetMap)
-
             console.log('gas used', result.receipt.gasUsed)
         })
     })
