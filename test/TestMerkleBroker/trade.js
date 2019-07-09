@@ -92,8 +92,19 @@ contract('Example', async (accounts) => {
 
             // 187178 gas: upper limit
             // 172152 gas: if coordinator already has fee asset
-            // 144038 gas: with used nonces optimization
+            // *144038 gas*: with used nonces optimization
             // 114038 gas: if maker already has offer.wantAsset and taker already has offer.offerAsset
+            // 91178 gas: if there are no balance changes
+            // 80368 gas: if there is no nonce storage
+            //
+            // 22860 gas to 52860 gas: balance storage costs
+            // 52860 gas: 2 * 20000 + 3 * 5000 (2 new balances and 3 balance changes, can be 4 balance changes if fill.feeAsset != offer.offerAsset)
+            // 10810 gas: nonce storage cost
+            // 21000 gas: base gas cost
+            // 59368: computation costs
+            //
+            // 91178: with balance storage optimization and without computation optimization
+            // 84670: without balance storage optimization and with computation optimization
             const result = await trade(merkleBroker, { users, assets, amounts, nonces })
             await printBalances(merkleBroker, userMap, assetMap)
             console.log('gas used', result.receipt.gasUsed)
