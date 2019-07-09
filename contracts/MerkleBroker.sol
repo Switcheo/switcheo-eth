@@ -26,23 +26,38 @@ contract MerkleBroker {
         _decreaseBalance(_user, _asset, _amount);
     }
 
-    function trade(
-        address[] calldata _users, // _users[0]: maker, _users[1]: taker
-        address[] calldata _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset, _assets[2]: feeAsset
-        uint256[] calldata _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount, _amounts[3]: feeAmount
-        uint256[] calldata _nonces, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+    function batchTrade(
+        address[] calldata _addresses, // _addresses[0]: maker, _addresses[1]: taker, _addresses[2]: offerAsset, _addresses[3]: wantAsset, _addresses[4]: feeAsset
+        uint256[] calldata _values, // _values[0]: offerAmount, _values[1]: wantAmount, _values[2]: takeAmount, _values[3]: feeAmount, _values[4]: offerNonce, _values[5]: fillNonce
         uint8[] calldata _v,
         bytes32[] calldata _r,
         bytes32[] calldata _s
     )
         external
     {
-        bytes32 offerHash = _makeOffer(_users, _assets, _amounts, _nonces[0], _v[0], _r[0], _s[0]);
+        for (uint32 i = 0; i < _v.length.div(2); i++) {
+            trade(
+                [_addresses[i * 5], _addresses[i * 5 + 1], _addresses[i * 5 + 2], _addresses[i * 5 + 3], _addresses[i * 5 + 4]],
+                [_values[i * 6], _values[i * 6 + 1], _values[i * 6 + 2], _values[i * 6 + 3], _values[i * 6 + 4], _values[i * 6 + 5]],
+                [_v[i * 2], _v[i * 2 + 1]],
+                [_r[i * 2], _r[i * 2 + 1]],
+                [_s[i * 2], _s[i * 2 + 1]]
+            );
+        }
+    }
 
-        // taker, offerHash, takeAmount, feeAsset, feeAmount, fillNonce
-        _validateFill(_users[1], offerHash, _assets, _amounts, _nonces[1], _v[1], _r[1], _s[1]);
-
-        _fill(_users, _assets, _amounts);
+    function trade(
+        address[5] memory _addresses, // _addresses[0]: maker, _addresses[1]: taker, _addresses[2]: offerAsset, _addresses[3]: wantAsset, _addresses[4]: feeAsset
+        uint256[6] memory _values, // _values[0]: offerAmount, _values[1]: wantAmount, _values[2]: takeAmount, _values[3]: feeAmount, _values[4]: offerNonce, _values[5]: fillNonce
+        uint8[2] memory _v,
+        bytes32[2] memory _r,
+        bytes32[2] memory _s
+    )
+        public
+    {
+        bytes32 offerHash = _makeOffer(_addresses, _values, _v[0], _r[0], _s[0]);
+        _validateFill(offerHash, _addresses, _values, _v[1], _r[1], _s[1]);
+        _fill(_addresses, _values);
     }
 
     function markNonce(uint256 _nonce) external {
@@ -64,33 +79,35 @@ contract MerkleBroker {
     }
 
     function _fill(
-        address[] memory _users, // _users[0]: maker, _users[1]: taker
-        address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset, _assets[2]: feeAsset
-        uint256[] memory _amounts // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount, _amounts[3]: feeAmount
+        address[5] memory _addresses, // _addresses[0]: maker, _addresses[1]: taker, _addresses[2]: offerAsset, _addresses[3]: wantAsset, _addresses[4]: feeAsset
+        uint256[6] memory _values // _values[0]: offerAmount, _values[1]: wantAmount, _values[2]: takeAmount, _values[3]: feeAmount, _values[4]: offerNonce, _values[5]: fillNonce
     )
         private
     {
         // fillAmount / takeAmount = wantAmount / offerAmount
         // fillAmount = takeAmount * wantAmount / offerAmount
-        uint256 fillAmount = (_amounts[2].mul(_amounts[1])).div(_amounts[0]);
-        _decreaseBalance(_users[1], _assets[1], fillAmount);
-        _increaseBalance(_users[0], _assets[1], fillAmount);
+        uint256 fillAmount = (_values[2].mul(_values[1])).div(_values[0]);
+        // reduce taker balance for offer.wantAsset
+        _decreaseBalance(_addresses[1], _addresses[3], fillAmount);
+        // increase maker balance for offer.wantAsset
+        _increaseBalance(_addresses[0], _addresses[3], fillAmount);
 
-        uint256 receiveAmount = _assets[0] == _assets[2] ? _amounts[2].sub(_amounts[3]) : _amounts[2];
-        _increaseBalance(_users[1], _assets[0], receiveAmount);
+        // if offer.offerAsset == fill.feeAsset then reduce receiveAmount by fillAmount
+        uint256 receiveAmount = _addresses[2] == _addresses[4] ? _values[2].sub(_values[3]) : _values[2];
 
-        if (_assets[0] != _assets[2]) {
-            _decreaseBalance(_users[1], _assets[2], _amounts[3]);
-        }
+        // increase taker balance for offer.offerAsset
+        _increaseBalance(_addresses[1], _addresses[2], receiveAmount);
 
-        _increaseBalance(coordinator, _assets[2], _amounts[3]);
+        // if offer.offerAsset != fill.feeAsset then reduce taker balance for feeAsset by feeAmount
+        if (_addresses[2] != _addresses[4]) { _decreaseBalance(_addresses[1], _addresses[4], _values[3]); }
+
+        // increase coordinator balance for fill.feeAsset
+        _increaseBalance(coordinator, _addresses[4], _values[3]);
     }
 
     function _makeOffer(
-        address[] memory _users, // _users[0]: maker, _users[1]: taker
-        address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset
-        uint256[] memory _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount
-        uint256 _offerNonce, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+        address[5] memory _addresses, // _addresses[0]: maker, _addresses[1]: taker, _addresses[2]: offerAsset, _addresses[3]: wantAsset, _addresses[4]: feeAsset
+        uint256[6] memory _values, // _values[0]: offerAmount, _values[1]: wantAmount, _values[2]: takeAmount, _values[3]: feeAmount, _values[4]: offerNonce, _values[5]: fillNonce
         uint8 _v,
         bytes32 _r,
         bytes32 _s
@@ -100,44 +117,44 @@ contract MerkleBroker {
     {
         bytes32 offerHash = keccak256(abi.encodePacked(
             "makeOffer",
-            _users[0], // maker
-            _assets[0], // offerAsset
-            _assets[1], // wantAsset
-            _amounts[0], // offerAmount
-            _amounts[1], // wantAmount
-            _offerNonce
+            _addresses[0], // maker
+            _addresses[2], // offerAsset
+            _addresses[3], // wantAsset
+            _values[0], // offerAmount
+            _values[1], // wantAmount
+            _values[4] // offerNonce
         ));
 
-        require(_recoverAddress(offerHash, _v, _r, _s) == _users[0], 'Invalid signature');
+        require(_recoverAddress(offerHash, _v, _r, _s) == _addresses[0], 'Invalid signature');
 
-        bool isNewOffer = _nonceIsUsed(_offerNonce);
-        offers[offerHash] =  isNewOffer ? offers[offerHash].sub(_amounts[2]) : _amounts[0];
+        bool isNewOffer = _nonceIsUsed(_values[4]) == false;
+        offers[offerHash] =  isNewOffer ? _values[0] : offers[offerHash].sub(_values[2]);
 
         // make offer by deducting offer amount from user
-        if (isNewOffer == false) {
-            _decreaseBalance(_users[0], _assets[0], _amounts[0]);
-            _markNonceAsUsed(_offerNonce);
+        if (isNewOffer) {
+            _decreaseBalance(_addresses[0], _addresses[2], _values[0]);
+            _markNonceAsUsed(_values[4]);
         }
 
         return offerHash;
     }
 
     function _decreaseBalance(address _user, address _asset, uint256 _amount) private {
+        if (_amount == 0) { return; }
         balances[_user][_asset] = balances[_user][_asset].sub(_amount);
         emit BalanceDecrease(_user, _asset, _amount);
     }
 
     function _increaseBalance(address _user, address _asset, uint256 _amount) private {
+        if (_amount == 0) { return; }
         balances[_user][_asset] = balances[_user][_asset].add(_amount);
         emit BalanceIncrease(_user, _asset, _amount);
     }
 
     function _validateFill(
-        address _taker,
         bytes32 _offerHash,
-        address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset, _assets[2]: feeAsset
-        uint256[] memory _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount, _amounts[3]: feeAmount
-        uint256 _fillNonce,
+        address[5] memory _addresses, // _addresses[0]: maker, _addresses[1]: taker, _addresses[2]: offerAsset, _addresses[3]: wantAsset, _addresses[4]: feeAsset
+        uint256[6] memory _values, // _values[0]: offerAmount, _values[1]: wantAmount, _values[2]: takeAmount, _values[3]: feeAmount, _values[4]: offerNonce, _values[5]: fillNonce
         uint8 _v,
         bytes32 _r,
         bytes32 _s
@@ -146,19 +163,18 @@ contract MerkleBroker {
     {
         bytes32 fillHash = keccak256(abi.encodePacked(
             "fillOffer",
-            _taker,
-            _offerHash,
-            _amounts[2],
-            _assets[2],
-            _amounts[3],
-            _fillNonce
+            _addresses[1], // taker
+            _offerHash, // offerHash
+            _values[2], // takeAmount
+            _addresses[4], // feeAsset
+            _values[3], // feeAmount
+            _values[5] // fillNonce
         ));
 
-        require(_recoverAddress(fillHash, _v, _r, _s) == _taker, 'Invalid signature');
-
-        // require fillHash to be unused
-        require(_nonceIsUsed(_fillNonce) == false, "Hash already used");
-        _markNonceAsUsed(_fillNonce);
+        require(_recoverAddress(fillHash, _v, _r, _s) == _addresses[1], 'Invalid signature');
+        // require fillNonce to be unused
+        require(_nonceIsUsed(_values[5]) == false, "Nonce already used");
+        _markNonceAsUsed(_values[5]);
     }
 
     function _recoverAddress(bytes32 _hash, uint8 _v, bytes32 _r, bytes32 _s)

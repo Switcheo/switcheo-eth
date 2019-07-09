@@ -28,37 +28,65 @@ async function getSignatureComponents (message, signee) {
     return { v, r, s }
 }
 
-async function trade (merkleBroker, { users, assets, amounts, nonces }) {
+function getOfferHash({ addresses, values }) {
     const offerHash = web3.utils.soliditySha3(
         { type: 'string', value: 'makeOffer' },
-        { type: 'address', value: users[0] },
-        { type: 'address', value: assets[0] },
-        { type: 'address', value: assets[1] },
-        { type: 'uint256', value: amounts[0] },
-        { type: 'uint256', value: amounts[1] },
-        { type: 'uint256', value: nonces[0] }
+        { type: 'address', value: addresses[0] },
+        { type: 'address', value: addresses[2] },
+        { type: 'address', value: addresses[3] },
+        { type: 'uint256', value: values[0] },
+        { type: 'uint256', value: values[1] },
+        { type: 'uint256', value: values[4] }
     )
+    return offerHash
+}
 
+function getFillHash({ offerHash, addresses, values }) {
     const fillHash = web3.utils.soliditySha3(
         { type: 'string', value: 'fillOffer' },
-        { type: 'address', value: users[1] },
+        { type: 'address', value: addresses[1] },
         { type: 'bytes32', value: offerHash },
-        { type: 'uint256', value: amounts[2] },
-        { type: 'address', value: assets[2] },
-        { type: 'uint256', value: amounts[3] },
-        { type: 'uint256', value: nonces[1] }
+        { type: 'uint256', value: values[2] },
+        { type: 'address', value: addresses[4] },
+        { type: 'uint256', value: values[3] },
+        { type: 'uint256', value: values[5] }
     )
+    return fillHash
+}
 
-    const offerSig = await getSignatureComponents(offerHash, users[0])
-    const fillSig = await getSignatureComponents(fillHash, users[1])
+async function getTradeSignatures({ addresses, values }) {
+    const offerHash = getOfferHash({ addresses, values })
+    const fillHash = getFillHash({ offerHash, addresses, values })
+
+    const offerSig = await getSignatureComponents(offerHash, addresses[0])
+    const fillSig = await getSignatureComponents(fillHash, addresses[1])
     const v = [offerSig.v, fillSig.v]
     const r = [offerSig.r, fillSig.r]
     const s = [offerSig.s, fillSig.s]
-    // const rs = [offerSig.r, fillSig.r, offerSig.s, fillSig.s]
 
+    return { v, r, s }
+}
+
+async function trade (merkleBroker, { users, assets, amounts, nonces }) {
+    const { v, r, s } = await getTradeSignatures({ users, assets, amounts, nonces })
     const result = await merkleBroker.trade(users, assets, amounts, nonces, v, r, s)
-    // const result = await merkleBroker.trade(users.concat(assets), amounts, nonces, v, rs)
     return result
+}
+
+async function batchTrade (merkleBroker, { addresses, values }) {
+    let v = [], r = [], s = []
+
+    for (let i = 0; i < addresses.length / 5; i++) {
+        const sig = await getTradeSignatures({
+            addresses: addresses.slice(i * 5, i * 5 + 5),
+            values: values.slice(i * 6, i * 6 + 6)
+        })
+        v = v.concat(sig.v)
+        r = r.concat(sig.r)
+        s = s.concat(sig.s)
+    }
+
+    return await merkleBroker.batchTrade(addresses, values, v, r, s)
 }
 
 
@@ -76,36 +104,70 @@ contract('Example', async (accounts) => {
         merkleBroker = await MerkleBroker.deployed()
     })
 
-    contract('trade', async () => {
-        it('performs a trade', async () => {
-            await merkleBroker.deposit(maker, t1, 100) // 46005 for gas use
-            await merkleBroker.deposit(taker, t2, 10)
+    // contract('trade', async () => {
+    //     it('performs a trade', async () => {
+    //         await merkleBroker.deposit(maker, t1, 100) // 46005 for gas use
+    //         await merkleBroker.deposit(taker, t2, 10)
+    //         await merkleBroker.deposit(coordinator, t1, 1)
+    //         await printBalances(merkleBroker, userMap, assetMap)
+    //
+    //         const users = [maker, taker]
+    //         const assets = [t1, t2, t1]
+    //         const amounts = [100, 50, 10, 2]
+    //         const nonces = [67, 89]
+    //
+    //         await merkleBroker.markNonce(0)
+    //
+    //         // 187178 gas: upper limit
+    //         // 172152 gas: if coordinator already has fee asset
+    //         //
+    //         // 144038 gas: with used nonces optimization
+    //         // 114038 gas: if maker already has offer.wantAsset and taker already has offer.offerAsset
+    //         // 91178 gas: if there are no balance changes
+    //         // 80368 gas: if there is no nonce storage
+    //         //
+    //         // 22860 gas to 52860 gas: balance storage costs
+    //         // 52860 gas: 2 * 20000 + 3 * 5000 (2 new balances and 3 balance changes, can be 4 balance changes if fill.feeAsset != offer.offerAsset)
+    //         // 10810 gas: nonce storage cost
+    //         // 43082 gas: base gas cost
+    //         // 80368 - 43082 = 37286 gas: computation costs
+    //         //
+    //         // If we can process 4 trades, cost per trade would be 43082 * 3/4 = ~30,000 gas cheaper
+    //         // 84670: without balance storage optimization and with computation optimization
+    //         const result = await trade(merkleBroker, { users, assets, amounts, nonces })
+    //         await printBalances(merkleBroker, userMap, assetMap)
+    //         console.log('gas used', result.receipt.gasUsed)
+    //
+    //         // calling the function with an empty body costs 43082
+    //     })
+    // })
+
+    contract('batchTrade', async () => {
+        it('performs multiple trades', async () => {
+            await merkleBroker.deposit(maker, t1, 1000) // 46005 gas used
+            await merkleBroker.deposit(taker, t2, 100)
             await merkleBroker.deposit(coordinator, t1, 1)
             await printBalances(merkleBroker, userMap, assetMap)
 
-            const users = [maker, taker]
-            const assets = [t1, t2, t1]
-            const amounts = [100, 50, 10, 2]
-            const nonces = [67, 89]
+            // const addresses = [maker, taker, t1, t2, t1]
+            // const values = [100, 50, 10, 2, 71, 72]
+
+            // const addresses = [maker, taker, t1, t2, t1, maker, taker, t1, t2, t1]
+            // const values = [100, 50, 10, 2, 71, 72, 100, 50, 10, 2, 73, 74]
+
+            // const addresses = [maker, taker, t1, t2, t1, maker, taker, t1, t2, t1, maker, taker, t1, t2, t1]
+            // const values = [100, 50, 10, 2, 71, 72, 100, 50, 10, 2, 73, 74, 100, 50, 10, 2, 75, 76]
+
+            const addresses = [maker, taker, t1, t2, t1, maker, taker, t1, t2, t1, maker, taker, t1, t2, t1, maker, taker, t1, t2, t1]
+            const values = [100, 50, 10, 2, 71, 72, 100, 50, 10, 2, 73, 74, 100, 50, 10, 2, 75, 76, 100, 50, 10, 2, 77, 78]
 
             await merkleBroker.markNonce(0)
 
-            // 187178 gas: upper limit
-            // 172152 gas: if coordinator already has fee asset
-            // *144038 gas*: with used nonces optimization
-            // 114038 gas: if maker already has offer.wantAsset and taker already has offer.offerAsset
-            // 91178 gas: if there are no balance changes
-            // 80368 gas: if there is no nonce storage
-            //
-            // 22860 gas to 52860 gas: balance storage costs
-            // 52860 gas: 2 * 20000 + 3 * 5000 (2 new balances and 3 balance changes, can be 4 balance changes if fill.feeAsset != offer.offerAsset)
-            // 10810 gas: nonce storage cost
-            // 21000 gas: base gas cost
-            // 59368: computation costs
-            //
-            // 91178: with balance storage optimization and without computation optimization
-            // 84670: without balance storage optimization and with computation optimization
-            const result = await trade(merkleBroker, { users, assets, amounts, nonces })
+            // gas used for 1 trade: 157538
+            // gas used for 2 trades: 260423 / 2 = 130211
+            // gas used for 3 trades: 363255 / 3 = 121085
+            // gas used for 4 trades: 466156 / 4 = 116539
+            const result = await batchTrade(merkleBroker, { addresses, values })
             await printBalances(merkleBroker, userMap, assetMap)
             console.log('gas used', result.receipt.gasUsed)
         })
