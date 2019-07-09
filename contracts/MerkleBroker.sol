@@ -9,7 +9,7 @@ contract MerkleBroker {
 
     mapping(address => mapping(address => uint256)) public balances;
     mapping(bytes32 => uint256) public offers;
-    mapping(bytes32 => bool) public usedHashes;
+    mapping(bytes32 => uint256) public usedNonces;
 
     event BalanceIncrease(address indexed user, address indexed asset, uint256 amount);
     event BalanceDecrease(address indexed user, address indexed asset, uint256 amount);
@@ -30,7 +30,7 @@ contract MerkleBroker {
         address[] calldata _users, // _users[0]: maker, _users[1]: taker
         address[] calldata _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset, _assets[2]: feeAsset
         uint256[] calldata _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount, _amounts[3]: feeAmount
-        uint64[] calldata _nonces, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+        uint256[] calldata _nonces, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
         uint8[] calldata _v,
         bytes32[] calldata _r,
         bytes32[] calldata _s
@@ -43,6 +43,24 @@ contract MerkleBroker {
         _validateFill(_users[1], offerHash, _assets, _amounts, _nonces[1], _v[1], _r[1], _s[1]);
 
         _fill(_users, _assets, _amounts);
+    }
+
+    function markNonce(uint256 _nonce) external {
+        _markNonceAsUsed(_nonce);
+    }
+
+    function _markNonceAsUsed(uint256 _nonce) private {
+        uint256 compactedNonce = _nonce.div(256);
+        uint256 remainder = _nonce.sub(compactedNonce.mul(256));
+        bytes32 nonceHash = keccak256(abi.encodePacked(compactedNonce));
+        usedNonces[nonceHash] = usedNonces[nonceHash] | (2 ** remainder);
+    }
+
+    function _nonceIsUsed(uint256 _nonce) private view returns(bool) {
+        uint256 compactedNonce = _nonce.div(256);
+        uint256 remainder = _nonce.sub(compactedNonce.mul(256));
+        bytes32 nonceHash = keccak256(abi.encodePacked(compactedNonce));
+        return usedNonces[nonceHash] & (2 ** remainder) != 0;
     }
 
     function _fill(
@@ -72,7 +90,7 @@ contract MerkleBroker {
         address[] memory _users, // _users[0]: maker, _users[1]: taker
         address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset
         uint256[] memory _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount
-        uint64 _offerNonce, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
+        uint256 _offerNonce, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
         uint8 _v,
         bytes32 _r,
         bytes32 _s
@@ -92,12 +110,13 @@ contract MerkleBroker {
 
         require(_recoverAddress(offerHash, _v, _r, _s) == _users[0], 'Invalid signature');
 
-        offers[offerHash] = usedHashes[offerHash] ? offers[offerHash].sub(_amounts[2]) : _amounts[0];
+        bool isNewOffer = _nonceIsUsed(_offerNonce);
+        offers[offerHash] =  isNewOffer ? offers[offerHash].sub(_amounts[2]) : _amounts[0];
 
         // make offer by deducting offer amount from user
-        if (usedHashes[offerHash] == false) {
+        if (isNewOffer == false) {
             _decreaseBalance(_users[0], _assets[0], _amounts[0]);
-            usedHashes[offerHash] = true;
+            _markNonceAsUsed(_offerNonce);
         }
 
         return offerHash;
@@ -118,7 +137,7 @@ contract MerkleBroker {
         bytes32 _offerHash,
         address[] memory _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset, _assets[2]: feeAsset
         uint256[] memory _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount, _amounts[3]: feeAmount
-        uint64 _fillNonce,
+        uint256 _fillNonce,
         uint8 _v,
         bytes32 _r,
         bytes32 _s
@@ -138,8 +157,8 @@ contract MerkleBroker {
         require(_recoverAddress(fillHash, _v, _r, _s) == _taker, 'Invalid signature');
 
         // require fillHash to be unused
-        require(usedHashes[fillHash] == false, "Hash already used");
-        usedHashes[fillHash] = true;
+        require(_nonceIsUsed(_fillNonce) == false, "Hash already used");
+        _markNonceAsUsed(_fillNonce);
     }
 
     function _recoverAddress(bytes32 _hash, uint8 _v, bytes32 _r, bytes32 _s)
@@ -151,10 +170,3 @@ contract MerkleBroker {
         return ecrecover(prefixedHash, _v, _r, _s);
     }
 }
-        /* address[] calldata _users, // _users[0]: maker, _users[1]: taker
-        address[] calldata _assets, // _assets[0]: offerAsset, _assets[1]: wantAsset
-        uint256[] calldata _amounts, // _amounts[0]: offerAmount, _amounts[1]: wantAmount, _amounts[2]: takeAmount
-        uint64[] calldata _nonces, // _nonces[0]: offerNonce, _nonces[1]: fillNonce
-        uint8[] calldata _v, // _v[0]: maker sig, _v[1]: taker sig
-        bytes32[] calldata _r, // _r[0]: maker sig, _r[1]: taker sig
-        bytes32[] calldata _s // _s[0]: maker sig, _s[1]: taker sig */

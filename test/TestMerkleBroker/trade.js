@@ -36,7 +36,7 @@ async function trade (merkleBroker, { users, assets, amounts, nonces }) {
         { type: 'address', value: assets[1] },
         { type: 'uint256', value: amounts[0] },
         { type: 'uint256', value: amounts[1] },
-        { type: 'uint64', value: nonces[0] }
+        { type: 'uint256', value: nonces[0] }
     )
 
     const fillHash = web3.utils.soliditySha3(
@@ -46,7 +46,7 @@ async function trade (merkleBroker, { users, assets, amounts, nonces }) {
         { type: 'uint256', value: amounts[2] },
         { type: 'address', value: assets[2] },
         { type: 'uint256', value: amounts[3] },
-        { type: 'uint64', value: nonces[1] }
+        { type: 'uint256', value: nonces[1] }
     )
 
     const offerSig = await getSignatureComponents(offerHash, users[0])
@@ -88,7 +88,12 @@ contract('Example', async (accounts) => {
             const amounts = [100, 50, 10, 2]
             const nonces = [67, 89]
 
-            // 187178 gas, if coordinator already has asset then 172178 gas
+            await merkleBroker.markNonce(0)
+
+            // 187178 gas: upper limit
+            // 172152 gas: if coordinator already has fee asset
+            // 144038 gas: with used nonces optimization
+            // 114038 gas: if maker already has offer.wantAsset and taker already has offer.offerAsset
             const result = await trade(merkleBroker, { users, assets, amounts, nonces })
             await printBalances(merkleBroker, userMap, assetMap)
             console.log('gas used', result.receipt.gasUsed)
