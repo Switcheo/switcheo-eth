@@ -11,6 +11,8 @@ contract MerkleBroker {
     mapping(bytes32 => uint256) public offers;
     mapping(bytes32 => uint256) public usedNonces;
 
+    mapping(address => mapping(bytes32 => bytes32)) public vaults;
+
     event BalanceIncrease(address indexed user, address indexed asset, uint256 amount);
     event BalanceDecrease(address indexed user, address indexed asset, uint256 amount);
 
@@ -24,6 +26,45 @@ contract MerkleBroker {
 
     function withdraw(address _user, address _asset, uint256 _amount) external {
         _decreaseBalance(_user, _asset, _amount);
+    }
+
+    function simpleIncreaseBalance(address _user, address _asset, uint256 _amount) external {
+        /* balances[_user][_asset] = balances[_user][_asset].add(_amount); */
+        emit BalanceIncrease(_user, _asset, _amount);
+    }
+
+    function optimisedIncreaseBalance(
+        address _user,
+        address _asset,
+        uint256 _amount,
+        bytes32 _vaultId,
+        address[4] calldata _vaultAssets,
+        uint256[4] calldata _vaultAmounts
+    )
+        external
+    {
+        bytes32 vaultHash = vaults[_user][_vaultId];
+        if (vaultHash == 0) {
+            vaults[_user][_vaultId] = keccak256(abi.encodePacked(
+                [_asset, address(0), address(0), address(0)],
+                [_amount, uint256(0), uint256(0), uint256(0)]
+            ));
+            return;
+        }
+
+        require(vaultHash == keccak256(abi.encodePacked(_vaultAssets, _vaultAmounts)), 'Invalid input');
+
+        uint256[4] memory _updatedAmounts = [_vaultAmounts[0], _vaultAmounts[1], _vaultAmounts[2], _vaultAmounts[3]];
+
+        if (_vaultAssets[0] == _asset) { _updatedAmounts[0] = _updatedAmounts[0].add(_amount); }
+        else if (_vaultAssets[1] == _asset) { _updatedAmounts[1] = _updatedAmounts[1].add(_amount); }
+        else if (_vaultAssets[2] == _asset) { _updatedAmounts[2] = _updatedAmounts[2].add(_amount); }
+        else if (_vaultAssets[3] == _asset) { _updatedAmounts[3] = _updatedAmounts[3].add(_amount); }
+        else { revert(); }
+
+        vaults[_user][_vaultId] = keccak256(abi.encodePacked(_vaultAssets, _updatedAmounts));
+
+        emit BalanceIncrease(_user, _asset, _amount);
     }
 
     function batchTrade(

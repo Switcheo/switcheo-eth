@@ -172,4 +172,34 @@ contract('Example', async (accounts) => {
             console.log('gas used', result.receipt.gasUsed)
         })
     })
+
+    // base gas cost 26548
+    // average gas cost for simple balance storage is 20613
+    contract('simpleIncreaseBalance', async () => {
+        it('increases user balance', async () => {
+            const result1 = await merkleBroker.simpleIncreaseBalance(maker, t1, 100); // 47161
+            console.log('gas used', result1.receipt.gasUsed) // 47161 - 26548 = 20613
+
+            const result2 = await merkleBroker.simpleIncreaseBalance(maker, t1, 50); // 32161
+            console.log('gas used', result2.receipt.gasUsed) // 32161 - 26548 = 5613
+        })
+    })
+
+    // average gas cost for optimised balance storage: (21283 + 9923 * 3) / 4 = 12763
+    // gas savings for new balance: 20613 - 12763 = 7850
+    // additional gas needed for existing balances: 12763 - 5613 = 7150
+    contract('optimisedIncreaseBalance', async () => {
+        it('increases user balance', async () => {
+            const vaultId = '0x01'
+            const vaultAssets = ['0x0', '0x0', '0x0', '0x0']
+            const vaultAmounts = [0, 0, 0, 0]
+            const result1 = await merkleBroker.optimisedIncreaseBalance(maker, t1, 100, vaultId, vaultAssets, vaultAmounts); // 47831
+            console.log('gas used', result1.receipt.gasUsed) // 47831 - 26548 = 21283
+
+            vaultAssets[0] = t1
+            vaultAmounts[0] = 100
+            const result2 = await merkleBroker.optimisedIncreaseBalance(maker, t1, 50, vaultId, vaultAssets, vaultAmounts); // 36471
+            console.log('gas used', result2.receipt.gasUsed) // 36471 - 26548 = 9923
+        })
+    })
 })
