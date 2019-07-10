@@ -187,7 +187,7 @@ contract('Example', async (accounts) => {
 
     // average gas cost for optimised balance storage: (21283 + 9923 * 3) / 4 = 12763
     // gas savings for new balance: 20613 - 12763 = 7850
-    // additional gas needed for existing balances: 12763 - 5613 = 7150
+    // additional gas needed for existing balances: 9923 - 5613 = 4310
     contract('optimisedIncreaseBalance', async () => {
         it('increases user balance', async () => {
             const vaultId = '0x01'
