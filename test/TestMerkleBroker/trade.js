@@ -147,26 +147,26 @@ contract('Example', async (accounts) => {
             await merkleBroker.deposit(maker, t1, 1000) // 46005 gas used
             await merkleBroker.deposit(taker, t2, 100)
             await merkleBroker.deposit(coordinator, t1, 1)
+            await merkleBroker.deposit(maker, t2, 1000)
+            await merkleBroker.deposit(taker, t1, 100)
             await printBalances(merkleBroker, userMap, assetMap)
 
-            // const addresses = [maker, taker, t1, t2, t1]
-            // const values = [100, 50, 10, 2, 71, 72]
+            let addresses = []
+            let values = []
+            const tradeCount = 10
 
-            // const addresses = [maker, taker, t1, t2, t1, maker, taker, t1, t2, t1]
-            // const values = [100, 50, 10, 2, 71, 72, 100, 50, 10, 2, 73, 74]
-
-            // const addresses = [maker, taker, t1, t2, t1, maker, taker, t1, t2, t1, maker, taker, t1, t2, t1]
-            // const values = [100, 50, 10, 2, 71, 72, 100, 50, 10, 2, 73, 74, 100, 50, 10, 2, 75, 76]
-
-            const addresses = [maker, taker, t1, t2, t1, maker, taker, t1, t2, t1, maker, taker, t1, t2, t1, maker, taker, t1, t2, t1]
-            const values = [100, 50, 10, 2, 71, 72, 100, 50, 10, 2, 73, 74, 100, 50, 10, 2, 75, 76, 100, 50, 10, 2, 77, 78]
+            for (let i = 0; i < tradeCount; i++) {
+                addresses = addresses.concat([maker, taker, t1, t2, t1])
+                values = values.concat([100, 50, 10, 2, 70 + i * 2, 70 + i * 2 + 1])
+            }
 
             await merkleBroker.markNonce(0)
 
-            // gas used for 1 trade: 157538
-            // gas used for 2 trades: 260423 / 2 = 130211
-            // gas used for 3 trades: 363255 / 3 = 121085
-            // gas used for 4 trades: 466156 / 4 = 116539
+            // gas used for 1 trade: 127582
+            // gas used for 2 trades: 230467 / 2 = 115233
+            // gas used for 3 trades: 333363 / 3 = 111121
+            // gas used for 4 trades: 436328 / 4 = 109082
+            // gas used for 10 trades: 1038594 / 10 = 103859
             const result = await batchTrade(merkleBroker, { addresses, values })
             await printBalances(merkleBroker, userMap, assetMap)
             console.log('gas used', result.receipt.gasUsed)
@@ -175,15 +175,15 @@ contract('Example', async (accounts) => {
 
     // base gas cost 26548
     // average gas cost for simple balance storage is 20613
-    contract('simpleIncreaseBalance', async () => {
-        it('increases user balance', async () => {
-            const result1 = await merkleBroker.simpleIncreaseBalance(maker, t1, 100); // 47161
-            console.log('gas used', result1.receipt.gasUsed) // 47161 - 26548 = 20613
-
-            const result2 = await merkleBroker.simpleIncreaseBalance(maker, t1, 50); // 32161
-            console.log('gas used', result2.receipt.gasUsed) // 32161 - 26548 = 5613
-        })
-    })
+    // contract('simpleIncreaseBalance', async () => {
+    //     it('increases user balance', async () => {
+    //         const result1 = await merkleBroker.simpleIncreaseBalance(maker, t1, 100); // 47161
+    //         console.log('gas used', result1.receipt.gasUsed) // 47161 - 26548 = 20613
+    //
+    //         const result2 = await merkleBroker.simpleIncreaseBalance(maker, t1, 50); // 32161
+    //         console.log('gas used', result2.receipt.gasUsed) // 32161 - 26548 = 5613
+    //     })
+    // })
 
     // average gas cost for optimised balance storage: (21283 + 9923 * 3) / 4 = 12763
     // gas savings for new balance: 20613 - 12763 = 7850
@@ -196,18 +196,18 @@ contract('Example', async (accounts) => {
     // 5. decrease taker offer.wantAsset balance (existing)
     // 6. increase coordinator fill.feeAsset balance (existing)
     // savings: 7850 + 7850 + 7850 - 4310 - 4310 - 4310 = 10620
-    contract('optimisedIncreaseBalance', async () => {
-        it('increases user balance', async () => {
-            const vaultId = '0x01'
-            const vaultAssets = ['0x0', '0x0', '0x0', '0x0']
-            const vaultAmounts = [0, 0, 0, 0]
-            const result1 = await merkleBroker.optimisedIncreaseBalance(maker, t1, 100, vaultId, vaultAssets, vaultAmounts); // 47831
-            console.log('gas used', result1.receipt.gasUsed) // 47831 - 26548 = 21283
-
-            vaultAssets[0] = t1
-            vaultAmounts[0] = 100
-            const result2 = await merkleBroker.optimisedIncreaseBalance(maker, t1, 50, vaultId, vaultAssets, vaultAmounts); // 36471
-            console.log('gas used', result2.receipt.gasUsed) // 36471 - 26548 = 9923
-        })
-    })
+    // contract('optimisedIncreaseBalance', async () => {
+    //     it('increases user balance', async () => {
+    //         const vaultId = '0x01'
+    //         const vaultAssets = ['0x0', '0x0', '0x0', '0x0']
+    //         const vaultAmounts = [0, 0, 0, 0]
+    //         const result1 = await merkleBroker.optimisedIncreaseBalance(maker, t1, 100, vaultId, vaultAssets, vaultAmounts); // 47831
+    //         console.log('gas used', result1.receipt.gasUsed) // 47831 - 26548 = 21283
+    //
+    //         vaultAssets[0] = t1
+    //         vaultAmounts[0] = 100
+    //         const result2 = await merkleBroker.optimisedIncreaseBalance(maker, t1, 50, vaultId, vaultAssets, vaultAmounts); // 36471
+    //         console.log('gas used', result2.receipt.gasUsed) // 36471 - 26548 = 9923
+    //     })
+    // })
 })
