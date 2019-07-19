@@ -167,6 +167,7 @@ contract('Example', async (accounts) => {
             // gas used for 3 trades: 333363 / 3 = 111121
             // gas used for 4 trades: 436328 / 4 = 109082
             // gas used for 10 trades: 1038594 / 10 = 103859
+            // gas used for 10 trades, if without balance changes and available amount storage: 572414 / 10 = 57241
             const result = await batchTrade(merkleBroker, { addresses, values })
             await printBalances(merkleBroker, userMap, assetMap)
             console.log('gas used', result.receipt.gasUsed)
