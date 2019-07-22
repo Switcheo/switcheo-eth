@@ -20,5 +20,6 @@ contract('Test depositToken', async (accounts) => {
         await jrc.approve(broker.address, 42, { from: user })
         const result = await broker.depositToken(user, jrc.address, 42)
         await validateBalance(user, jrc.address, 42)
+        assert.equal((await jrc.balanceOf(broker.address)).toString(), '42')
     })
 })
