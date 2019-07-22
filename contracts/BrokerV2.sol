@@ -94,12 +94,12 @@ contract BrokerV2 {
     function _validateTransferResult(bytes memory data) private pure {
         require(
             data.length == 0 ||
-            (data.length == 32 && _parseBytesToUint256(data) != 0),
+            (data.length == 32 && _getUint256FromBytes(data) != 0),
             "Invalid transfer"
         );
     }
 
-    function _parseBytesToUint256(bytes memory data) private pure returns (uint256) {
+    function _getUint256FromBytes(bytes memory data) private pure returns (uint256) {
         uint256 parsed;
         assembly { parsed := mload(add(data, 32)) }
         return parsed;
