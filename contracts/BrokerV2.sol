@@ -8,9 +8,6 @@ contract BrokerV2 {
     // Ether token "address" is set as the constant 0x00
     address constant ETHER_ADDR = address(0);
 
-    // bytes4(keccak256('transferFrom(address,address,uint256)')) == 0x23b872dd
-    bytes4 constant ENCODED_TRANSFER_FROM = 0x23b872dd;
-
     // deposits
     uint256 constant REASON_DEPOSIT = 0x01;
 
@@ -24,6 +21,7 @@ contract BrokerV2 {
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(address indexed user, address indexed assetId, uint256 amount, uint256 indexed reason);
+    event Test(bool value);
 
     constructor() public {
         coordinator = msg.sender;
@@ -36,7 +34,7 @@ contract BrokerV2 {
     }
 
     function deposit() external payable {
-        require(msg.value > 0, 'Invalid value');
+        require(msg.value > 0, "Invalid value");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT);
     }
 
@@ -46,24 +44,26 @@ contract BrokerV2 {
         uint256 _amount
     )
         external
+        onlyCoordinator
     {
-        require(_amount > 0, 'Invalid value');
+        require(_amount > 0, "Invalid value");
         _increaseBalance(_user, _assetId, _amount, REASON_DEPOSIT);
 
         _validateContractAddress(_assetId);
 
         bool success;
         bytes memory returnData;
-        bytes memory payload = abi.encode(
-                                   ENCODED_TRANSFER_FROM,
+        bytes memory payload = abi.encodeWithSignature(
+                                   "transferFrom(address,address,uint256)",
                                    _user,
                                    address(this),
                                    _amount
                                );
 
         (success, returnData) = _assetId.call(payload);
+        emit Test(success);
 
-        require(success, 'transferFrom call failed');
+        require(success, "transferFrom call failed");
         // ensure that asset transfer succeeded
         _validateTransferResult(returnData);
     }
