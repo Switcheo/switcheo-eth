@@ -1,7 +1,6 @@
-pragma solidity 0.4.25;
+pragma solidity 0.5.0;
 
-import "openzeppelin-solidity/contracts/token/ERC20/StandardToken.sol";
-import "openzeppelin-solidity/contracts/token/ERC20/DetailedERC20.sol";
+import "./lib/math/SafeMath.sol";
 
 /**
 * @title SW Coin - Non-standard ERC20 token for testing
