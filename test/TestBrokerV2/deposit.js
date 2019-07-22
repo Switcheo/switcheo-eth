@@ -1,12 +1,13 @@
 const BrokerV2 = artifacts.require('BrokerV2')
-const Web3 = require('web3')
-const web3 = new Web3(Web3.givenProvider)
-
-const { ETHER_ADDR } = require('../utils')
+const { web3, ETHER_ADDR } = require('../utils')
 
 contract('Test depositEther', async (accounts) => {
-    const broker = await BrokerV2.deployed()
+    let broker
     const user = accounts[0]
+
+    beforeEach(async () => {
+        broker = await BrokerV2.deployed()
+    })
 
     it('updates user balance with the deposited amount', async () => {
         console.log('test')
