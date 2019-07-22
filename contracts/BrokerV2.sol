@@ -52,7 +52,6 @@ contract BrokerV2 {
 
         _validateContractAddress(_assetId);
 
-
         bool success;
         bytes memory returnData;
         bytes memory payload = abi.encode(
@@ -66,7 +65,7 @@ contract BrokerV2 {
 
         require(success, 'transferFrom call failed');
         // ensure that asset transfer succeeded
-        require(_getSanitizedTransferData(returnData), "transferFrom failed.");
+        _validateTransferResult(returnData);
     }
 
     function _increaseBalance(
@@ -92,15 +91,12 @@ contract BrokerV2 {
     /// See: https://github.com/ethereum/solidity/issues/4116
     /// https://medium.com/loopring-protocol/an-incompatibility-in-smart-contract-threatening-dapp-ecosystem-72b8ca5db4da
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
-    function _getSanitizedTransferData(bytes memory data) private pure returns (bool) {
-        uint256 result = 0;
-        if (data.length == 0) {
-            result = 1;
-        } else if (data.length == 32) {
-            result = _parseBytesToUint256(data);
-        }
-
-        return result != 0;
+    function _validateTransferResult(bytes memory data) private pure {
+        require(
+            data.length == 0 ||
+            (data.length == 32 && _parseBytesToUint256(data) != 0),
+            "Invalid transfer"
+        );
     }
 
     function _parseBytesToUint256(bytes memory data) private pure returns (uint256) {
