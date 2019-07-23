@@ -21,7 +21,6 @@ contract BrokerV2 {
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(address indexed user, address indexed assetId, uint256 amount, uint256 indexed reason);
-    event Test(bool value);
 
     constructor() public {
         coordinator = msg.sender;
@@ -61,7 +60,6 @@ contract BrokerV2 {
                                );
 
         (success, returnData) = _assetId.call(payload);
-        emit Test(success);
 
         require(success, "transferFrom call failed");
         // ensure that asset transfer succeeded

@@ -9,8 +9,6 @@ const web3 = new Web3(Web3.givenProvider)
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
-
 async function getBroker() { return await BrokerV2.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
@@ -37,7 +35,6 @@ function decodeReceiptLogs(receiptLogs) {
 
 module.exports = {
     web3,
-    ETHER_ADDR,
     getBroker,
     getJrc,
     getSwc,

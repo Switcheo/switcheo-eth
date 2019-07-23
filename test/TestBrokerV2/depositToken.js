@@ -2,7 +2,8 @@ const BrokerV2 = artifacts.require('BrokerV2')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 
-const { ETHER_ADDR, web3, getBroker, getJrc, getSwc, validateBalance, decodeReceiptLogs } = require('../utils')
+const { ETHER_ADDR } = require('../constants')
+const { web3, getBroker, getJrc, getSwc, validateBalance, decodeReceiptLogs } = require('../utils')
 
 contract('Test depositToken', async (accounts) => {
     let broker, jrc, swc
