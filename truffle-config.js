@@ -5,9 +5,7 @@ module.exports = {
         development: {
             host: "127.0.0.1",
             port: 7545,
-            network_id: "*", // Match any network id
-            gas: 8000000, // gas limit
-            gasPrice: 10 * 1000000000
+            network_id: "*" // Match any network id
         },
         ropsten: {
             provider: function () {
@@ -24,7 +22,7 @@ module.exports = {
                 return new PrivateKeyProvider(process.env.controlKey, "https://mainnet.infura.io/")
             },
             network_id: 1,
-            gas: 6000000, // gas limit
+            gas: 8000000, // gas limit
             gasPrice: 20 * 1000000000
         }
     },
