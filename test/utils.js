@@ -3,21 +3,48 @@ const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const Scratchpad = artifacts.require('Scratchpad')
 
+const EthCrypto = require('eth-crypto')
+
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
 
+const { soliditySha3, keccak256 } = web3.utils
+
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
+
+const { DOMAIN_SEPARATOR, WITHDRAW_TYPEHASH } = require('./constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
 
+function encodeParameters(types, values) {
+    return web3.eth.abi.encodeParameters(types, values)
+}
+
+let nonceCounter = 1
+
+function getNonce() {
+    return nonceCounter++;
+}
+
+function ensureAddress(assetId) {
+    if (assetId.address !== undefined) { return assetId.address }
+    return assetId
+}
+
 async function validateBalance(user, assetId, amount) {
+    assetId = ensureAddress(assetId)
     const broker = await getBroker()
     const balance = await broker.balances(user, assetId)
     assert.equal(balance.toString(), amount)
+}
+
+async function validateExternalBalance(user, token, amount) {
+    user = ensureAddress(user)
+    assert.equal((await token.balanceOf(user)).toString(), amount.toString())
 }
 
 function decodeReceiptLogs(receiptLogs) {
@@ -33,12 +60,73 @@ function decodeReceiptLogs(receiptLogs) {
     return decodedLogs
 }
 
+async function depositToken({ user, token, amount }) {
+    const broker = await getBroker()
+    await token.approve(broker.address, amount, { from: user })
+    await broker.depositToken(user, token.address)
+}
+
+function parseSignature(signature) {
+  var r = signature.substring(0, 64);
+  var s = signature.substring(64, 128);
+  var v = signature.substring(128, 130);
+
+  return {
+      v: parseInt(v, 16),
+      r: '0x' + r,
+      s: '0x' + s
+  }
+}
+
+async function sign(privateKey, message) {
+    const signature = EthCrypto.sign(privateKey, message)
+    return parseSignature(signature)
+}
+
+function getSignHash(hash) {
+  const signHash = soliditySha3(
+    { type: 'string', value: '\x19\x01' },
+    { type: 'bytes32', value: DOMAIN_SEPARATOR },
+    { type: 'bytes32',  value: hash }
+  )
+  return signHash
+}
+
+async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
+    assetId = ensureAddress(assetId)
+    feeAssetId = ensureAddress(feeAssetId)
+    const broker = await getBroker()
+    const { v, r, s } = await sign(privateKey, getSignHash(
+        keccak256(encodeParameters(
+            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+            [WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce]
+        ))
+    ))
+    console.log('user', user)
+    console.log('assetId', assetId)
+    console.log('amount', amount)
+    console.log('feeAssetId', feeAssetId)
+    console.log('feeAmount', feeAmount)
+    console.log('nonce', nonce)
+    console.log('v,r,s', v, r, s)
+
+    await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
+}
+
+const exchange = {
+    depositToken,
+    withdraw
+}
+
 module.exports = {
     web3,
     getBroker,
     getJrc,
     getSwc,
     getScratchpad,
+    getNonce,
     validateBalance,
+    validateExternalBalance,
     decodeReceiptLogs,
+    exchange,
 }
