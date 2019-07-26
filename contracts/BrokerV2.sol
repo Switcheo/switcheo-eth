@@ -2,6 +2,11 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 
+contract ERC20Token {
+    function allowance(address owner, address spender) external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+}
+
 contract BrokerV2 {
     using SafeMath for uint256;
 
@@ -39,31 +44,56 @@ contract BrokerV2 {
 
     function depositToken(
         address _user,
-        address _assetId,
-        uint256 _amount
+        address _assetId
     )
         external
         onlyCoordinator
     {
-        require(_amount > 0, "Invalid value");
-        _increaseBalance(_user, _assetId, _amount, REASON_DEPOSIT);
-
         _validateContractAddress(_assetId);
 
-        bool success;
-        bytes memory returnData;
+        ERC20Token token = ERC20Token(_assetId);
+        uint256 initialBalance = token.balanceOf(address(this));
+        uint256 amount = token.allowance(_user, address(this));
+        uint256 maxAmount = token.balanceOf(_user);
+
+        // ensure that "amount" does not exceed what the user has
+        if (amount > maxAmount) { amount = maxAmount; }
+        if (amount == 0) { return; }
+
+        // ERC20Token cannot be used for transferFrom calls because some
+        // tokens have a transferFrom which returns a boolean and some do not
+        // having two overloaded transferFrom methods does not work
+        // as the signatures are the same but the return values are not
         bytes memory payload = abi.encodeWithSignature(
                                    "transferFrom(address,address,uint256)",
                                    _user,
                                    address(this),
-                                   _amount
+                                   amount
                                );
-
-        (success, returnData) = _assetId.call(payload);
-
-        require(success, "transferFrom call failed");
+        bytes memory returnData = _callContract(_assetId, payload);
         // ensure that asset transfer succeeded
         _validateTransferResult(returnData);
+
+        uint256 finalBalance = token.balanceOf(address(this));
+        uint256 transferredAmount = finalBalance - initialBalance;
+
+        _increaseBalance(_user, _assetId, transferredAmount, REASON_DEPOSIT);
+    }
+
+    function _callContract(
+        address _contract,
+        bytes memory _payload
+    )
+        private
+        returns(bytes memory)
+    {
+        bool success;
+        bytes memory returnData;
+
+        (success, returnData) = _contract.call(_payload);
+        require(success, "contract call failed");
+
+        return returnData;
     }
 
     function _increaseBalance(
