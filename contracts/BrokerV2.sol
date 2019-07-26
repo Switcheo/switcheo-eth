@@ -10,14 +10,41 @@ contract ERC20Token {
 contract BrokerV2 {
     using SafeMath for uint256;
 
+    bytes32 constant CONTRACT_NAME = keccak256("Switcheo Exchange");
+    bytes32 constant CONTRACT_VERSION = keccak256("2");
+    // TODO: update this before deployment
+    uint256 constant CHAIN_ID = 3;
+    // TODO: pre-calculate and update this before deployment
+    address constant VERIFYING_CONTRACT = address(1);
+    bytes32 constant SALT = keccak256("switcheo-eth-eip712-salt");
+
+    bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
+    ));
+    bytes32 private constant DOMAIN_SEPARATOR = keccak256(abi.encode(
+        EIP712_DOMAIN_TYPEHASH,
+        CONTRACT_NAME,
+        CONTRACT_VERSION,
+        CHAIN_ID,
+        VERIFYING_CONTRACT,
+        SALT
+    ));
+
+    bytes32 private constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
+        "Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint64 nonce)"
+    ));
+
     // Ether token "address" is set as the constant 0x00
     address constant ETHER_ADDR = address(0);
 
     // deposits
     uint256 constant REASON_DEPOSIT = 0x01;
+    uint256 constant REASON_WITHDRAW = 0x09;
+    uint8 constant REASON_WITHDRAW_FEE_GIVE = 0x14;
+    uint8 constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
 
-    // The coordinator sends trades (balance transitions) to the exchange
-    address public coordinator;
+    // The admin sends trades (balance transitions) to the exchange
+    address public admin;
     // The operator receives fees
     address public operator;
 
@@ -28,12 +55,12 @@ contract BrokerV2 {
     event BalanceIncrease(address indexed user, address indexed assetId, uint256 amount, uint256 indexed reason);
 
     constructor() public {
-        coordinator = msg.sender;
+        admin = msg.sender;
         operator = msg.sender;
     }
 
-    modifier onlyCoordinator() {
-        require(msg.sender == coordinator, "Invalid sender");
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Invalid sender");
         _;
     }
 
@@ -47,7 +74,7 @@ contract BrokerV2 {
         address _assetId
     )
         external
-        onlyCoordinator
+        onlyAdmin
     {
         _validateContractAddress(_assetId);
 
@@ -80,6 +107,81 @@ contract BrokerV2 {
         _increaseBalance(_user, _assetId, transferredAmount, REASON_DEPOSIT);
     }
 
+    function withdraw(
+        address payable _withdrawer,
+        address _assetId,
+        uint256 _amount,
+        address _feeAssetId,
+        uint256 _feeAmount,
+        uint64 _nonce,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s
+    )
+        external
+        onlyAdmin
+    {
+        require(_amount > 0, 'Invalid amount');
+
+        _validateSignature(_withdrawer, _v, _r, _s,
+            keccak256(abi.encodePacked(
+                WITHDRAW_TYPEHASH,
+                _withdrawer,
+                _assetId,
+                _amount,
+                _feeAssetId,
+                _feeAmount,
+                _nonce
+            ))
+        );
+
+        uint256 withdrawAmount = _decreaseBalanceWithFees(
+            _withdrawer,
+            _assetId,
+            _amount,
+            _feeAssetId,
+            _feeAmount,
+            REASON_WITHDRAW,
+            REASON_WITHDRAW_FEE_GIVE,
+            REASON_WITHDRAW_FEE_RECEIVE
+        );
+
+        if (_assetId == ETHER_ADDR) {
+            _withdrawer.transfer(withdrawAmount);
+            return;
+        }
+
+        _validateContractAddress(_assetId);
+
+        bytes memory payload = abi.encodeWithSignature(
+                                   "transfer(address,uint256)",
+                                   _withdrawer,
+                                   withdrawAmount
+                               );
+        bytes memory returnData = _callContract(_assetId, payload);
+
+        // ensure that asset transfer succeeded
+        _validateTransferResult(returnData);
+    }
+
+    function _validateSignature(
+        address _user,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s,
+        bytes32 _hash
+    )
+        private
+        pure
+    {
+        bytes32 eip712Hash = keccak256(abi.encodePacked(
+            "\\x19\\x01",
+            DOMAIN_SEPARATOR,
+            _hash
+        ));
+        require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
+    }
+
     function _callContract(
         address _contract,
         bytes memory _payload
@@ -96,6 +198,44 @@ contract BrokerV2 {
         return returnData;
     }
 
+    // returns remaining amount after fees
+    function _decreaseBalanceWithFees(
+        address _user,
+        address _assetId,
+        uint256 _amount,
+        address _feeAssetId,
+        uint256 _feeAmount,
+        uint256 _reasonCode,
+        uint256 _feeGiveReasonCode,
+        uint256 _feeReceiveReasonCode
+    )
+        private
+        returns (uint256)
+    {
+        _decreaseBalance(_user, _assetId, _amount, _reasonCode);
+        _increaseBalance(operator, _feeAssetId, _feeAmount, _feeReceiveReasonCode);
+
+        if (_feeAssetId != _assetId) {
+            _decreaseBalance(_user, _feeAssetId, _feeAmount, _feeGiveReasonCode);
+            return _amount;
+        }
+
+        return _amount.sub(_feeAmount);
+    }
+
+    function _decreaseBalance(
+        address _user,
+        address _assetId,
+        uint256 _amount,
+        uint256 _reasonCode
+    )
+        private
+    {
+        if (_amount == 0) { return; }
+        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
+        emit BalanceIncrease(_user, _assetId, _amount, _reasonCode);
+    }
+
     function _increaseBalance(
         address _user,
         address _assetId,
@@ -104,6 +244,7 @@ contract BrokerV2 {
     )
         private
     {
+        if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].add(_amount);
         emit BalanceIncrease(_user, _assetId, _amount, _reasonCode);
     }
