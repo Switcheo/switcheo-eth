@@ -51,6 +51,8 @@ contract BrokerV2 {
     // User balances by: userAddress => assetId => balance
     mapping(address => mapping(address => uint256)) public balances;
 
+    mapping(uint256 => uint256) public usedNonces;
+
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(address indexed user, address indexed assetId, uint256 amount, uint256 indexed reason);
 
@@ -71,11 +73,13 @@ contract BrokerV2 {
 
     function depositToken(
         address _user,
-        address _assetId
+        address _assetId,
+        uint256 _nonce
     )
         external
         onlyAdmin
     {
+        _markNonce(_nonce);
         _validateContractAddress(_assetId);
 
         ERC20Token token = ERC20Token(_assetId);
@@ -122,6 +126,7 @@ contract BrokerV2 {
         onlyAdmin
     {
         require(_amount > 0, 'Invalid amount');
+        _markNonce(_nonce);
 
         _validateSignature(_withdrawer, _v, _r, _s,
             keccak256(abi.encode(
@@ -162,6 +167,14 @@ contract BrokerV2 {
 
         // ensure that asset transfer succeeded
         _validateTransferResult(returnData);
+    }
+
+    function _markNonce(uint256 _nonce) private {
+        uint256 slot = _nonce.div(256);
+        uint256 shiftedBit = 1 << _nonce.mod(256);
+        uint256 bits = usedNonces[slot];
+        require(bits & shiftedBit == 0, "Nonce already used");
+        usedNonces[slot] = bits | shiftedBit;
     }
 
     function _validateSignature(

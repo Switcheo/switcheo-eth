@@ -24,12 +24,6 @@ function encodeParameters(types, values) {
     return web3.eth.abi.encodeParameters(types, values)
 }
 
-let nonceCounter = 1
-
-function createNonce() {
-    return nonceCounter++;
-}
-
 function ensureAddress(assetId) {
     if (assetId.address !== undefined) { return assetId.address }
     return assetId
@@ -47,6 +41,17 @@ async function validateExternalBalance(user, token, amount) {
     assert.equal((await token.balanceOf(user)).toString(), amount.toString())
 }
 
+async function assertRevert(promise) {
+    try {
+        await promise;
+    } catch (error) {
+        const revertFound = error.message.search('revert') >= 0;
+        assert(revertFound, `Expected "revert", got ${error} instead`);
+        return;
+    }
+    assert.fail('Expected an EVM revert but no error was encountered');
+}
+
 function decodeReceiptLogs(receiptLogs) {
     const logs = abiDecoder.decodeLogs(receiptLogs)
     const decodedLogs = []
@@ -60,10 +65,10 @@ function decodeReceiptLogs(receiptLogs) {
     return decodedLogs
 }
 
-async function depositToken({ user, token, amount }) {
+async function depositToken({ user, token, amount, nonce }) {
     const broker = await getBroker()
     await token.approve(broker.address, amount, { from: user })
-    await broker.depositToken(user, token.address)
+    await broker.depositToken(user, token.address, nonce)
 }
 
 function parseSignature(signature) {
@@ -121,9 +126,9 @@ module.exports = {
     getJrc,
     getSwc,
     getScratchpad,
-    createNonce,
     validateBalance,
     validateExternalBalance,
+    assertRevert,
     decodeReceiptLogs,
     exchange,
 }
