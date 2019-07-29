@@ -8,10 +8,10 @@ This is the main DEX contract for [Switcheo Exchange](https://switcheo.exchange)
 2. Install [Ganache ^2.1.0](https://truffleframework.com/ganache)
 3. Run Ganache with the mnemonic: `ladder soft balcony kiwi sword shadow volcano reform cricket wall initial normal`
 4. Install node modules with `npm install`
-5. Install solc v0.4.25:
+5. Install solc v0.5.10:
 ```
 $ cd /usr/local/lib/node_modules/truffle
-$ npm install solc@0.4.25
+$ npm install solc@0.5.10
 ```
 6. Run `truffle migrate` to deploy the contracts to Ganache
 7. Run `truffle test` to run test files
