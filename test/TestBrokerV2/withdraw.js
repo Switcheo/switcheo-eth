@@ -1,4 +1,4 @@
-const { web3, getBroker, getJrc, getNonce, validateBalance,
+const { web3, getBroker, getJrc, createNonce, validateBalance,
         validateExternalBalance, exchange } = require('../utils')
 
 contract('Test withdraw', async (accounts) => {
@@ -13,6 +13,7 @@ contract('Test withdraw', async (accounts) => {
     })
 
     it('withdraws amount to user', async () => {
+        const nonce = createNonce()
         await exchange.depositToken({ user, token: jrc, amount: 42 })
         await validateBalance(user, jrc, 42)
         await exchange.withdraw({
@@ -21,7 +22,7 @@ contract('Test withdraw', async (accounts) => {
             amount: 42,
             feeAssetId: jrc,
             feeAmount: 2,
-            nonce: getNonce()
+            nonce
         }, { privateKey })
     })
 })

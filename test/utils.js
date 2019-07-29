@@ -26,7 +26,7 @@ function encodeParameters(types, values) {
 
 let nonceCounter = 1
 
-function getNonce() {
+function createNonce() {
     return nonceCounter++;
 }
 
@@ -78,39 +78,36 @@ function parseSignature(signature) {
   }
 }
 
-async function sign(privateKey, message) {
-    const signature = EthCrypto.sign(privateKey, message)
-    return parseSignature(signature)
-}
-
 function getSignHash(hash) {
   const signHash = soliditySha3(
-    { type: 'string', value: '\x19\x01' },
-    { type: 'bytes32', value: DOMAIN_SEPARATOR },
+    { type: 'string', value: '\\x19\\x01' },
+    { type: 'bytes32',  value: DOMAIN_SEPARATOR },
     { type: 'bytes32',  value: hash }
   )
   return signHash
+}
+
+async function sign(message, privateKey) {
+    const signature = EthCrypto.sign(privateKey, message)
+    return parseSignature(signature.substring(2))
+}
+
+async function signParameters(types, values, privateKey) {
+    const encodedParams = keccak256(encodeParameters(types, values))
+    const signHash = getSignHash(encodedParams)
+    return await sign(signHash, privateKey)
 }
 
 async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     const broker = await getBroker()
-    const { v, r, s } = await sign(privateKey, getSignHash(
-        keccak256(encodeParameters(
-            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
-            [WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce]
-        ))
-    ))
-    console.log('user', user)
-    console.log('assetId', assetId)
-    console.log('amount', amount)
-    console.log('feeAssetId', feeAssetId)
-    console.log('feeAmount', feeAmount)
-    console.log('nonce', nonce)
-    console.log('v,r,s', v, r, s)
-
-    await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
+    const { v, r, s } = await signParameters(
+        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce],
+        privateKey
+    )
+    return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
 }
 
 const exchange = {
@@ -124,7 +121,7 @@ module.exports = {
     getJrc,
     getSwc,
     getScratchpad,
-    getNonce,
+    createNonce,
     validateBalance,
     validateExternalBalance,
     decodeReceiptLogs,

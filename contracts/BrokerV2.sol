@@ -124,7 +124,7 @@ contract BrokerV2 {
         require(_amount > 0, 'Invalid amount');
 
         _validateSignature(_withdrawer, _v, _r, _s,
-            keccak256(abi.encodePacked(
+            keccak256(abi.encode(
                 WITHDRAW_TYPEHASH,
                 _withdrawer,
                 _assetId,
