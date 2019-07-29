@@ -10,18 +10,18 @@ contract ERC20Token {
 contract BrokerV2 {
     using SafeMath for uint256;
 
-    bytes32 constant CONTRACT_NAME = keccak256("Switcheo Exchange");
-    bytes32 constant CONTRACT_VERSION = keccak256("2");
+    bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
+    bytes32 public constant CONTRACT_VERSION = keccak256("2");
     // TODO: update this before deployment
-    uint256 constant CHAIN_ID = 3;
+    uint256 public constant CHAIN_ID = 3;
     // TODO: pre-calculate and update this before deployment
-    address constant VERIFYING_CONTRACT = address(1);
-    bytes32 constant SALT = keccak256("switcheo-eth-eip712-salt");
+    address public constant VERIFYING_CONTRACT = address(1);
+    bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
 
-    bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
+    bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
     ));
-    bytes32 private constant DOMAIN_SEPARATOR = keccak256(abi.encode(
+    bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
         EIP712_DOMAIN_TYPEHASH,
         CONTRACT_NAME,
         CONTRACT_VERSION,
@@ -30,18 +30,18 @@ contract BrokerV2 {
         SALT
     ));
 
-    bytes32 private constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
-        "Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint64 nonce)"
+    bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
+        "Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)"
     ));
 
     // Ether token "address" is set as the constant 0x00
-    address constant ETHER_ADDR = address(0);
+    address private constant ETHER_ADDR = address(0);
 
     // deposits
-    uint256 constant REASON_DEPOSIT = 0x01;
-    uint256 constant REASON_WITHDRAW = 0x09;
-    uint8 constant REASON_WITHDRAW_FEE_GIVE = 0x14;
-    uint8 constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
+    uint256 private constant REASON_DEPOSIT = 0x01;
+    uint256 private constant REASON_WITHDRAW = 0x09;
+    uint8 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
+    uint8 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
 
     // The admin sends trades (balance transitions) to the exchange
     address public admin;
@@ -113,7 +113,7 @@ contract BrokerV2 {
         uint256 _amount,
         address _feeAssetId,
         uint256 _feeAmount,
-        uint64 _nonce,
+        uint256 _nonce,
         uint8 _v,
         bytes32 _r,
         bytes32 _s
@@ -175,7 +175,7 @@ contract BrokerV2 {
         pure
     {
         bytes32 eip712Hash = keccak256(abi.encodePacked(
-            "\\x19\\x01",
+            "\x19\x01",
             DOMAIN_SEPARATOR,
             _hash
         ));

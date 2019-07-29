@@ -25,7 +25,7 @@ const DOMAIN_SEPARATOR = web3.utils.keccak256(web3.eth.abi.encodeParameters(
 
 const WITHDRAW_TYPEHASH = soliditySha3({
     type: 'string',
-    value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint64 nonce)'
+    value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
 })
 
 module.exports = {

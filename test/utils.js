@@ -80,7 +80,7 @@ function parseSignature(signature) {
 
 function getSignHash(hash) {
   const signHash = soliditySha3(
-    { type: 'string', value: '\\x19\\x01' },
+    { type: 'string', value: '\x19\x01' },
     { type: 'bytes32',  value: DOMAIN_SEPARATOR },
     { type: 'bytes32',  value: hash }
   )
