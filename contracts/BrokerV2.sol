@@ -54,7 +54,24 @@ contract BrokerV2 {
     mapping(uint256 => uint256) public usedNonces;
 
     // Emitted on any balance state transition (+ve)
-    event BalanceIncrease(address indexed user, address indexed assetId, uint256 amount, uint256 indexed reason);
+    event BalanceIncrease(
+        address indexed user,
+        address indexed assetId,
+        uint256 amount,
+        uint256 indexed reason,
+        uint256 nonceA,
+        uint256 nonceB
+    );
+
+    // Emitted on any balance state transition (-ve)
+    event BalanceDecrease(
+        address indexed user,
+        address indexed assetId,
+        uint256 amount,
+        uint256 indexed reason,
+        uint256 nonceA,
+        uint256 nonceB
+    );
 
     constructor() public {
         admin = msg.sender;
@@ -68,7 +85,7 @@ contract BrokerV2 {
 
     function deposit() external payable {
         require(msg.value > 0, "Invalid value");
-        _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT);
+        _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0, 0);
     }
 
     function depositToken(
@@ -108,7 +125,7 @@ contract BrokerV2 {
         uint256 finalBalance = token.balanceOf(address(this));
         uint256 transferredAmount = finalBalance - initialBalance;
 
-        _increaseBalance(_user, _assetId, transferredAmount, REASON_DEPOSIT);
+        _increaseBalance(_user, _assetId, transferredAmount, REASON_DEPOSIT, _nonce, 0);
     }
 
     function withdraw(
@@ -148,7 +165,9 @@ contract BrokerV2 {
             _feeAmount,
             REASON_WITHDRAW,
             REASON_WITHDRAW_FEE_GIVE,
-            REASON_WITHDRAW_FEE_RECEIVE
+            REASON_WITHDRAW_FEE_RECEIVE,
+            _nonce,
+            0
         );
 
         if (_assetId == ETHER_ADDR) {
@@ -170,6 +189,7 @@ contract BrokerV2 {
     }
 
     function _markNonce(uint256 _nonce) private {
+        require(_nonce != 0, "Invalid nonce");
         uint256 slot = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slot];
@@ -220,16 +240,18 @@ contract BrokerV2 {
         uint256 _feeAmount,
         uint256 _reasonCode,
         uint256 _feeGiveReasonCode,
-        uint256 _feeReceiveReasonCode
+        uint256 _feeReceiveReasonCode,
+        uint256 _nonceA,
+        uint256 _nonceB
     )
         private
         returns (uint256)
     {
-        _decreaseBalance(_user, _assetId, _amount, _reasonCode);
-        _increaseBalance(operator, _feeAssetId, _feeAmount, _feeReceiveReasonCode);
+        _decreaseBalance(_user, _assetId, _amount, _reasonCode, _nonceA, _nonceB);
+        _increaseBalance(operator, _feeAssetId, _feeAmount, _feeReceiveReasonCode, _nonceA, _nonceB);
 
         if (_feeAssetId != _assetId) {
-            _decreaseBalance(_user, _feeAssetId, _feeAmount, _feeGiveReasonCode);
+            _decreaseBalance(_user, _feeAssetId, _feeAmount, _feeGiveReasonCode, _nonceA, _nonceB);
             return _amount;
         }
 
@@ -240,26 +262,30 @@ contract BrokerV2 {
         address _user,
         address _assetId,
         uint256 _amount,
-        uint256 _reasonCode
+        uint256 _reasonCode,
+        uint256 _nonceA,
+        uint256 _nonceB
     )
         private
     {
         if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
-        emit BalanceIncrease(_user, _assetId, _amount, _reasonCode);
+        emit BalanceDecrease(_user, _assetId, _amount, _reasonCode, _nonceA, _nonceB);
     }
 
     function _increaseBalance(
         address _user,
         address _assetId,
         uint256 _amount,
-        uint256 _reasonCode
+        uint256 _reasonCode,
+        uint256 _nonceA,
+        uint256 _nonceB
     )
         private
     {
         if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].add(_amount);
-        emit BalanceIncrease(_user, _assetId, _amount, _reasonCode);
+        emit BalanceIncrease(_user, _assetId, _amount, _reasonCode, _nonceA, _nonceB);
     }
 
     /// @dev Ensure that the address is a deployed contract
