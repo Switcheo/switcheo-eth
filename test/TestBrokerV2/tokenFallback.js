@@ -18,7 +18,7 @@ contract('Test tokenFallback', async (accounts) => {
             await validateExternalBalance(user, dgtx, 87)
             await validateBalance(user, dgtx, 0)
 
-            await broker.whitelistToken(dgtx.address)
+            await broker.addWhitelistToken(dgtx.address)
             await dgtx.transfer(broker.address, 87, { from: user })
 
             await validateExternalBalance(user, dgtx, 0)

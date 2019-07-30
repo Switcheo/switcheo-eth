@@ -1,13 +1,14 @@
 pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
+import "./lib/ownership/Ownable.sol";
 
 contract ERC20Token {
     function allowance(address owner, address spender) external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
 }
 
-contract BrokerV2 {
+contract BrokerV2 is Ownable {
     using SafeMath for uint256;
 
     bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
@@ -57,17 +58,17 @@ contract BrokerV2 {
     uint8 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint8 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
 
-    // The admin sends trades (balance transitions) to the exchange
-    address public admin;
     // The operator receives fees
     address public operator;
+
+    mapping(address => bool) adminAddresses;
 
     // User balances by: userAddress => assetId => balance
     mapping(address => mapping(address => uint256)) public balances;
 
     mapping(uint256 => uint256) public usedNonces;
 
-    mapping(address => bool) public approvedTokens;
+    mapping(address => bool) public whitelistTokens;
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(
@@ -90,12 +91,12 @@ contract BrokerV2 {
     );
 
     constructor() public {
-        admin = msg.sender;
+        adminAddresses[msg.sender] = true;
         operator = msg.sender;
     }
 
     modifier onlyAdmin() {
-        require(msg.sender == admin, "Invalid sender");
+        require(adminAddresses[msg.sender] == true, "Invalid sender");
         _;
     }
 
@@ -113,7 +114,7 @@ contract BrokerV2 {
         onlyAdmin
     {
         require(
-            approvedTokens[_assetId] == false,
+            whitelistTokens[_assetId] == false,
             "Whitelisted tokens cannot use this method of transfer"
         );
         _markNonce(_nonce);
@@ -155,19 +156,35 @@ contract BrokerV2 {
         );
     }
 
-    function whitelistToken(address _assetId) external onlyAdmin {
-        require(approvedTokens[_assetId] == false, "Token already whitelisted");
-        approvedTokens[_assetId] = true;
+    function addAdmin(address _admin) external onlyOwner {
+        require(adminAddresses[_admin] == false, "Address already set as admin");
+        adminAddresses[_admin] = true;
     }
 
-    function blacklistToken(address _assetId) external onlyAdmin {
-        require(approvedTokens[_assetId] == true, "Token not yet whitelisted");
-        delete approvedTokens[_assetId];
+    function renounceAdmin(address _admin) external onlyOwner {
+        require(adminAddresses[_admin] == true, "Address not yet set as admin");
+        delete adminAddresses[_admin];
     }
 
-    function tokenFallback(address _from, uint _value, bytes calldata /* _data */) external {
+    function addWhitelistToken(address _assetId) external onlyAdmin {
+        require(whitelistTokens[_assetId] == false, "Token already whitelisted");
+        whitelistTokens[_assetId] = true;
+    }
+
+    function renounceWhitelistToken(address _assetId) external onlyAdmin {
+        require(whitelistTokens[_assetId] == true, "Token not yet whitelisted");
+        delete whitelistTokens[_assetId];
+    }
+
+    function tokenFallback(
+        address _from,
+        uint _value,
+        bytes calldata /* _data */
+    )
+        external
+    {
         address assetId = msg.sender;
-        require(approvedTokens[assetId] == true, "Token not whitelisted");
+        require(whitelistTokens[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
     }
 
