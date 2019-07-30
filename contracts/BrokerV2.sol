@@ -165,7 +165,7 @@ contract BrokerV2 {
         delete approvedTokens[_assetId];
     }
 
-    function tokenFallback(address _from, uint _value, bytes memory _data) public {
+    function tokenFallback(address _from, uint _value, bytes calldata /* _data */) external {
         address assetId = msg.sender;
         require(approvedTokens[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
