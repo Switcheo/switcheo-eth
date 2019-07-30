@@ -23,9 +23,7 @@ contract SWCoin {
     mapping(address => uint256) internal balances;
     mapping (address => mapping (address => uint256)) internal allowed;
 
-    constructor()
-        public
-    {
+    constructor() public {
         name = "SW Coin";
         symbol = "SWC";
         decimals = 18;

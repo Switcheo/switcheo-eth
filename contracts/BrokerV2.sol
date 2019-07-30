@@ -2,6 +2,7 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
+import "./lib/introspection/IERC1820Registry.sol";
 
 contract ERC20Token {
     function allowance(address owner, address spender) external view returns (uint256);
@@ -58,6 +59,8 @@ contract BrokerV2 is Ownable {
     uint8 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint8 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
 
+    IERC1820Registry private _erc1820 = IERC1820Registry(0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24);
+
     // The operator receives fees
     address public operator;
 
@@ -93,6 +96,12 @@ contract BrokerV2 is Ownable {
     constructor() public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
+
+        _erc1820.setInterfaceImplementer(
+            address(this),
+            keccak256("ERC777TokensRecipient"),
+            address(this)
+        );
     }
 
     modifier onlyAdmin() {
@@ -161,21 +170,22 @@ contract BrokerV2 is Ownable {
         adminAddresses[_admin] = true;
     }
 
-    function renounceAdmin(address _admin) external onlyOwner {
+    function removeAdmin(address _admin) external onlyOwner {
         require(adminAddresses[_admin] == true, "Address not yet set as admin");
         delete adminAddresses[_admin];
     }
 
-    function addWhitelistToken(address _assetId) external onlyAdmin {
+    function addWhitelistToken(address _assetId) external onlyOwner {
         require(whitelistTokens[_assetId] == false, "Token already whitelisted");
         whitelistTokens[_assetId] = true;
     }
 
-    function renounceWhitelistToken(address _assetId) external onlyAdmin {
+    function removeWhitelistToken(address _assetId) external onlyOwner {
         require(whitelistTokens[_assetId] == true, "Token not yet whitelisted");
         delete whitelistTokens[_assetId];
     }
 
+    // ERC223
     function tokenFallback(
         address _from,
         uint _value,
@@ -186,6 +196,23 @@ contract BrokerV2 is Ownable {
         address assetId = msg.sender;
         require(whitelistTokens[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
+    }
+
+    // ERC777
+    function tokensReceived(
+        address /* _operator */,
+        address _from,
+        address _to,
+        uint _amount,
+        bytes calldata /* _userData */,
+        bytes calldata /* _operatorData */
+    )
+        external
+    {
+        if (_to != address(this)) { return; }
+        address assetId = msg.sender;
+        require(whitelistTokens[assetId] == true, "Token not whitelisted");
+        _increaseBalance(_from, assetId, _amount, REASON_DEPOSIT, 0, 0);
     }
 
     function withdraw(
@@ -202,7 +229,6 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
     {
-        require(_amount > 0, 'Invalid amount');
         _markNonce(_nonce);
 
         _validateSignature(_withdrawer, _v, _r, _s,
@@ -216,6 +242,39 @@ contract BrokerV2 is Ownable {
                 _nonce
             ))
         );
+
+        _withdraw(
+            _withdrawer,
+            _assetId,
+            _amount,
+            _feeAssetId,
+            _feeAmount,
+            _nonce
+        );
+    }
+
+    function emergencyWithdraw(
+        address payable _withdrawer,
+        address _assetId,
+        uint256 _amount
+    )
+        external
+        onlyAdmin
+    {
+        _withdraw(_withdrawer, _assetId, _amount, address(0), 0, 0);
+    }
+
+    function _withdraw(
+        address payable _withdrawer,
+        address _assetId,
+        uint256 _amount,
+        address _feeAssetId,
+        uint256 _feeAmount,
+        uint256 _nonce
+    )
+        private
+    {
+        require(_amount > 0, 'Invalid amount');
 
         uint256 withdrawAmount = _decreaseBalanceWithFees(
             _withdrawer,
@@ -250,10 +309,13 @@ contract BrokerV2 is Ownable {
 
     function _markNonce(uint256 _nonce) private {
         require(_nonce != 0, "Invalid nonce");
+
         uint256 slot = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slot];
+
         require(bits & shiftedBit == 0, "Nonce already used");
+
         usedNonces[slot] = bits | shiftedBit;
     }
 

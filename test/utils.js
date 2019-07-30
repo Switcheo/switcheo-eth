@@ -1,10 +1,12 @@
 const BrokerV2 = artifacts.require('BrokerV2')
+const Scratchpad = artifacts.require('Scratchpad')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const DGTXCoin = artifacts.require('DGTX')
-const Scratchpad = artifacts.require('Scratchpad')
+const ZEUSCoin = artifacts.require('ZEUS')
 
 const EthCrypto = require('eth-crypto')
+const { singletons } = require('openzeppelin-test-helpers');
 
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
@@ -17,10 +19,14 @@ abiDecoder.addABI(BrokerV2.abi)
 const { DOMAIN_SEPARATOR, WITHDRAW_TYPEHASH } = require('./constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
+async function getScratchpad() { return await Scratchpad.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
 async function getDgtx() { return await DGTXCoin.deployed() }
-async function getScratchpad() { return await Scratchpad.deployed() }
+async function getZeus(account) {
+    await singletons.ERC1820Registry(account)
+    return await ZEUSCoin.new()
+}
 
 function encodeParameters(types, values) {
     return web3.eth.abi.encodeParameters(types, values)
@@ -128,6 +134,7 @@ module.exports = {
     getJrc,
     getSwc,
     getDgtx,
+    getZeus,
     getScratchpad,
     validateBalance,
     validateExternalBalance,
