@@ -1,6 +1,7 @@
 const BrokerV2 = artifacts.require('BrokerV2')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
+const DGTXCoin = artifacts.require('DGTX')
 const Scratchpad = artifacts.require('Scratchpad')
 
 const EthCrypto = require('eth-crypto')
@@ -18,6 +19,7 @@ const { DOMAIN_SEPARATOR, WITHDRAW_TYPEHASH } = require('./constants')
 async function getBroker() { return await BrokerV2.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
+async function getDgtx() { return await DGTXCoin.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
 
 function encodeParameters(types, values) {
@@ -125,6 +127,7 @@ module.exports = {
     getBroker,
     getJrc,
     getSwc,
+    getDgtx,
     getScratchpad,
     validateBalance,
     validateExternalBalance,
