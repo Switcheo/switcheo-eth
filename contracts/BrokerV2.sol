@@ -19,8 +19,15 @@ contract BrokerV2 {
     bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
 
     bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
-        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)"
+        "EIP712Domain(",
+            "string name,",
+            "string version,",
+            "uint256 chainId,",
+            "address verifyingContract,",
+            "bytes32 salt",
+        ")"
     ));
+
     bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
         EIP712_DOMAIN_TYPEHASH,
         CONTRACT_NAME,
@@ -31,7 +38,14 @@ contract BrokerV2 {
     ));
 
     bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
-        "Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)"
+        "Withdraw(",
+            "address withdrawer,",
+            "address assetId,",
+            "uint256 amount,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
+            "uint256 nonce",
+        ")"
     ));
 
     // Ether token "address" is set as the constant 0x00
@@ -52,6 +66,8 @@ contract BrokerV2 {
     mapping(address => mapping(address => uint256)) public balances;
 
     mapping(uint256 => uint256) public usedNonces;
+
+    mapping(address => bool) public approvedTokens;
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(
@@ -96,6 +112,10 @@ contract BrokerV2 {
         external
         onlyAdmin
     {
+        require(
+            approvedTokens[_assetId] == false,
+            "Whitelisted tokens cannot use this method of transfer"
+        );
         _markNonce(_nonce);
         _validateContractAddress(_assetId);
 
@@ -125,7 +145,30 @@ contract BrokerV2 {
         uint256 finalBalance = token.balanceOf(address(this));
         uint256 transferredAmount = finalBalance - initialBalance;
 
-        _increaseBalance(_user, _assetId, transferredAmount, REASON_DEPOSIT, _nonce, 0);
+        _increaseBalance(
+            _user,
+            _assetId,
+            transferredAmount,
+            REASON_DEPOSIT,
+            _nonce,
+            0
+        );
+    }
+
+    function whitelistToken(address _assetId) external onlyAdmin {
+        require(approvedTokens[_assetId] == false, "Token already whitelisted");
+        approvedTokens[_assetId] = true;
+    }
+
+    function blacklistToken(address _assetId) external onlyAdmin {
+        require(approvedTokens[_assetId] == true, "Token not yet whitelisted");
+        delete approvedTokens[_assetId];
+    }
+
+    function tokenFallback(address _from, uint _value, bytes memory _data) public {
+        address assetId = msg.sender;
+        require(approvedTokens[assetId] == true, "Token not whitelisted");
+        _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
     }
 
     function withdraw(
@@ -247,11 +290,33 @@ contract BrokerV2 {
         private
         returns (uint256)
     {
-        _decreaseBalance(_user, _assetId, _amount, _reasonCode, _nonceA, _nonceB);
-        _increaseBalance(operator, _feeAssetId, _feeAmount, _feeReceiveReasonCode, _nonceA, _nonceB);
+        _decreaseBalance(
+            _user,
+            _assetId,
+            _amount,
+            _reasonCode,
+            _nonceA,
+            _nonceB
+        );
+
+        _increaseBalance(
+            operator,
+            _feeAssetId,
+            _feeAmount,
+            _feeReceiveReasonCode,
+            _nonceA,
+            _nonceB
+        );
 
         if (_feeAssetId != _assetId) {
-            _decreaseBalance(_user, _feeAssetId, _feeAmount, _feeGiveReasonCode, _nonceA, _nonceB);
+            _decreaseBalance(
+                _user,
+                _feeAssetId,
+                _feeAmount,
+                _feeGiveReasonCode,
+                _nonceA,
+                _nonceB
+            );
             return _amount;
         }
 
@@ -270,7 +335,14 @@ contract BrokerV2 {
     {
         if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
-        emit BalanceDecrease(_user, _assetId, _amount, _reasonCode, _nonceA, _nonceB);
+        emit BalanceDecrease(
+            _user,
+            _assetId,
+            _amount,
+            _reasonCode,
+            _nonceA,
+            _nonceB
+        );
     }
 
     function _increaseBalance(
@@ -285,7 +357,14 @@ contract BrokerV2 {
     {
         if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].add(_amount);
-        emit BalanceIncrease(_user, _assetId, _amount, _reasonCode, _nonceA, _nonceB);
+        emit BalanceIncrease(
+            _user,
+            _assetId,
+            _amount,
+            _reasonCode,
+            _nonceA,
+            _nonceB
+        );
     }
 
     /// @dev Ensure that the address is a deployed contract
@@ -307,7 +386,13 @@ contract BrokerV2 {
         );
     }
 
-    function _getUint256FromBytes(bytes memory data) private pure returns (uint256) {
+    function _getUint256FromBytes(
+        bytes memory data
+    )
+        private
+        pure
+        returns (uint256)
+    {
         uint256 parsed;
         assembly { parsed := mload(add(data, 32)) }
         return parsed;
