@@ -59,8 +59,6 @@ contract BrokerV2 is Ownable {
     uint8 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint8 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
 
-    IERC1820Registry private _erc1820 = IERC1820Registry(0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24);
-
     // The operator receives fees
     address public operator;
 
@@ -97,7 +95,11 @@ contract BrokerV2 is Ownable {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
 
-        _erc1820.setInterfaceImplementer(
+        IERC1820Registry erc1820 = IERC1820Registry(
+            0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24
+        );
+
+        erc1820.setInterfaceImplementer(
             address(this),
             keccak256("ERC777TokensRecipient"),
             address(this)

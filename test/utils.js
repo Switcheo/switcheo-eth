@@ -74,6 +74,7 @@ function decodeReceiptLogs(receiptLogs) {
 }
 
 async function depositToken({ user, token, amount, nonce }) {
+    user = ensureAddress(user)
     const broker = await getBroker()
     await token.approve(broker.address, amount, { from: user })
     await broker.depositToken(user, token.address, nonce)
@@ -114,6 +115,7 @@ async function signParameters(types, values, privateKey) {
 async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
+    user = ensureAddress(user)
     const broker = await getBroker()
     const { v, r, s } = await signParameters(
         ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
