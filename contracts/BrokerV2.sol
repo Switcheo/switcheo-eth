@@ -46,6 +46,14 @@ contract BrokerV2 is Ownable {
         SALT
     ));
 
+    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
+        "AuthorizeSpender(",
+            "address user,",
+            "address spender,",
+            "uint256 nonce",
+        ")"
+    ));
+
     bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
         "Withdraw(",
             "address withdrawer,",
@@ -57,10 +65,16 @@ contract BrokerV2 is Ownable {
         ")"
     ));
 
-    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
-        "AuthorizeSpender(",
-            "address user,",
-            "address spender,",
+    bytes32 public constant CREATE_SWAP_TYPEHASH = keccak256(abi.encodePacked(
+        "CreateSwap(",
+            "address maker,",
+            "address taker,",
+            "address assetId,",
+            "uint256 amount,",
+            "bytes32 hashedSecret,",
+            "uint256 expiryTime,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
             "uint256 nonce",
         ")"
     ));
@@ -71,22 +85,24 @@ contract BrokerV2 is Ownable {
     // deposits
     uint256 private constant REASON_DEPOSIT = 0x01;
     uint256 private constant REASON_WITHDRAW = 0x09;
-    uint8 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
-    uint8 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
+    uint256 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
+    uint256 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
+    uint256 private constant REASON_SWAP_GIVE = 0x30;
+    uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
 
-    uint32 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
+    uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
 
     State public state;
     // The operator receives fees
     address public operator;
 
-    uint32 public slowWithdrawDelay;
+    uint256 public slowWithdrawDelay;
 
     mapping(address => bool) adminAddresses;
 
-    // User balances by: userAddress => assetId => balance
-    mapping(address => mapping(address => uint256)) public balances;
     mapping(uint256 => uint256) public usedNonces;
+    mapping(address => mapping(address => uint256)) public balances;
+    mapping(bytes32 => bool) public atomicSwaps;
     mapping(address => bool) public tokenWhitelist;
     mapping(address => bool) public spenderWhitelist;
     mapping(address => mapping(address => bool)) public spenderAuthorizations;
@@ -112,26 +128,88 @@ contract BrokerV2 is Ownable {
         uint256 nonceB
     );
 
-
-    event AnnounceWithdraw(
-        address indexed user,
-        address indexed assetId,
-        uint256 amount,
-        uint256 withdrawableAt
-    );
-
     event AddAdmin(address indexed admin);
     event RemoveAdmin(address indexed admin);
     event WhitelistToken(address indexed assetId);
     event UnwhitelistToken(address indexed assetId);
     event AddSpender(address indexed spender);
     event RemoveSpender(address indexed spender);
+
     event AuthorizeSpender(
         address indexed user,
         address indexed spender,
         uint256 nonce
     );
+
     event UnauthorizeSpender(address indexed user, address indexed spender);
+
+    event SpendFrom(
+        address indexed from,
+        address indexed to,
+        address indexed assetId,
+        uint256 amount
+    );
+
+    event Deposit(address indexed user, uint256 amount);
+
+    event DepositToken(
+        address indexed user,
+        address indexed assetId,
+        uint256 amount,
+        uint256 nonce
+    );
+
+    event TokenFallback(
+        address indexed user,
+        address indexed assetId,
+        uint256 amount
+    );
+
+    event TokensReceived(
+        address indexed user,
+        address indexed assetId,
+        uint256 amount
+    );
+
+    event Withdraw(
+        address withdrawer,
+        address assetId,
+        uint256 amount,
+        address feeAssetId,
+        uint256 feeAmount,
+        uint256 nonce
+    );
+
+    event EmergencyWithdraw(
+        address indexed withdrawer,
+        address indexed assetId,
+        uint256 amount
+    );
+
+    event AnnounceWithdraw(
+        address indexed withdrawer,
+        address indexed assetId,
+        uint256 amount,
+        uint256 withdrawableAt
+    );
+
+    event SlowWithdraw(
+        address indexed withdrawer,
+        address indexed assetId,
+        uint256 amount
+    );
+
+    event CreateSwap(
+        address indexed maker,
+        address indexed taker,
+        address assetId,
+        uint256 amount,
+        bytes32 indexed hashedSecret,
+        uint256 expiryTime,
+        address feeAsset,
+        uint256 feeAmount,
+        uint256 nonce
+    );
 
     constructor() public {
         adminAddresses[msg.sender] = true;
@@ -167,7 +245,7 @@ contract BrokerV2 is Ownable {
         operator = _operator;
     }
 
-    function setSlowWithdrawDelay(uint32 _delay) external onlyOwner {
+    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
         require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "Invalid delay");
         slowWithdrawDelay = _delay;
     }
@@ -270,11 +348,14 @@ contract BrokerV2 is Ownable {
 
         balances[_from][_assetId] = balances[_from][_assetId].sub(_amount);
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
+
+        emit SpendFrom(_from, _to, _assetId, _amount);
     }
 
     function deposit() external payable onlyActiveState {
         require(msg.value > 0, "Invalid value");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0, 0);
+        emit Deposit(msg.sender, msg.value);
     }
 
     function depositToken(
@@ -327,12 +408,14 @@ contract BrokerV2 is Ownable {
             _nonce,
             0
         );
+
+        emit DepositToken(_user, _assetId, transferredAmount, _nonce);
     }
 
     // ERC223
     function tokenFallback(
-        address _from,
-        uint _value,
+        address _user,
+        uint _amount,
         bytes calldata /* _data */
     )
         external
@@ -340,13 +423,14 @@ contract BrokerV2 is Ownable {
     {
         address assetId = msg.sender;
         require(tokenWhitelist[assetId] == true, "Token not whitelisted");
-        _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
+        _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0, 0);
+        emit TokenFallback(_user, assetId, _amount);
     }
 
     // ERC777
     function tokensReceived(
         address /* _operator */,
-        address _from,
+        address _user,
         address _to,
         uint _amount,
         bytes calldata /* _userData */,
@@ -358,8 +442,10 @@ contract BrokerV2 is Ownable {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
         require(tokenWhitelist[assetId] == true, "Token not whitelisted");
-        _increaseBalance(_from, assetId, _amount, REASON_DEPOSIT, 0, 0);
+        _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0, 0);
+        emit TokensReceived(_user, assetId, _amount);
     }
+
     function withdraw(
         address payable _withdrawer,
         address _assetId,
@@ -397,6 +483,15 @@ contract BrokerV2 is Ownable {
             _feeAmount,
             _nonce
         );
+
+        emit Withdraw(
+            _withdrawer,
+            _assetId,
+            _amount,
+            _feeAssetId,
+            _feeAmount,
+            _nonce
+        );
     }
 
     function emergencyWithdraw(
@@ -408,6 +503,7 @@ contract BrokerV2 is Ownable {
         onlyAdmin
     {
         _withdraw(_withdrawer, _assetId, _amount, address(0), 0, 0);
+        emit EmergencyWithdraw(_withdrawer, _assetId, _amount);
     }
 
     function announceWithdraw(
@@ -437,15 +533,85 @@ contract BrokerV2 is Ownable {
         external
     {
         WithdrawalAnnouncement memory announcement = withdrawlAnnouncements[msg.sender][_assetId];
+        uint256 amount = announcement.amount;
 
-        require(announcement.amount > 0, "Invalid amount");
+        require(amount > 0, "Invalid amount");
         require(
             announcement.withdrawableAt != 0 && announcement.withdrawableAt <= now,
             "Insufficient delay"
         );
 
         delete withdrawlAnnouncements[_withdrawer][_assetId];
-        _withdraw(_withdrawer, _assetId, announcement.amount, address(0), 0, 0);
+        _withdraw(_withdrawer, _assetId, amount, address(0), 0, 0);
+        emit SlowWithdraw(_withdrawer, _assetId, amount);
+    }
+
+    // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
+    // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
+    // _hashes => [0]: hashedSecret, [1]: r, [2]: s
+    function createSwap(
+        address[4] calldata _addresses,
+        uint256[4] calldata _values,
+        bytes32[3] calldata _hashes,
+        uint8 _v
+    )
+        external
+        onlyAdmin
+    {
+        require(_values[0] > 0, "Invalid amount");
+        require(_values[1] > now, "Invalid expiry time");
+        _markNonce(_values[3]);
+
+        bytes32 swapHash = keccak256(abi.encode(
+                                        CREATE_SWAP_TYPEHASH,
+                                        _addresses[0], // maker
+                                        _addresses[1], // taker
+                                        _addresses[2], // assetId
+                                        _values[0], // amount
+                                        _hashes[0], // hashedSecret
+                                        _values[1], // expiryTime
+                                        _addresses[3], // feeAssetId
+                                        _values[2], // feeAmount
+                                        _values[3] // nonce
+                                    ));
+
+        require(!atomicSwaps[swapHash], "Invalid swap");
+        _validateSignature(_addresses[0], _v, _hashes[1], _hashes[2], swapHash);
+
+        _decreaseBalance(
+            _addresses[0], // maker
+            _addresses[2], // assetId
+            _values[0], // amount
+            REASON_SWAP_GIVE,
+            _values[3], // nonce
+            0
+        );
+
+        if (_addresses[3] != _addresses[2]) { // feeAssetId != assetId
+            _decreaseBalance(
+                _addresses[0], // maker
+                _addresses[3], // feeAssetId
+                _values[2], // feeAmount
+                REASON_SWAP_FEE_GIVE,
+                _values[3], // nonce
+                0
+            );
+        }
+
+        atomicSwaps[swapHash] = true;
+
+        // emit
+        emit CreateSwap(
+            _addresses[0], // maker
+            _addresses[1], // taker
+            _addresses[2], // assetId
+            _values[0], // amount
+            _hashes[0], // hashedSecret
+            _values[1], // expiryTime
+            _addresses[3], // feeAssetId
+            _values[2], // feeAmount
+            _values[3] // nonce
+        );
     }
 
     function _withdraw(
@@ -489,6 +655,14 @@ contract BrokerV2 is Ownable {
 
         // ensure that asset transfer succeeded
         _validateTransferResult(returnData);
+    }
+
+    function _nonceTaken(uint256 _nonce) private view returns(bool) {
+        uint256 slot = _nonce.div(256);
+        uint256 shiftedBit = 1 << _nonce.mod(256);
+        uint256 bits = usedNonces[slot];
+
+        return bits & shiftedBit == 0;
     }
 
     function _markNonce(uint256 _nonce) private {
