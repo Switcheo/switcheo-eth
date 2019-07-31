@@ -16,7 +16,7 @@ const { soliditySha3, keccak256 } = web3.utils
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const { DOMAIN_SEPARATOR, WITHDRAW_TYPEHASH } = require('./constants')
+const { DOMAIN_SEPARATOR, WITHDRAW_TYPEHASH, AUTHORIZE_SPENDER_TYPEHASH } = require('./constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
@@ -130,9 +130,20 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
     return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
 }
 
+async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
+    const broker = await getBroker()
+    const { v, r, s } = await signParameters(
+        ['bytes32', 'address', 'address', 'uint256'],
+        [AUTHORIZE_SPENDER_TYPEHASH, user, spender, nonce],
+        privateKey
+    )
+    return await broker.authorizeSpender(user, spender, nonce, v, r, s)
+}
+
 const exchange = {
     depositToken,
-    withdraw
+    withdraw,
+    authorizeSpender,
 }
 
 module.exports = {

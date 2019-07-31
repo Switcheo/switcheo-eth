@@ -55,6 +55,14 @@ contract BrokerV2 is Ownable {
         ")"
     ));
 
+    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
+        "AuthorizeSpender(",
+            "address user,",
+            "address spender,",
+            "uint256 nonce",
+        ")"
+    ));
+
     // Ether token "address" is set as the constant 0x00
     address private constant ETHER_ADDR = address(0);
 
@@ -78,9 +86,13 @@ contract BrokerV2 is Ownable {
 
     mapping(uint256 => uint256) public usedNonces;
 
-    mapping(address => bool) public whitelistTokens;
+    mapping(address => bool) public approvedTokens;
 
     mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
+
+    mapping(address => bool) public approvedSpenders;
+
+    mapping(address => mapping(address => bool)) public spenderAuthorizations;
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(
@@ -102,7 +114,26 @@ contract BrokerV2 is Ownable {
         uint256 nonceB
     );
 
-    event AnnounceWithdraw(address indexed user, address indexed assetId, uint256 amount, uint256 withdrawableAt);
+
+    event AnnounceWithdraw(
+        address indexed user,
+        address indexed assetId,
+        uint256 amount,
+        uint256 withdrawableAt
+    );
+
+    event AddAdmin(address indexed admin);
+    event RemoveAdmin(address indexed admin);
+    event WhitelistToken(address indexed assetId);
+    event UnwhitelistToken(address indexed assetId);
+    event AddSpender(address indexed spender);
+    event RemoveSpender(address indexed spender);
+    event AuthorizeSpender(
+        address indexed user,
+        address indexed spender,
+        uint256 nonce
+    );
+    event UnauthorizeSpender(address indexed user, address indexed spender);
 
     constructor() public {
         adminAddresses[msg.sender] = true;
@@ -126,6 +157,106 @@ contract BrokerV2 is Ownable {
         _;
     }
 
+    function addAdmin(address _admin) external onlyOwner {
+        _validateAddress(_admin);
+        require(!adminAddresses[_admin], "Admin already added");
+        adminAddresses[_admin] = true;
+        emit AddAdmin(_admin);
+    }
+
+    function removeAdmin(address _admin) external onlyOwner {
+        _validateAddress(_admin);
+        require(adminAddresses[_admin], "Admin not yet added");
+        delete adminAddresses[_admin];
+        emit RemoveAdmin(_admin);
+    }
+
+    function whitelistToken(address _assetId) external onlyOwner {
+        _validateAddress(_assetId);
+        require(!approvedTokens[_assetId], "Token already whitelisted");
+        approvedTokens[_assetId] = true;
+        emit WhitelistToken(_assetId);
+    }
+
+    function unwhitelistToken(address _assetId) external onlyOwner {
+        _validateAddress(_assetId);
+        require(approvedTokens[_assetId], "Token not yet whitelisted");
+        delete approvedTokens[_assetId];
+        emit UnwhitelistToken(_assetId);
+    }
+
+    function whitelistSpender(address _spender) external onlyOwner {
+        _validateAddress(_spender);
+        require(!approvedSpenders[_spender], "Spender already added");
+        approvedSpenders[_spender] = true;
+        emit AddSpender(_spender);
+    }
+
+    function unwhitelistSpender(address _spender) external onlyOwner {
+        _validateAddress(_spender);
+        require(approvedSpenders[_spender], "Spender not yet added");
+        delete approvedSpenders[_spender];
+        emit RemoveSpender(_spender);
+    }
+
+    function authorizeSpender(
+        address _user,
+        address _spender,
+        uint256 _nonce,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s
+    )
+        external
+        onlyAdmin
+    {
+        require(approvedSpenders[_spender], "Invalid spender");
+        _markNonce(_nonce);
+
+        _validateSignature(_user, _v, _r, _s,
+            keccak256(abi.encode(
+                AUTHORIZE_SPENDER_TYPEHASH,
+                _user,
+                _spender,
+                _nonce
+            ))
+        );
+        spenderAuthorizations[_user][_spender] = true;
+        emit AuthorizeSpender(_user, _spender, _nonce);
+    }
+
+    function unauthorizeSpender(address _spender) external {
+        require(!approvedSpenders[_spender], "Spender still active");
+
+        address user = msg.sender;
+        require(
+            spenderAuthorizations[user][_spender],
+            "Spender not yet authorized"
+        );
+
+        delete spenderAuthorizations[user][_spender];
+        emit UnauthorizeSpender(user, _spender);
+    }
+
+    function spendFrom(
+        address _from,
+        address _to,
+        address _assetId,
+        uint256 _amount
+    )
+        external
+    {
+        require(
+            spenderAuthorizations[_from][msg.sender],
+            "Spender not yet approved"
+        );
+
+        _validateAddress(_to);
+
+        balances[_from][_assetId] = balances[_from][_assetId].sub(_amount);
+        balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
+    }
+
     function deposit() external payable {
         require(msg.value > 0, "Invalid value");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0, 0);
@@ -140,7 +271,7 @@ contract BrokerV2 is Ownable {
         onlyAdmin
     {
         require(
-            whitelistTokens[_assetId] == false,
+            approvedTokens[_assetId] == false,
             "Whitelisted tokens cannot use this method of transfer"
         );
         _markNonce(_nonce);
@@ -182,26 +313,6 @@ contract BrokerV2 is Ownable {
         );
     }
 
-    function addAdmin(address _admin) external onlyOwner {
-        require(adminAddresses[_admin] == false, "Address already set as admin");
-        adminAddresses[_admin] = true;
-    }
-
-    function removeAdmin(address _admin) external onlyOwner {
-        require(adminAddresses[_admin] == true, "Address not yet set as admin");
-        delete adminAddresses[_admin];
-    }
-
-    function addWhitelistToken(address _assetId) external onlyOwner {
-        require(whitelistTokens[_assetId] == false, "Token already whitelisted");
-        whitelistTokens[_assetId] = true;
-    }
-
-    function removeWhitelistToken(address _assetId) external onlyOwner {
-        require(whitelistTokens[_assetId] == true, "Token not yet whitelisted");
-        delete whitelistTokens[_assetId];
-    }
-
     // ERC223
     function tokenFallback(
         address _from,
@@ -211,7 +322,7 @@ contract BrokerV2 is Ownable {
         external
     {
         address assetId = msg.sender;
-        require(whitelistTokens[assetId] == true, "Token not whitelisted");
+        require(approvedTokens[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
     }
 
@@ -228,10 +339,9 @@ contract BrokerV2 is Ownable {
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
-        require(whitelistTokens[assetId] == true, "Token not whitelisted");
+        require(approvedTokens[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _amount, REASON_DEPOSIT, 0, 0);
     }
-
     function withdraw(
         address payable _withdrawer,
         address _assetId,
@@ -498,6 +608,13 @@ contract BrokerV2 is Ownable {
             _reasonCode,
             _nonceA,
             _nonceB
+        );
+    }
+
+    function _validateAddress(address _address) private pure {
+        require(
+            _address != address(0),
+            'Invalid address'
         );
     }
 

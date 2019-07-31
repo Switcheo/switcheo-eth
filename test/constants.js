@@ -28,8 +28,14 @@ const WITHDRAW_TYPEHASH = soliditySha3({
     value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
 })
 
+const AUTHORIZE_SPENDER_TYPEHASH = soliditySha3({
+    type: 'string',
+    value: 'AuthorizeSpender(address user,address spender,uint256 nonce)'
+})
+
 module.exports = {
     ETHER_ADDR,
     DOMAIN_SEPARATOR,
-    WITHDRAW_TYPEHASH
+    WITHDRAW_TYPEHASH,
+    AUTHORIZE_SPENDER_TYPEHASH,
 }

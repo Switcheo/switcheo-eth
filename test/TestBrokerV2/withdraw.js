@@ -16,7 +16,7 @@ contract('Test withdraw', async (accounts) => {
 
     contract('when parameters are valid', async () => {
         it('withdraws amount to user', async () => {
-            await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 3 })
+            await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 1 })
             await validateBalance(user, jrc, 42)
             await exchange.withdraw({
                 user,
@@ -24,7 +24,7 @@ contract('Test withdraw', async (accounts) => {
                 amount: 42,
                 feeAssetId: jrc,
                 feeAmount: 2,
-                nonce: 4
+                nonce: 2
             }, { privateKey })
             await validateBalance(user, jrc, 0)
             await validateBalance(operator, jrc, 2)

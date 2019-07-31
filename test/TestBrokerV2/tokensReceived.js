@@ -18,7 +18,7 @@ contract('Test tokensReceived', async (accounts) => {
             await validateExternalBalance(user, zeus, 87)
             await validateBalance(user, zeus, 0)
 
-            await broker.addWhitelistToken(zeus.address)
+            await broker.whitelistToken(zeus.address)
             await zeus.send(broker.address, 87, "0x0", { from: user })
 
             await validateExternalBalance(user, zeus, 0)
