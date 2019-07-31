@@ -16,7 +16,7 @@ contract('Test authorizeSpender', async (accounts) => {
     })
 
     contract('when parameters are valid', async () => {
-        it('marks a spender as authorized', async () => {
+        it('transfers funds', async () => {
             await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 1 })
             await validateBalance(user, jrc, 42)
             await validateBalance(receiver, jrc, 0)
