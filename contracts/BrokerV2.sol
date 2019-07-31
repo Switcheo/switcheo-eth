@@ -17,6 +17,8 @@ contract BrokerV2 is Ownable {
         uint256 withdrawableAt;
     }
 
+    enum State { Active, Inactive }
+
     bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
     bytes32 public constant CONTRACT_VERSION = keccak256("2");
     // TODO: update this before deployment
@@ -74,6 +76,7 @@ contract BrokerV2 is Ownable {
 
     uint32 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
 
+    State public state;
     // The operator receives fees
     address public operator;
 
@@ -83,16 +86,11 @@ contract BrokerV2 is Ownable {
 
     // User balances by: userAddress => assetId => balance
     mapping(address => mapping(address => uint256)) public balances;
-
     mapping(uint256 => uint256) public usedNonces;
-
-    mapping(address => bool) public approvedTokens;
-
-    mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
-
-    mapping(address => bool) public approvedSpenders;
-
+    mapping(address => bool) public tokenWhitelist;
+    mapping(address => bool) public spenderWhitelist;
     mapping(address => mapping(address => bool)) public spenderAuthorizations;
+    mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(
@@ -157,6 +155,23 @@ contract BrokerV2 is Ownable {
         _;
     }
 
+    modifier onlyActiveState() {
+        require(state == State.Active, "Invalid state");
+        _;
+    }
+
+    function setState(State _state) external onlyOwner { state = _state; }
+
+    function setOperator(address _operator) external onlyOwner {
+        _validateAddress(operator);
+        operator = _operator;
+    }
+
+    function setSlowWithdrawDelay(uint32 _delay) external onlyOwner {
+        require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "Invalid delay");
+        slowWithdrawDelay = _delay;
+    }
+
     function addAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
         require(!adminAddresses[_admin], "Admin already added");
@@ -173,29 +188,29 @@ contract BrokerV2 is Ownable {
 
     function whitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
-        require(!approvedTokens[_assetId], "Token already whitelisted");
-        approvedTokens[_assetId] = true;
+        require(!tokenWhitelist[_assetId], "Token already whitelisted");
+        tokenWhitelist[_assetId] = true;
         emit WhitelistToken(_assetId);
     }
 
     function unwhitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
-        require(approvedTokens[_assetId], "Token not yet whitelisted");
-        delete approvedTokens[_assetId];
+        require(tokenWhitelist[_assetId], "Token not yet whitelisted");
+        delete tokenWhitelist[_assetId];
         emit UnwhitelistToken(_assetId);
     }
 
     function whitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
-        require(!approvedSpenders[_spender], "Spender already added");
-        approvedSpenders[_spender] = true;
+        require(!spenderWhitelist[_spender], "Spender already added");
+        spenderWhitelist[_spender] = true;
         emit AddSpender(_spender);
     }
 
     function unwhitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
-        require(approvedSpenders[_spender], "Spender not yet added");
-        delete approvedSpenders[_spender];
+        require(spenderWhitelist[_spender], "Spender not yet added");
+        delete spenderWhitelist[_spender];
         emit RemoveSpender(_spender);
     }
 
@@ -210,7 +225,7 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
     {
-        require(approvedSpenders[_spender], "Invalid spender");
+        require(spenderWhitelist[_spender], "Invalid spender");
         _markNonce(_nonce);
 
         _validateSignature(_user, _v, _r, _s,
@@ -226,7 +241,7 @@ contract BrokerV2 is Ownable {
     }
 
     function unauthorizeSpender(address _spender) external {
-        require(!approvedSpenders[_spender], "Spender still active");
+        require(!spenderWhitelist[_spender], "Spender still active");
 
         address user = msg.sender;
         require(
@@ -257,7 +272,7 @@ contract BrokerV2 is Ownable {
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
     }
 
-    function deposit() external payable {
+    function deposit() external payable onlyActiveState {
         require(msg.value > 0, "Invalid value");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0, 0);
     }
@@ -269,9 +284,10 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyAdmin
+        onlyActiveState
     {
         require(
-            approvedTokens[_assetId] == false,
+            tokenWhitelist[_assetId] == false,
             "Whitelisted tokens cannot use this method of transfer"
         );
         _markNonce(_nonce);
@@ -320,9 +336,10 @@ contract BrokerV2 is Ownable {
         bytes calldata /* _data */
     )
         external
+        onlyActiveState
     {
         address assetId = msg.sender;
-        require(approvedTokens[assetId] == true, "Token not whitelisted");
+        require(tokenWhitelist[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _value, REASON_DEPOSIT, 0, 0);
     }
 
@@ -336,10 +353,11 @@ contract BrokerV2 is Ownable {
         bytes calldata /* _operatorData */
     )
         external
+        onlyActiveState
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
-        require(approvedTokens[assetId] == true, "Token not whitelisted");
+        require(tokenWhitelist[assetId] == true, "Token not whitelisted");
         _increaseBalance(_from, assetId, _amount, REASON_DEPOSIT, 0, 0);
     }
     function withdraw(
@@ -355,6 +373,7 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyAdmin
+        onlyActiveState
     {
         _markNonce(_nonce);
 
