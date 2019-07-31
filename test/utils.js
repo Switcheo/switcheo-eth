@@ -49,6 +49,11 @@ async function validateExternalBalance(user, token, amount) {
     assert.equal((await token.balanceOf(user)).toString(), amount.toString())
 }
 
+async function increaseEvmTime(time) {
+  await web3.currentProvider.send('evm_increaseTime', [time])
+  await web3.currentProvider.send('evm_mine', [])
+}
+
 async function assertRevert(promise) {
     try {
         await promise;
@@ -141,6 +146,7 @@ module.exports = {
     validateBalance,
     validateExternalBalance,
     assertRevert,
+    increaseEvmTime,
     decodeReceiptLogs,
     exchange,
 }

@@ -12,6 +12,11 @@ contract ERC20Token {
 contract BrokerV2 is Ownable {
     using SafeMath for uint256;
 
+    struct WithdrawalAnnouncement {
+        uint256 amount;
+        uint256 withdrawableAt;
+    }
+
     bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
     bytes32 public constant CONTRACT_VERSION = keccak256("2");
     // TODO: update this before deployment
@@ -59,8 +64,12 @@ contract BrokerV2 is Ownable {
     uint8 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint8 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
 
+    uint32 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
+
     // The operator receives fees
     address public operator;
+
+    uint32 public slowWithdrawDelay;
 
     mapping(address => bool) adminAddresses;
 
@@ -70,6 +79,8 @@ contract BrokerV2 is Ownable {
     mapping(uint256 => uint256) public usedNonces;
 
     mapping(address => bool) public whitelistTokens;
+
+    mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
 
     // Emitted on any balance state transition (+ve)
     event BalanceIncrease(
@@ -91,9 +102,13 @@ contract BrokerV2 is Ownable {
         uint256 nonceB
     );
 
+    event AnnounceWithdraw(address indexed user, address indexed assetId, uint256 amount, uint256 withdrawableAt);
+
     constructor() public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
+
+        slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
 
         IERC1820Registry erc1820 = IERC1820Registry(
             0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24
@@ -264,6 +279,44 @@ contract BrokerV2 is Ownable {
         onlyAdmin
     {
         _withdraw(_withdrawer, _assetId, _amount, address(0), 0, 0);
+    }
+
+    function announceWithdraw(
+        address _assetId,
+        uint256 _amount
+    )
+        external
+    {
+        require(
+            _amount > 0 && _amount <= balances[msg.sender][_assetId],
+            "Invalid amount"
+        );
+
+        WithdrawalAnnouncement storage announcement = withdrawlAnnouncements[msg.sender][_assetId];
+
+        uint256 withdrawableAt = now + slowWithdrawDelay;
+        announcement.withdrawableAt = withdrawableAt;
+        announcement.amount = _amount;
+
+        emit AnnounceWithdraw(msg.sender, _assetId, _amount, withdrawableAt);
+    }
+
+    function slowWithdraw(
+        address payable _withdrawer,
+        address _assetId
+    )
+        external
+    {
+        WithdrawalAnnouncement memory announcement = withdrawlAnnouncements[msg.sender][_assetId];
+
+        require(announcement.amount > 0, "Invalid amount");
+        require(
+            announcement.withdrawableAt != 0 && announcement.withdrawableAt <= now,
+            "Insufficient delay"
+        );
+
+        delete withdrawlAnnouncements[_withdrawer][_assetId];
+        _withdraw(_withdrawer, _assetId, announcement.amount, address(0), 0, 0);
     }
 
     function _withdraw(
