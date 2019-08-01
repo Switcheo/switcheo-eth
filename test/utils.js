@@ -7,6 +7,7 @@ const ZEUSCoin = artifacts.require('ZEUS')
 
 const EthCrypto = require('eth-crypto')
 const { singletons } = require('openzeppelin-test-helpers');
+const { sha256 } = require('js-sha256')
 
 const Web3 = require('web3')
 const web3 = new Web3(Web3.givenProvider)
@@ -16,7 +17,7 @@ const { soliditySha3, keccak256 } = web3.utils
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const { DOMAIN_SEPARATOR, WITHDRAW_TYPEHASH, AUTHORIZE_SPENDER_TYPEHASH } = require('./constants')
+const { DOMAIN_SEPARATOR, TYPEHASHES } = require('./constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
@@ -29,6 +30,12 @@ async function getZeus(account) {
 }
 
 function encodeParameters(types, values) {
+    for (let i = 0; i < values.length; i++) {
+        const valueLabel = `values[${i}]`
+        if (values[i] === undefined) { throw new Error(valueLabel + ' is undefined') }
+        if (values[i] === null) { throw new Error(valueLabel + ' is null') }
+        if (typeof values[i] === 'object') { throw new Error(valueLabel + ' is an object') }
+    }
     return web3.eth.abi.encodeParameters(types, values)
 }
 
@@ -49,6 +56,12 @@ async function validateExternalBalance(user, token, amount) {
     assert.equal((await token.balanceOf(user)).toString(), amount.toString())
 }
 
+async function getEvmTime() {
+    const blockNumber = await web3.eth.getBlockNumber()
+    const block = await web3.eth.getBlock(blockNumber)
+    return block.timestamp
+}
+
 async function increaseEvmTime(time) {
   await web3.currentProvider.send('evm_increaseTime', [time])
   await web3.currentProvider.send('evm_mine', [])
@@ -63,6 +76,10 @@ async function assertRevert(promise) {
         return;
     }
     assert.fail('Expected an EVM revert but no error was encountered');
+}
+
+function hashSecret(secret) {
+    return '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
 }
 
 function decodeReceiptLogs(receiptLogs) {
@@ -112,9 +129,22 @@ async function sign(message, privateKey) {
 }
 
 async function signParameters(types, values, privateKey) {
+    if (privateKey === undefined) {
+        throw new Error('privateKey must be provided')
+    }
     const encodedParams = keccak256(encodeParameters(types, values))
     const signHash = getSignHash(encodedParams)
     return await sign(signHash, privateKey)
+}
+
+async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
+    const broker = await getBroker()
+    const { v, r, s } = await signParameters(
+        ['bytes32', 'address', 'address', 'uint256'],
+        [TYPEHASHES.AUTHORIZE_SPENDER_TYPEHASH, user, spender, nonce],
+        privateKey
+    )
+    return await broker.authorizeSpender(user, spender, nonce, v, r, s)
 }
 
 async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
@@ -124,26 +154,42 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
     const broker = await getBroker()
     const { v, r, s } = await signParameters(
         ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
-        [WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce],
+        [TYPEHASHES.WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce],
         privateKey
     )
     return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
 }
 
-async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
-    const broker = await getBroker()
-    const { v, r, s } = await signParameters(
-        ['bytes32', 'address', 'address', 'uint256'],
-        [AUTHORIZE_SPENDER_TYPEHASH, user, spender, nonce],
-        privateKey
-    )
-    return await broker.authorizeSpender(user, spender, nonce, v, r, s)
+function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {
+    assetId = ensureAddress(assetId)
+    feeAssetId = ensureAddress(feeAssetId)
+    return keccak256(encodeParameters(
+        ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
+        [TYPEHASHES.CREATE_SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce]
+    ))
 }
 
+async function createSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }, { privateKey }) {
+    assetId = ensureAddress(assetId)
+    feeAssetId = ensureAddress(feeAssetId)
+    const broker = await getBroker()
+    const { v, r, s } = await signParameters(
+        ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
+        [TYPEHASHES.CREATE_SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce],
+        privateKey
+    )
+    const addresses = [maker, taker, assetId, feeAssetId]
+    const values = [amount, expiryTime, feeAmount, nonce]
+    const hashes = [hashedSecret, r, s]
+    return await broker.createSwap(addresses, values, hashes, v)
+}
+
+
 const exchange = {
+    authorizeSpender,
     depositToken,
     withdraw,
-    authorizeSpender,
+    createSwap,
 }
 
 module.exports = {
@@ -154,10 +200,13 @@ module.exports = {
     getDgtx,
     getZeus,
     getScratchpad,
+    hashSecret,
     validateBalance,
     validateExternalBalance,
     assertRevert,
+    getEvmTime,
     increaseEvmTime,
     decodeReceiptLogs,
+    hashSwap,
     exchange,
 }

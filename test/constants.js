@@ -23,19 +23,24 @@ const DOMAIN_SEPARATOR = web3.utils.keccak256(web3.eth.abi.encodeParameters(
     [DOMAIN_TYPE_HASH, CONTRACT_NAME, CONTRACT_VERSION, CHAIN_ID, VERIFYING_CONTRACT, SALT]
 ))
 
-const WITHDRAW_TYPEHASH = soliditySha3({
-    type: 'string',
-    value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
-})
+TYPEHASHES = {
+    AUTHORIZE_SPENDER_TYPEHASH: soliditySha3({
+        type: 'string',
+        value: 'AuthorizeSpender(address user,address spender,uint256 nonce)'
+    }),
+    WITHDRAW_TYPEHASH: soliditySha3({
+        type: 'string',
+        value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
+    }),
+    CREATE_SWAP_TYPEHASH: soliditySha3({
+        type: 'string',
+        value: 'CreateSwap(address maker,address taker,address assetId,uint256 amount,bytes32 hashedSecret,uint256 expiryTime,address feeAssetId,uint256 feeAmount,uint256 nonce)'
+    })
+}
 
-const AUTHORIZE_SPENDER_TYPEHASH = soliditySha3({
-    type: 'string',
-    value: 'AuthorizeSpender(address user,address spender,uint256 nonce)'
-})
 
 module.exports = {
     ETHER_ADDR,
     DOMAIN_SEPARATOR,
-    WITHDRAW_TYPEHASH,
-    AUTHORIZE_SPENDER_TYPEHASH,
+    TYPEHASHES
 }
