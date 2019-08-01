@@ -88,7 +88,9 @@ contract BrokerV2 is Ownable {
     uint256 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint256 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
     uint256 private constant REASON_SWAP_GIVE = 0x30;
+    uint256 private constant REASON_SWAP_RECEIVE = 0x35;
     uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
+    uint256 private constant REASON_SWAP_FEE_RECEIVE = 0x37;
 
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
 
@@ -209,6 +211,19 @@ contract BrokerV2 is Ownable {
         address feeAsset,
         uint256 feeAmount,
         uint256 nonce
+    );
+
+    event ExecuteSwap(
+        address indexed maker,
+        address indexed taker,
+        address assetId,
+        uint256 amount,
+        bytes32 indexed hashedSecret,
+        uint256 expiryTime,
+        address feeAsset,
+        uint256 feeAmount,
+        uint256 nonce,
+        bytes preimage
     );
 
     constructor() public {
@@ -562,32 +577,14 @@ contract BrokerV2 is Ownable {
         require(_values[1] > now, "Invalid expiry time");
         _markNonce(_values[3]);
 
-        bytes32 swapHash = keccak256(abi.encode(
-                                        CREATE_SWAP_TYPEHASH,
-                                        _addresses[0], // maker
-                                        _addresses[1], // taker
-                                        _addresses[2], // assetId
-                                        _values[0], // amount
-                                        _hashes[0], // hashedSecret
-                                        _values[1], // expiryTime
-                                        _addresses[3], // feeAssetId
-                                        _values[2], // feeAmount
-                                        _values[3] // nonce
-                                    ));
+        bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
 
         require(!atomicSwaps[swapHash], "Invalid swap");
         _validateSignature(_addresses[0], _v, _hashes[1], _hashes[2], swapHash);
 
-        _decreaseBalance(
-            _addresses[0], // maker
-            _addresses[2], // assetId
-            _values[0], // amount
-            REASON_SWAP_GIVE,
-            _values[3], // nonce
-            0
-        );
-
-        if (_addresses[3] != _addresses[2]) { // feeAssetId != assetId
+        if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
+            require(_values[2] < _values[0], "Invalid fee amount"); // feeAmount < amount
+        } else {
             _decreaseBalance(
                 _addresses[0], // maker
                 _addresses[3], // feeAssetId
@@ -598,9 +595,18 @@ contract BrokerV2 is Ownable {
             );
         }
 
+        _decreaseBalance(
+            _addresses[0], // maker
+            _addresses[2], // assetId
+            _values[0], // amount
+            REASON_SWAP_GIVE,
+            _values[3], // nonce
+            0
+        );
+
+
         atomicSwaps[swapHash] = true;
 
-        // emit
         emit CreateSwap(
             _addresses[0], // maker
             _addresses[1], // taker
@@ -612,6 +618,85 @@ contract BrokerV2 is Ownable {
             _values[2], // feeAmount
             _values[3] // nonce
         );
+    }
+
+    // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
+    // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
+    function executeSwap(
+        address[4] calldata _addresses,
+        uint256[4] calldata _values,
+        bytes32 _hashedSecret,
+        bytes calldata _preimage
+    )
+        external
+    {
+        bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
+        require(atomicSwaps[swapHash], "Swap is not active");
+        require(
+            sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret,
+            "Invalid preimage"
+        );
+
+        uint256 takeAmount = _values[0];
+        if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
+            takeAmount = takeAmount.sub(_values[2]);
+        }
+
+        delete atomicSwaps[swapHash];
+
+        _increaseBalance(
+            _addresses[1], // taker
+            _addresses[2], // assetId
+            takeAmount,
+            REASON_SWAP_RECEIVE,
+            _values[3], // nonce
+            0
+        );
+
+        _increaseBalance(
+            operator,
+            _addresses[3], // feeAssetId
+            _values[2], // feeAmount
+            REASON_SWAP_FEE_RECEIVE,
+            _values[3], // nonce
+            0
+        );
+
+        emit ExecuteSwap(
+            _addresses[0], // maker
+            _addresses[1], // taker
+            _addresses[2], // assetId
+            _values[0], // amount
+            _hashedSecret, // hashedSecret
+            _values[1], // expiryTime
+            _addresses[3], // feeAssetId
+            _values[2], // feeAmount
+            _values[3], // nonce
+            _preimage
+        );
+    }
+
+    function _hashSwap(
+        address[4] memory _addresses,
+        uint256[4] memory _values,
+        bytes32 _hashedSecret
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(
+                            CREATE_SWAP_TYPEHASH,
+                            _addresses[0], // maker
+                            _addresses[1], // taker
+                            _addresses[2], // assetId
+                            _values[0], // amount
+                            _hashedSecret, // hashedSecret
+                            _values[1], // expiryTime
+                            _addresses[3], // feeAssetId
+                            _values[2], // feeAmount
+                            _values[3] // nonce
+                        ));
     }
 
     function _withdraw(
@@ -657,7 +742,7 @@ contract BrokerV2 is Ownable {
         _validateTransferResult(returnData);
     }
 
-    function _nonceTaken(uint256 _nonce) private view returns(bool) {
+    function _nonceTaken(uint256 _nonce) private view returns (bool) {
         uint256 slot = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slot];
@@ -700,7 +785,7 @@ contract BrokerV2 is Ownable {
         bytes memory _payload
     )
         private
-        returns(bytes memory)
+        returns (bytes memory)
     {
         bool success;
         bytes memory returnData;

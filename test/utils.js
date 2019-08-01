@@ -78,6 +78,10 @@ async function assertRevert(promise) {
     assert.fail('Expected an EVM revert but no error was encountered');
 }
 
+async function assertAsync(promise, value) {
+    return await assert.equal(await promise, value)
+}
+
 function hashSecret(secret) {
     return '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
 }
@@ -184,12 +188,21 @@ async function createSwap({ maker, taker, assetId, amount, hashedSecret, expiryT
     return await broker.createSwap(addresses, values, hashes, v)
 }
 
+async function executeSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, secret }) {
+    assetId = ensureAddress(assetId)
+    feeAssetId = ensureAddress(feeAssetId)
+    const broker = await getBroker()
+    const addresses = [maker, taker, assetId, feeAssetId]
+    const values = [amount, expiryTime, feeAmount, nonce]
+    return await broker.executeSwap(addresses, values, hashedSecret, web3.utils.utf8ToHex(secret))
+}
 
 const exchange = {
     authorizeSpender,
     depositToken,
     withdraw,
     createSwap,
+    executeSwap
 }
 
 module.exports = {
@@ -204,6 +217,7 @@ module.exports = {
     validateBalance,
     validateExternalBalance,
     assertRevert,
+    assertAsync,
     getEvmTime,
     increaseEvmTime,
     decodeReceiptLogs,

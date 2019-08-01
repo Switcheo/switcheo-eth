@@ -2,7 +2,7 @@ const { web3, getBroker, getJrc, validateBalance, validateExternalBalance,
         getEvmTime, hashSecret, hashSwap, exchange, assertAsync } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
-contract('Test createSwap', async (accounts) => {
+contract('Test executeSwap', async (accounts) => {
     let broker, jrc
     const operator = accounts[0]
     const maker = accounts[1]
@@ -17,7 +17,7 @@ contract('Test createSwap', async (accounts) => {
     })
 
     contract('when parameters are valid', async () => {
-        it('creates a swap', async () => {
+        it('executes a swap', async () => {
             const expiryTime = (await getEvmTime()) + 600
             await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
             await validateBalance(maker, jrc, 42)
@@ -39,7 +39,16 @@ contract('Test createSwap', async (accounts) => {
             await exchange.createSwap(swap, { privateKey })
 
             await validateBalance(maker, jrc, 32)
+            await validateBalance(taker, jrc, 0)
+            await validateBalance(operator, jrc, 0)
             await assertAsync(broker.atomicSwaps(swapHash), true)
+
+            await exchange.executeSwap({ ...swap, secret })
+
+            await validateBalance(maker, jrc, 32)
+            await validateBalance(taker, jrc, 8)
+            await validateBalance(operator, jrc, 2)
+            await assertAsync(broker.atomicSwaps(swapHash), false)
         })
     })
 })
