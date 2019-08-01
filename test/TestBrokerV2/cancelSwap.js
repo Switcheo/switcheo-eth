@@ -1,8 +1,8 @@
 const { web3, getBroker, getJrc, validateBalance, validateExternalBalance,
-        getEvmTime, hashSecret, hashSwap, exchange, assertAsync } = require('../utils')
+        getEvmTime, increaseEvmTime, hashSecret, hashSwap, exchange, assertAsync } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
-contract('Test executeSwap', async (accounts) => {
+contract('Test cancelSwap', async (accounts) => {
     let broker, jrc
     const operator = accounts[0]
     const maker = accounts[1]
@@ -17,7 +17,7 @@ contract('Test executeSwap', async (accounts) => {
     })
 
     contract('when parameters are valid', async () => {
-        it('executes the swap', async () => {
+        it('cancels the swap', async () => {
             const expiryTime = (await getEvmTime()) + 600
             await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
             await validateBalance(maker, jrc, 42)
@@ -30,7 +30,7 @@ contract('Test executeSwap', async (accounts) => {
                 hashedSecret: hashSecret(secret),
                 expiryTime,
                 feeAssetId: jrc,
-                feeAmount: 2,
+                feeAmount: 5,
                 nonce: 2
             }
             const swapHash = hashSwap(swap)
@@ -43,10 +43,11 @@ contract('Test executeSwap', async (accounts) => {
             await validateBalance(operator, jrc, 0)
             await assertAsync(broker.atomicSwaps(swapHash), true)
 
-            await exchange.executeSwap({ ...swap, secret })
+            await increaseEvmTime(601)
+            await exchange.cancelSwap({ ...swap, cancelFeeAmount: 2 })
 
-            await validateBalance(maker, jrc, 32)
-            await validateBalance(taker, jrc, 8)
+            await validateBalance(maker, jrc, 40) // 32 + (10 - 2)
+            await validateBalance(taker, jrc, 0)
             await validateBalance(operator, jrc, 2)
             await assertAsync(broker.atomicSwaps(swapHash), false)
         })

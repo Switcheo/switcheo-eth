@@ -197,12 +197,22 @@ async function executeSwap({ maker, taker, assetId, amount, hashedSecret, expiry
     return await broker.executeSwap(addresses, values, hashedSecret, web3.utils.utf8ToHex(secret))
 }
 
+async function cancelSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, cancelFeeAmount }) {
+    assetId = ensureAddress(assetId)
+    feeAssetId = ensureAddress(feeAssetId)
+    const broker = await getBroker()
+    const addresses = [maker, taker, assetId, feeAssetId]
+    const values = [amount, expiryTime, feeAmount, nonce]
+    return await broker.cancelSwap(addresses, values, hashedSecret, cancelFeeAmount)
+}
+
 const exchange = {
     authorizeSpender,
     depositToken,
     withdraw,
     createSwap,
-    executeSwap
+    executeSwap,
+    cancelSwap,
 }
 
 module.exports = {

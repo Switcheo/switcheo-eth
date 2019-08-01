@@ -92,6 +92,9 @@ contract BrokerV2 is Ownable {
     uint256 private constant REASON_SWAP_RECEIVE = 0x35;
     uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
     uint256 private constant REASON_SWAP_FEE_RECEIVE = 0x37;
+    uint256 private constant REASON_SWAP_CANCEL_RECEIVE = 0x38;
+    uint256 private constant REASON_SWAP_CANCEL_FEE_RECEIVE = 0x3B;
+    uint256 private constant REASON_SWAP_CANCEL_FEE_REFUND = 0x3D;
 
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
 
@@ -228,6 +231,19 @@ contract BrokerV2 is Ownable {
         bytes preimage
     );
 
+    event CancelSwap(
+        address indexed maker,
+        address indexed taker,
+        address assetId,
+        uint256 amount,
+        bytes32 indexed hashedSecret,
+        uint256 expiryTime,
+        address feeAsset,
+        uint256 feeAmount,
+        uint256 nonce,
+        uint256 cancelFeeAmount
+    );
+
     constructor() public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
@@ -246,7 +262,7 @@ contract BrokerV2 is Ownable {
     }
 
     modifier onlyAdmin() {
-        require(adminAddresses[msg.sender] == true, "Invalid sender");
+        require(adminAddresses[msg.sender], "Invalid sender");
         _;
     }
 
@@ -686,6 +702,79 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
+    // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
+    function cancelSwap(
+        address[4] calldata _addresses,
+        uint256[4] calldata _values,
+        bytes32 _hashedSecret,
+        uint256 _cancelFeeAmount
+    )
+        external
+    {
+        require(_values[1] <= now, "Swap not yet expired");
+        bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
+        require(atomicSwaps[swapHash], "Swap is not active");
+
+        uint256 cancelFeeAmount = _cancelFeeAmount;
+        if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
+
+        require(
+            cancelFeeAmount <= _values[2], // cancelFeeAmount < feeAmount
+            "Invalid cancel fee amount"
+        );
+
+        uint256 refundAmount = _values[0];
+        if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
+            refundAmount = refundAmount.sub(cancelFeeAmount);
+        }
+
+        delete atomicSwaps[swapHash];
+
+        _increaseBalance(
+            _addresses[0], // maker
+            _addresses[2], // assetId
+            refundAmount,
+            REASON_SWAP_CANCEL_RECEIVE,
+            _values[3], // nonce
+            0
+        );
+
+        _increaseBalance(
+            operator,
+            _addresses[3], // feeAssetId
+            cancelFeeAmount,
+            REASON_SWAP_CANCEL_FEE_RECEIVE,
+            _values[3],
+            0
+        );
+
+        if (_addresses[3] != _addresses[2]) { // feeAssetId != assetId
+            uint256 refundFeeAmount = _values[2].sub(cancelFeeAmount);
+            _increaseBalance(
+                _addresses[0], // maker
+                _addresses[3], // feeAssetId
+                refundFeeAmount,
+                REASON_SWAP_CANCEL_FEE_REFUND,
+                _values[3],
+                0
+            );
+        }
+
+        emit CancelSwap(
+            _addresses[0], // maker
+            _addresses[1], // taker
+            _addresses[2], // assetId
+            _values[0], // amount
+            _hashedSecret, // hashedSecret
+            _values[1], // expiryTime
+            _addresses[3], // feeAssetId
+            _values[2], // feeAmount
+            _values[3], // nonce
+            cancelFeeAmount // cancelFeeAmount
+        );
+    }
+
     function _hashSwap(
         address[4] memory _addresses,
         uint256[4] memory _values,
@@ -855,28 +944,6 @@ contract BrokerV2 is Ownable {
         return _amount.sub(_feeAmount);
     }
 
-    function _decreaseBalance(
-        address _user,
-        address _assetId,
-        uint256 _amount,
-        uint256 _reasonCode,
-        uint256 _nonceA,
-        uint256 _nonceB
-    )
-        private
-    {
-        if (_amount == 0) { return; }
-        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
-        emit BalanceDecrease(
-            _user,
-            _assetId,
-            _amount,
-            _reasonCode,
-            _nonceA,
-            _nonceB
-        );
-    }
-
     function _increaseBalance(
         address _user,
         address _assetId,
@@ -890,6 +957,28 @@ contract BrokerV2 is Ownable {
         if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].add(_amount);
         emit BalanceIncrease(
+            _user,
+            _assetId,
+            _amount,
+            _reasonCode,
+            _nonceA,
+            _nonceB
+        );
+    }
+
+    function _decreaseBalance(
+        address _user,
+        address _assetId,
+        uint256 _amount,
+        uint256 _reasonCode,
+        uint256 _nonceA,
+        uint256 _nonceB
+    )
+        private
+    {
+        if (_amount == 0) { return; }
+        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
+        emit BalanceDecrease(
             _user,
             _assetId,
             _amount,
