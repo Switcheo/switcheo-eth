@@ -18,6 +18,7 @@ contract BrokerV2 is Ownable {
     }
 
     enum State { Active, Inactive }
+    enum AdminState { Normal, Escalated }
 
     bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
     bytes32 public constant CONTRACT_VERSION = keccak256("2");
@@ -95,6 +96,7 @@ contract BrokerV2 is Ownable {
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
 
     State public state;
+    AdminState public adminState;
     // The operator receives fees
     address public operator;
 
@@ -182,7 +184,7 @@ contract BrokerV2 is Ownable {
         uint256 nonce
     );
 
-    event EmergencyWithdraw(
+    event AdminWithdraw(
         address indexed withdrawer,
         address indexed assetId,
         uint256 amount
@@ -253,7 +255,13 @@ contract BrokerV2 is Ownable {
         _;
     }
 
+    modifier onlyEscalatedAdminState() {
+        require(adminState == AdminState.Escalated, "Invalid state");
+        _;
+    }
+
     function setState(State _state) external onlyOwner { state = _state; }
+    function setAdminState(AdminState _state) external onlyOwner { adminState = _state; }
 
     function setOperator(address _operator) external onlyOwner {
         _validateAddress(operator);
@@ -509,16 +517,17 @@ contract BrokerV2 is Ownable {
         );
     }
 
-    function emergencyWithdraw(
+    function adminWithdraw(
         address payable _withdrawer,
         address _assetId,
         uint256 _amount
     )
         external
         onlyAdmin
+        onlyEscalatedAdminState
     {
         _withdraw(_withdrawer, _assetId, _amount, address(0), 0, 0);
-        emit EmergencyWithdraw(_withdrawer, _assetId, _amount);
+        emit AdminWithdraw(_withdrawer, _assetId, _amount);
     }
 
     function announceWithdraw(
@@ -572,6 +581,7 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyAdmin
+        onlyActiveState
     {
         require(_values[0] > 0, "Invalid amount");
         require(_values[1] > now, "Invalid expiry time");

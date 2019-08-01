@@ -18,7 +18,8 @@ contract('Test emergencyWithdraw', async (accounts) => {
             await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 3 })
             await validateBalance(user, jrc, 42)
 
-            await broker.emergencyWithdraw(user, jrc.address, 40, { from: operator })
+            await broker.setAdminState(1)
+            await broker.adminWithdraw(user, jrc.address, 40, { from: operator })
 
             await validateBalance(user, jrc, 2)
             await validateExternalBalance(user, jrc, 40)
