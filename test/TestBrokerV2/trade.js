@@ -113,7 +113,7 @@ contract('Test trade', async (accounts) => {
 
     contract('best-case batched trades', async () => {
         it('test gas cost', async () => {
-            const batchSize = 10
+            const batchSize = 5
 
             const maker = accounts[1]
             const filler = accounts[2]
@@ -164,7 +164,7 @@ contract('Test trade', async (accounts) => {
                 }
             })
 
-            console.log("gas used", result.receipt.gasUsed / 10.0)
+            console.log("gas used", result.receipt.gasUsed / batchSize)
         })
     })
 })
