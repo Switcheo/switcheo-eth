@@ -58,4 +58,53 @@ contract('Test trade', async (accounts) => {
             console.log("gas used", result.receipt.gasUsed)
         })
     })
+
+    contract('test gas cost for batched trades', async () => {
+        it('executes trades', async () => {
+            const maker = accounts[1]
+            const filler = accounts[2]
+
+            await exchange.mintAndDeposit({ user: maker, token: jrc, amount: 1000, nonce: 1 })
+            await exchange.mintAndDeposit({ user: filler, token: swc, amount: 300, nonce: 2 })
+
+            const makes = []
+            const fills = []
+            const matches = []
+            const count = 10
+
+            for (let i = 0; i < count; i++) {
+                makes.push(
+                    {
+                        maker,
+                        offerAssetId: jrc.address,
+                        offerAmount: 100,
+                        wantAssetId: swc.address,
+                        wantAmount: 50,
+                        feeAssetId: swc.address,
+                        feeAmount: 2,
+                        nonce: count + i
+                    }
+                )
+                fills.push({
+                    filler,
+                    offerAssetId: swc.address,
+                    offerAmount: 30,
+                    wantAssetId: jrc.address,
+                    wantAmount: 60,
+                    feeAssetId: jrc.address,
+                    feeAmount: 7,
+                    nonce: count * 2 + i
+                })
+                matches.push(i, count + i, 60)
+            }
+
+            const result = await exchange.trade({ makes, fills, matches }, {
+                privateKeys: {
+                    [maker]: getPrivateKey(maker),
+                    [filler]: getPrivateKey(filler)
+                }
+            })
+            console.log("gas used", result.receipt.gasUsed)
+        })
+    })
 })
