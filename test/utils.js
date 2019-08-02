@@ -106,6 +106,11 @@ async function depositToken({ user, token, amount, nonce }) {
     await broker.depositToken(user, token.address, nonce)
 }
 
+async function mintAndDeposit({ user, token, amount, nonce }) {
+    await token.mint(user, amount)
+    await depositToken({ user, token, amount, nonce })
+}
+
 function parseSignature(signature) {
   var r = signature.substring(0, 64);
   var s = signature.substring(64, 128);
@@ -164,12 +169,60 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
     return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
 }
 
+async function trade({ makes, fills, matches }, { privateKeys }) {
+    const broker = await getBroker()
+    const addresses = []
+    const values = []
+    const hashes = []
+    const vArray = []
+
+    for (let i = 0; i < makes.length; i++) {
+        const make = makes[i]
+        const { maker, offerAssetId, wantAssetId, feeAssetId } = make
+        const { offerAmount, wantAmount, feeAmount, nonce } = make
+        const privateKey = privateKeys[maker]
+
+        const { v, r, s } = await signParameters(
+            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+            [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce],
+            privateKey
+        );
+
+        addresses.push(maker, offerAssetId, wantAssetId, feeAssetId)
+        values.push(offerAmount, wantAmount, feeAmount, nonce)
+        hashes.push(r, s)
+        vArray.push(v)
+    }
+
+    for (let i = 0; i < fills.length; i++) {
+        const fill = fills[i]
+        const { filler, offerAssetId, wantAssetId, feeAssetId } = fill
+        const { offerAmount, wantAmount, feeAmount, nonce } = fill
+        const privateKey = privateKeys[filler]
+
+        const { v, r, s } = await signParameters(
+            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+            [TYPEHASHES.FILL_TYPEHASH, filler, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce],
+            privateKey
+        );
+
+        addresses.push(filler, offerAssetId, wantAssetId, feeAssetId)
+        values.push(offerAmount, wantAmount, feeAmount, nonce)
+        hashes.push(r, s)
+        vArray.push(v)
+    }
+
+    matches.unshift(makes.length)
+
+    await broker.trade(addresses, values, hashes, matches, vArray)
+}
+
 function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     return keccak256(encodeParameters(
         ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
-        [TYPEHASHES.CREATE_SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce]
+        [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce]
     ))
 }
 
@@ -179,7 +232,7 @@ async function createSwap({ maker, taker, assetId, amount, hashedSecret, expiryT
     const broker = await getBroker()
     const { v, r, s } = await signParameters(
         ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
-        [TYPEHASHES.CREATE_SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce],
+        [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce],
         privateKey
     )
     const addresses = [maker, taker, assetId, feeAssetId]
@@ -208,7 +261,9 @@ async function cancelSwap({ maker, taker, assetId, amount, hashedSecret, expiryT
 
 const exchange = {
     authorizeSpender,
+    mintAndDeposit,
     depositToken,
+    trade,
     withdraw,
     createSwap,
     executeSwap,

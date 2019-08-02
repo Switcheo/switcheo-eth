@@ -32,9 +32,17 @@ TYPEHASHES = {
         type: 'string',
         value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
     }),
-    CREATE_SWAP_TYPEHASH: soliditySha3({
+    OFFER_TYPEHASH: soliditySha3({
         type: 'string',
-        value: 'CreateSwap(address maker,address taker,address assetId,uint256 amount,bytes32 hashedSecret,uint256 expiryTime,address feeAssetId,uint256 feeAmount,uint256 nonce)'
+        value: 'Offer(address maker,address offerAssetId,uint256 offerAmount,address wantAssetId,uint256 wantAmount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
+    }),
+    FILL_TYPEHASH: soliditySha3({
+        type: 'string',
+        value: 'Fill(address filler,address offerAssetId,uint256 offerAmount,address wantAssetId,uint256 wantAmount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
+    }),
+    SWAP_TYPEHASH: soliditySha3({
+        type: 'string',
+        value: 'Swap(address maker,address taker,address assetId,uint256 amount,bytes32 hashedSecret,uint256 expiryTime,address feeAssetId,uint256 feeAmount,uint256 nonce)'
     })
 }
 

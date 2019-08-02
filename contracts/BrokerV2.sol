@@ -66,8 +66,34 @@ contract BrokerV2 is Ownable {
         ")"
     ));
 
-    bytes32 public constant CREATE_SWAP_TYPEHASH = keccak256(abi.encodePacked(
-        "CreateSwap(",
+    bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
+        "Offer(",
+            "address maker,",
+            "address offerAssetId,",
+            "uint256 offerAmount,",
+            "address wantAssetId,",
+            "uint256 wantAmount,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
+            "uint256 nonce",
+        ")"
+    ));
+
+    bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
+        "Fill(",
+            "address filler,",
+            "address offerAssetId,",
+            "uint256 offerAmount,",
+            "address wantAssetId,",
+            "uint256 wantAmount,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
+            "uint256 nonce",
+        ")"
+    ));
+
+    bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
+        "Swap(",
             "address maker,",
             "address taker,",
             "address assetId,",
@@ -85,6 +111,10 @@ contract BrokerV2 is Ownable {
 
     // deposits
     uint256 private constant REASON_DEPOSIT = 0x01;
+    uint256 private constant REASON_MAKER_GIVE = 0x02;
+    uint256 private constant REASON_MAKER_RECEIVE = 0x06;
+    uint256 private constant REASON_MAKER_FEE_GIVE = 0x10;
+    uint256 private constant REASON_MAKER_FEE_RECEIVE = 0x11;
     uint256 private constant REASON_WITHDRAW = 0x09;
     uint256 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint256 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
@@ -109,6 +139,7 @@ contract BrokerV2 is Ownable {
 
     mapping(uint256 => uint256) public usedNonces;
     mapping(address => mapping(address => uint256)) public balances;
+    mapping(bytes32 => uint256) public offers;
     mapping(bytes32 => bool) public atomicSwaps;
     mapping(address => bool) public tokenWhitelist;
     mapping(address => bool) public spenderWhitelist;
@@ -485,6 +516,77 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
+    // _addresses =>
+    //     [i * 4]: maker
+    //     [i * 4 + 1]: make.offerAssetId
+    //     [i * 4 + 2]: make.wantAssetId
+    //     [i * 4 + 3]: make.feeAssetId
+    //     [j * 4]: filler
+    //     [j * 4 + 1]: fill.offerAssetId
+    //     [j * 4 + 2]: fill.wantAssetId
+    //     [j * 4 + 3]: fill.feeAssetId
+    // _values =>
+    //     [i * 4]: make.offerAmount
+    //     [i * 4 + 1]: make.wantAmount
+    //     [i * 4 + 2]: make.feeAmount
+    //     [i * 4 + 3]: make.nonce
+    //     [j * 4]: fill.offerAmount
+    //     [j * 4 + 1]: fill.wantAmount
+    //     [j * 4 + 2]: fill.feeAmount
+    //     [j * 4 + 3]: fill.nonce
+    // _hashes =>
+    //     [i * 2]: make.r
+    //     [i * 2 + 1]: make.s
+    //     [j * 2]: fill.r
+    //     [j * 2 + 1]: fill.s
+    // _matches =>
+    //     [0]: index of first fill
+    //     [i * 3 + 1]: fillIndex
+    //     [i * 3 + 2]: makeIndex
+    //     [i * 3 + 3]: fill.takeAmount
+    // _v =>
+    //     [i]: make.v
+    //     [j]: fill.v
+    function trade(
+        address[] calldata _addresses,
+        uint256[] calldata _values,
+        bytes32[] calldata _hashes,
+        uint256[] calldata _matches,
+        uint8[] calldata _v
+    )
+        external
+        onlyAdmin
+        onlyActiveState
+    {
+        // index of first fill must be more than 0
+        // as at least one make should be present
+        require(
+            _matches[0] > 0 && _matches[0] <= _v.length,
+            "Invalid fill index"
+        );
+
+        /* ensure that the number of makes and fills matches the number of signatures */
+        require(_v.length * 4 == _addresses.length);
+        require(_v.length * 4 == _values.length);
+        require(_v.length * 2 == _hashes.length);
+
+        _processMakes(
+            _addresses,
+            _values,
+            _hashes,
+            _matches,
+            _v
+        );
+
+        _processFills(
+            _addresses,
+            _values,
+            _hashes,
+            _matches,
+            _v
+        );
+    }
+
     function withdraw(
         address payable _withdrawer,
         address _assetId,
@@ -775,6 +877,149 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    function _processMakes(
+        address[] memory _addresses,
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        uint256[] memory _matches,
+        uint8[] memory _v
+    )
+        private
+    {
+        for (uint256 i = 0; i < _matches[0]; i++) {
+            bytes32 hashKey = keccak256(abi.encode(
+                                 OFFER_TYPEHASH,
+                                 _addresses[i * 4], // maker
+                                 _addresses[i * 4 + 1], // make.offerAssetId
+                                 _values[i * 4], // make.offerAmount
+                                 _addresses[i * 4 + 2], // make.wantAssetId
+                                 _values[i * 4 + 1], // make.wantAmount
+                                 _addresses[i * 4 + 3], // make.feeAssetId
+                                 _values[i * 4 + 2], // make.feeAmount
+                                 _values[i * 4 + 3] // make.nonce
+                             ));
+
+            _validateSignature(
+                _addresses[i * 4],
+                _v[i],
+                _hashes[i * 2],
+                _hashes[i * 2 + 1],
+                hashKey
+            );
+
+            bool newOffer = !_nonceTaken(_values[i * 4 + 3]);
+            uint256 availableAmount = newOffer ? _values[i * 4] : offers[hashKey];
+
+            for (uint256 j = 1; j < _matches.length - 1; j += 3) {
+                // check that match.makeIndex = currentMakeIndex
+                if (_matches[j] != i) { continue; }
+
+                // make.offerAmount * takeAmount / make.wantAmount
+                uint256 receiveAmount = _values[i * 4].mul(_matches[j + 2]).div(_values[i * 4 + 1]);
+
+                if (newOffer) {
+                    // reduce the receiveAmount by the feeAmount
+                    // if make.feeAssetId == make.wantAssetId
+                    if (_addresses[i * 4 + 3] == _addresses[i * 4 + 2]) {
+                        receiveAmount = receiveAmount.sub(_values[i * 4 + 2]);
+                    }
+
+                    _increaseBalance(
+                        operator,
+                        _addresses[i * 4 + 3], // make.feeAssetId
+                        _values[i * 4 + 2], // make.feeAmount
+                        REASON_MAKER_FEE_RECEIVE,
+                        _values[i * 4 + 3], // make.nonce
+                        _values[_matches[j + 1] * 4 + 3] // fill.nonce
+                    );
+                }
+
+                _increaseBalance(
+                    _addresses[i * 4], // maker
+                    _addresses[i * 4 + 2], // make.wantAssetId
+                    receiveAmount,
+                    REASON_MAKER_RECEIVE,
+                    _values[i * 4 + 3], // make.nonce
+                    _values[_matches[j + 1] * 4 + 3] // fill.nonce
+                );
+
+                // deduct fill.takeAmount from availableAmount
+                availableAmount = availableAmount.sub(_matches[j + 2]);
+
+                // after the first match, the offer should not be considered new anymore
+                newOffer = false;
+            }
+
+            newOffer = !_nonceTaken(_values[i * 4 + 3]);
+
+            if (newOffer) {
+                _markNonce(_values[i * 4 + 3]);
+
+                _decreaseBalance(
+                    _addresses[i * 4], // maker
+                    _addresses[i * 4 + 1], // make.offerAssetId
+                    _values[i * 4], // make.offerAmount
+                    REASON_MAKER_GIVE,
+                    _values[i * 4 + 3], // make.nonce
+                    0
+                );
+
+                // separately deduct fee amount
+                // if make.feeAssetId != make.wantAssetId
+                if (_addresses[i * 4 + 3] != _addresses[i * 4 + 2]) {
+                    _decreaseBalance(
+                        _addresses[i * 4], // maker
+                        _addresses[i * 4 + 3], // make.feeAssetId
+                        _values[i * 4 + 2], // make.feeAmount
+                        REASON_MAKER_FEE_GIVE,
+                        _values[i * 4 + 3], // make.nonce
+                        0
+                    );
+                }
+            }
+
+            if (availableAmount == 0) {
+                delete offers[hashKey];
+            } else {
+                offers[hashKey] = availableAmount;
+            }
+        }
+    }
+
+    function _processFills(
+        address[] memory _addresses,
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        uint256[] memory _matches,
+        uint8[] memory _v
+    )
+        private
+    {
+        for (uint256 i = _matches[0]; i < _v.length; i++) {
+            bytes32 hashKey = keccak256(abi.encode(
+                                 FILL_TYPEHASH,
+                                 _addresses[i * 4], // filler
+                                 _addresses[i * 4 + 1], // fill.offerAssetId
+                                 _values[i * 4], // fill.offerAmount
+                                 _addresses[i * 4 + 2], // fill.wantAssetId
+                                 _values[i * 4 + 1], // fill.wantAmount
+                                 _addresses[i * 4 + 3], // fill.feeAssetId
+                                 _values[i * 4 + 2], // fill.feeAmount
+                                 _values[i * 4 + 3] // fill.nonce
+                             ));
+
+            _validateSignature(
+                _addresses[i * 4],
+                _v[i],
+                _hashes[i * 2],
+                _hashes[i * 2 + 1],
+                hashKey
+            );
+
+            _markNonce(_values[i * 4 + 3]);
+        }
+    }
+
     function _hashSwap(
         address[4] memory _addresses,
         uint256[4] memory _values,
@@ -785,7 +1030,7 @@ contract BrokerV2 is Ownable {
         returns (bytes32)
     {
         return keccak256(abi.encode(
-                            CREATE_SWAP_TYPEHASH,
+                            SWAP_TYPEHASH,
                             _addresses[0], // maker
                             _addresses[1], // taker
                             _addresses[2], // assetId
@@ -846,7 +1091,7 @@ contract BrokerV2 is Ownable {
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slot];
 
-        return bits & shiftedBit == 0;
+        return bits & shiftedBit != 0;
     }
 
     function _markNonce(uint256 _nonce) private {
