@@ -45,7 +45,7 @@ contract('Test trade', async (accounts) => {
                 nonce: 4
             }]
 
-            await exchange.trade({
+            const result = await exchange.trade({
                 makes,
                 fills,
                 matches: [0, 1, 60]
@@ -55,6 +55,7 @@ contract('Test trade', async (accounts) => {
                     [filler]: getPrivateKey(filler)
                 }
             })
+            console.log("gas used", result.receipt.gasUsed)
         })
     })
 })

@@ -214,7 +214,7 @@ async function trade({ makes, fills, matches }, { privateKeys }) {
 
     matches.unshift(makes.length)
 
-    await broker.trade(addresses, values, hashes, matches, vArray)
+    return await broker.trade(addresses, values, hashes, matches, vArray)
 }
 
 function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {

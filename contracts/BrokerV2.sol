@@ -112,7 +112,11 @@ contract BrokerV2 is Ownable {
     // deposits
     uint256 private constant REASON_DEPOSIT = 0x01;
     uint256 private constant REASON_MAKER_GIVE = 0x02;
+    uint256 private constant REASON_FILLER_GIVE = 0x03;
+    uint256 private constant REASON_FILLER_FEE_GIVE = 0x04;
+    uint256 private constant REASON_FILLER_RECEIVE = 0x05;
     uint256 private constant REASON_MAKER_RECEIVE = 0x06;
+    uint256 private constant REASON_FILLER_FEE_RECEIVE = 0x07;
     uint256 private constant REASON_MAKER_FEE_GIVE = 0x10;
     uint256 private constant REASON_MAKER_FEE_RECEIVE = 0x11;
     uint256 private constant REASON_WITHDRAW = 0x09;
@@ -908,30 +912,19 @@ contract BrokerV2 is Ownable {
             );
 
             bool newOffer = !_nonceTaken(_values[i * 4 + 3]);
-            uint256 availableAmount = newOffer ? _values[i * 4] : offers[hashKey];
+            uint256 remainingOfferAmount = newOffer ? _values[i * 4] : offers[hashKey];
 
             for (uint256 j = 1; j < _matches.length - 1; j += 3) {
                 // check that match.makeIndex = currentMakeIndex
                 if (_matches[j] != i) { continue; }
 
-                // make.offerAmount * takeAmount / make.wantAmount
-                uint256 receiveAmount = _values[i * 4].mul(_matches[j + 2]).div(_values[i * 4 + 1]);
+                // make.wantAmount * takeAmount / make.offerAmount
+                uint256 receiveAmount = _values[i * 4 + 1].mul(_matches[j + 2]).div(_values[i * 4]);
 
-                if (newOffer) {
-                    // reduce the receiveAmount by the feeAmount
-                    // if make.feeAssetId == make.wantAssetId
-                    if (_addresses[i * 4 + 3] == _addresses[i * 4 + 2]) {
-                        receiveAmount = receiveAmount.sub(_values[i * 4 + 2]);
-                    }
-
-                    _increaseBalance(
-                        operator,
-                        _addresses[i * 4 + 3], // make.feeAssetId
-                        _values[i * 4 + 2], // make.feeAmount
-                        REASON_MAKER_FEE_RECEIVE,
-                        _values[i * 4 + 3], // make.nonce
-                        _values[_matches[j + 1] * 4 + 3] // fill.nonce
-                    );
+                // reduce the receiveAmount by the feeAmount
+                // if this is a new offer AND make.feeAssetId == make.wantAssetId
+                if (newOffer && _addresses[i * 4 + 3] == _addresses[i * 4 + 2]) {
+                    receiveAmount = receiveAmount.sub(_values[i * 4 + 2]);
                 }
 
                 _increaseBalance(
@@ -943,8 +936,8 @@ contract BrokerV2 is Ownable {
                     _values[_matches[j + 1] * 4 + 3] // fill.nonce
                 );
 
-                // deduct fill.takeAmount from availableAmount
-                availableAmount = availableAmount.sub(_matches[j + 2]);
+                // deduct match.takeAmount from remainingOfferAmount
+                remainingOfferAmount = remainingOfferAmount.sub(_matches[j + 2]);
 
                 // after the first match, the offer should not be considered new anymore
                 newOffer = false;
@@ -976,12 +969,21 @@ contract BrokerV2 is Ownable {
                         0
                     );
                 }
+
+                _increaseBalance(
+                    operator,
+                    _addresses[i * 4 + 3], // make.feeAssetId
+                    _values[i * 4 + 2], // make.feeAmount
+                    REASON_MAKER_FEE_RECEIVE,
+                    _values[i * 4 + 3], // make.nonce
+                    0
+                );
             }
 
-            if (availableAmount == 0) {
+            if (remainingOfferAmount == 0) {
                 delete offers[hashKey];
             } else {
-                offers[hashKey] = availableAmount;
+                offers[hashKey] = remainingOfferAmount;
             }
         }
     }
@@ -1016,8 +1018,115 @@ contract BrokerV2 is Ownable {
                 hashKey
             );
 
+            uint256 remainingOfferAmount = _values[i * 4];
+            uint256 remainingWantAmount = _values[i * 4 + 1];
+
+            for (uint256 j = 1; j < _matches.length - 1; j += 3) {
+                // check that match.fillIndex = currentFillIndex
+                if (_matches[j + 1] != i) { continue; }
+
+                _fillerReceive(_addresses, _values, _matches, i, j);
+                // deduct match.takeAmount from remainingWantAmount
+                remainingWantAmount = remainingWantAmount.sub(_matches[j + 2]);
+
+                uint256 giveAmount = _fillerGive(_addresses, _values, _matches, i, j);
+                remainingOfferAmount = remainingOfferAmount.sub(giveAmount);
+            }
+
+            require(
+                remainingWantAmount == 0 && remainingOfferAmount == 0,
+                "Invalid fill"
+            );
+
             _markNonce(_values[i * 4 + 3]);
+
+            _decreaseBalance(
+                _addresses[i * 4], // filler
+                _addresses[i * 4 + 1], // fill.offerAssetId
+                _values[i * 4] // fill.offerAmount
+            );
+
+            // separately deduct fee amount
+            // if fill.feeAssetId != fill.wantAssetId
+            if (_addresses[i * 4 + 3] != _addresses[i * 4 + 2]) {
+                _decreaseBalance(
+                    _addresses[i * 4], // filler
+                    _addresses[i * 4 + 3], // fill.feeAssetId
+                    _values[i * 4 + 2], // fill.feeAmount
+                    REASON_MAKER_FEE_GIVE,
+                    _values[i * 4 + 3], // fill.nonce
+                    0
+                );
+            }
+
+            _increaseBalance(
+                operator,
+                _addresses[i * 4 + 3], // fill.feeAssetId
+                _values[i * 4 + 2], // fill.feeAmount
+                REASON_FILLER_FEE_RECEIVE,
+                _values[i * 4 + 3], // fill.nonce
+                0
+            );
         }
+    }
+
+    function _fillerReceive(
+        address[] memory _addresses,
+        uint256[] memory _values,
+        uint256[] memory _matches,
+        uint256 i,
+        uint256 j
+    )
+        private
+    {
+        uint256 receiveAmount = _matches[j + 2];
+
+        // reduce the receiveAmount by the feeAmount
+        // if fill.feeAssetId == fill.wantAssetId
+        if (_addresses[i * 4 + 3] == _addresses[i * 4 + 2]) {
+            receiveAmount = receiveAmount.sub(_values[i * 4 + 2]);
+        }
+
+        _increaseBalance(
+            _addresses[i * 4], // filler
+            _addresses[i * 4 + 2], // fill.wantAssetId
+            receiveAmount,
+            REASON_FILLER_RECEIVE,
+            _values[_matches[j] * 4 + 3], // make.nonce
+            _values[i * 4 + 3] // fill.nonce
+        );
+    }
+
+    function _fillerGive(
+        address[] memory _addresses,
+        uint256[] memory _values,
+        uint256[] memory _matches,
+        uint256 i,
+        uint256 j
+    )
+        private
+        returns (uint256)
+    {
+        // deduct the amount that will be given to the maker
+        // from the remainingOfferAmount
+        // giveAmount = make.wantAmount * takeAmount / make.offerAmount
+        uint256 giveAmount = _values[_matches[j] * 4 + 1].mul(
+                                 _matches[j + 2]
+                             ).div(
+                                 _values[_matches[j] * 4]
+                             );
+
+        // emit individual balance decrease events for more detailed tracking
+        emit BalanceDecrease(
+            _addresses[i * 4], // filler
+            _addresses[i * 4 + 1], // fill.offerAssetId
+            giveAmount,
+            REASON_FILLER_FEE_GIVE,
+            _values[_matches[j] * 4 + 3], // make.nonce
+            _values[i * 4 + 3] // fill.nonce
+        );
+
+        return giveAmount;
     }
 
     function _hashSwap(
@@ -1221,8 +1330,8 @@ contract BrokerV2 is Ownable {
     )
         private
     {
-        if (_amount == 0) { return; }
-        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
+        _decreaseBalance(_user, _assetId, _amount);
+
         emit BalanceDecrease(
             _user,
             _assetId,
@@ -1231,6 +1340,17 @@ contract BrokerV2 is Ownable {
             _nonceA,
             _nonceB
         );
+    }
+
+    function _decreaseBalance(
+        address _user,
+        address _assetId,
+        uint256 _amount
+    )
+        private
+    {
+        if (_amount == 0) { return; }
+        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
     }
 
     function _validateAddress(address _address) private pure {
