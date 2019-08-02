@@ -574,6 +574,12 @@ contract BrokerV2 is Ownable {
         require(_v.length * 4 == _values.length);
         require(_v.length * 2 == _hashes.length);
 
+        _validateTrades(
+            _addresses,
+            _values,
+            _matches
+        );
+
         _processMakes(
             _addresses,
             _values,
@@ -879,6 +885,33 @@ contract BrokerV2 is Ownable {
             _values[3], // nonce
             cancelFeeAmount // cancelFeeAmount
         );
+    }
+
+    function _validateTrades(
+        address[] memory _addresses,
+        uint256[] memory _values,
+        uint256[] memory _matches
+    )
+        private
+        pure
+    {
+        for (uint256 i = 1; i < _matches.length; i += 3) {
+            uint256 makeIndex = _matches[i];
+            uint256 fillIndex = _matches[i + 1];
+            uint256 takeAmount = _matches[i + 2];
+            require(
+                // make.offerAssetId == fill.wantAssetId &&
+                // make.wantAssetId == fill.offerAssetId
+                _addresses[makeIndex * 4 + 1] == _addresses[fillIndex * 4 + 2] &&
+                _addresses[makeIndex * 4 + 2] == _addresses[fillIndex * 4 + 1],
+                "Invalid trade match"
+            );
+
+            require(
+                _values[makeIndex * 4 + 1].mul(takeAmount).mod(_values[makeIndex * 4]) == 0,
+                "Invalid trade amounts"
+            );
+        }
     }
 
     function _processMakes(
