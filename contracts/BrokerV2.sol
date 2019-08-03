@@ -520,6 +520,51 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
+    function optrade(
+        address[] memory _addresses,
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        uint256[] memory _matches,
+        uint8[] memory _v
+    )
+        public
+        onlyAdmin
+        onlyActiveState
+    {
+        assembly {
+            // revert if _matches[0] == 0
+            if eq(mload(add(_matches, 0x20)), 0) {
+                revert(0, 0)
+            }
+            // revert if _matches[0] == _v.length
+            if eq(mload(add(_matches, 0x20)), mload(_v)) {
+                revert(0, 0)
+            }
+            // revert if _matches[0] > _v.length
+            if gt(mload(add(_matches, 0x20)), mload(_v)) {
+                revert(0, 0)
+            }
+        }
+
+    }
+
+    event DebugLog(uint256 v1, uint256 v2);
+    function test(uint256[] memory _matches) public {
+        uint256 v1;
+        uint256 v2;
+        assembly {
+            let a := mload(0x40)
+            let b := add(a, 0x20)
+            let c := add(a, 0x40)
+            calldatacopy(a, 4, 0x20)
+            calldatacopy(b, 0x24, 0x20)
+            calldatacopy(c, 0x44, 0x20)
+            v1 := mload(b)
+            v2 := mload(c)
+        }
+        emit DebugLog(v1, v2);
+    }
+
     // _addresses =>
     //     [i * 4]: maker
     //     [i * 4 + 1]: make.offerAssetId
@@ -552,48 +597,19 @@ contract BrokerV2 is Ownable {
     //     [i]: make.v
     //     [j]: fill.v
     function trade(
-        address[] calldata _addresses,
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        uint256[] calldata _matches,
-        uint8[] calldata _v
+        address[] memory _addresses,
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        uint256[] memory _matches,
+        uint8[] memory _v
     )
-        external
+        public
         onlyAdmin
         onlyActiveState
     {
-        // index of first fill must be more than 0
-        // as at least one make should be present
         require(
             _matches[0] > 0 && _matches[0] <= _v.length,
             "Invalid fill index"
-        );
-
-        /* ensure that the number of makes and fills matches the number of signatures */
-        require(_v.length * 4 == _addresses.length);
-        require(_v.length * 4 == _values.length);
-        require(_v.length * 2 == _hashes.length);
-
-        _validateTrades(
-            _addresses,
-            _values,
-            _matches
-        );
-
-        _processMakes(
-            _addresses,
-            _values,
-            _hashes,
-            _matches,
-            _v
-        );
-
-        _processFills(
-            _addresses,
-            _values,
-            _hashes,
-            _matches,
-            _v
         );
     }
 
@@ -885,281 +901,6 @@ contract BrokerV2 is Ownable {
             _values[3], // nonce
             cancelFeeAmount // cancelFeeAmount
         );
-    }
-
-    function _validateTrades(
-        address[] memory _addresses,
-        uint256[] memory _values,
-        uint256[] memory _matches
-    )
-        private
-        pure
-    {
-        for (uint256 i = 1; i < _matches.length; i += 3) {
-            uint256 makeIndex = _matches[i];
-            uint256 fillIndex = _matches[i + 1];
-            uint256 takeAmount = _matches[i + 2];
-            require(
-                // make.offerAssetId == fill.wantAssetId &&
-                // make.wantAssetId == fill.offerAssetId
-                _addresses[makeIndex * 4 + 1] == _addresses[fillIndex * 4 + 2] &&
-                _addresses[makeIndex * 4 + 2] == _addresses[fillIndex * 4 + 1],
-                "Invalid trade match"
-            );
-
-            require(
-                _values[makeIndex * 4 + 1].mul(takeAmount).mod(_values[makeIndex * 4]) == 0,
-                "Invalid trade amounts"
-            );
-        }
-    }
-
-    function _processMakes(
-        address[] memory _addresses,
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        uint256[] memory _matches,
-        uint8[] memory _v
-    )
-        private
-    {
-        for (uint256 i = 0; i < _matches[0]; i++) {
-            bytes32 hashKey = keccak256(abi.encode(
-                                 OFFER_TYPEHASH,
-                                 _addresses[i * 4], // maker
-                                 _addresses[i * 4 + 1], // make.offerAssetId
-                                 _values[i * 4], // make.offerAmount
-                                 _addresses[i * 4 + 2], // make.wantAssetId
-                                 _values[i * 4 + 1], // make.wantAmount
-                                 _addresses[i * 4 + 3], // make.feeAssetId
-                                 _values[i * 4 + 2], // make.feeAmount
-                                 _values[i * 4 + 3] // make.nonce
-                             ));
-
-            _validateSignature(
-                _addresses[i * 4],
-                _v[i],
-                _hashes[i * 2],
-                _hashes[i * 2 + 1],
-                hashKey
-            );
-
-            bool newOffer = !_nonceTaken(_values[i * 4 + 3]);
-            uint256 remainingOfferAmount = newOffer ? _values[i * 4] : offers[hashKey];
-
-            for (uint256 j = 1; j < _matches.length - 1; j += 3) {
-                // check that match.makeIndex = currentMakeIndex
-                if (_matches[j] != i) { continue; }
-
-                // make.wantAmount * takeAmount / make.offerAmount
-                uint256 receiveAmount = _values[i * 4 + 1].mul(_matches[j + 2]).div(_values[i * 4]);
-
-                // reduce the receiveAmount by the feeAmount
-                // if this is a new offer AND make.feeAssetId == make.wantAssetId
-                if (newOffer && _addresses[i * 4 + 3] == _addresses[i * 4 + 2]) {
-                    receiveAmount = receiveAmount.sub(_values[i * 4 + 2]);
-                }
-
-                _increaseBalance(
-                    _addresses[i * 4], // maker
-                    _addresses[i * 4 + 2], // make.wantAssetId
-                    receiveAmount,
-                    REASON_MAKER_RECEIVE,
-                    _values[i * 4 + 3], // make.nonce
-                    _values[_matches[j + 1] * 4 + 3] // fill.nonce
-                );
-
-                // deduct match.takeAmount from remainingOfferAmount
-                remainingOfferAmount = remainingOfferAmount.sub(_matches[j + 2]);
-
-                // after the first match, the offer should not be considered new anymore
-                newOffer = false;
-            }
-
-            newOffer = !_nonceTaken(_values[i * 4 + 3]);
-
-            if (newOffer) {
-                _markNonce(_values[i * 4 + 3]);
-
-                _decreaseBalance(
-                    _addresses[i * 4], // maker
-                    _addresses[i * 4 + 1], // make.offerAssetId
-                    _values[i * 4], // make.offerAmount
-                    REASON_MAKER_GIVE,
-                    _values[i * 4 + 3], // make.nonce
-                    0
-                );
-
-                // separately deduct fee amount
-                // if make.feeAssetId != make.wantAssetId
-                if (_addresses[i * 4 + 3] != _addresses[i * 4 + 2]) {
-                    _decreaseBalance(
-                        _addresses[i * 4], // maker
-                        _addresses[i * 4 + 3], // make.feeAssetId
-                        _values[i * 4 + 2], // make.feeAmount
-                        REASON_MAKER_FEE_GIVE,
-                        _values[i * 4 + 3], // make.nonce
-                        0
-                    );
-                }
-
-                _increaseBalance(
-                    operator,
-                    _addresses[i * 4 + 3], // make.feeAssetId
-                    _values[i * 4 + 2], // make.feeAmount
-                    REASON_MAKER_FEE_RECEIVE,
-                    _values[i * 4 + 3], // make.nonce
-                    0
-                );
-            }
-
-            if (remainingOfferAmount == 0) {
-                delete offers[hashKey];
-            } else {
-                offers[hashKey] = remainingOfferAmount;
-            }
-        }
-    }
-
-    function _processFills(
-        address[] memory _addresses,
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        uint256[] memory _matches,
-        uint8[] memory _v
-    )
-        private
-    {
-        for (uint256 i = _matches[0]; i < _v.length; i++) {
-            bytes32 hashKey = keccak256(abi.encode(
-                                 FILL_TYPEHASH,
-                                 _addresses[i * 4], // filler
-                                 _addresses[i * 4 + 1], // fill.offerAssetId
-                                 _values[i * 4], // fill.offerAmount
-                                 _addresses[i * 4 + 2], // fill.wantAssetId
-                                 _values[i * 4 + 1], // fill.wantAmount
-                                 _addresses[i * 4 + 3], // fill.feeAssetId
-                                 _values[i * 4 + 2], // fill.feeAmount
-                                 _values[i * 4 + 3] // fill.nonce
-                             ));
-
-            _validateSignature(
-                _addresses[i * 4],
-                _v[i],
-                _hashes[i * 2],
-                _hashes[i * 2 + 1],
-                hashKey
-            );
-
-            uint256 remainingOfferAmount = _values[i * 4];
-            uint256 remainingWantAmount = _values[i * 4 + 1];
-
-            for (uint256 j = 1; j < _matches.length - 1; j += 3) {
-                // check that match.fillIndex = currentFillIndex
-                if (_matches[j + 1] != i) { continue; }
-
-                _fillerReceive(_addresses, _values, _matches, i, j);
-                // deduct match.takeAmount from remainingWantAmount
-                remainingWantAmount = remainingWantAmount.sub(_matches[j + 2]);
-
-                uint256 giveAmount = _fillerGive(_addresses, _values, _matches, i, j);
-                remainingOfferAmount = remainingOfferAmount.sub(giveAmount);
-            }
-
-            require(
-                remainingWantAmount == 0 && remainingOfferAmount == 0,
-                "Invalid fill"
-            );
-
-            _markNonce(_values[i * 4 + 3]);
-
-            _decreaseBalance(
-                _addresses[i * 4], // filler
-                _addresses[i * 4 + 1], // fill.offerAssetId
-                _values[i * 4] // fill.offerAmount
-            );
-
-            // separately deduct fee amount
-            // if fill.feeAssetId != fill.wantAssetId
-            if (_addresses[i * 4 + 3] != _addresses[i * 4 + 2]) {
-                _decreaseBalance(
-                    _addresses[i * 4], // filler
-                    _addresses[i * 4 + 3], // fill.feeAssetId
-                    _values[i * 4 + 2], // fill.feeAmount
-                    REASON_MAKER_FEE_GIVE,
-                    _values[i * 4 + 3], // fill.nonce
-                    0
-                );
-            }
-
-            _increaseBalance(
-                operator,
-                _addresses[i * 4 + 3], // fill.feeAssetId
-                _values[i * 4 + 2], // fill.feeAmount
-                REASON_FILLER_FEE_RECEIVE,
-                _values[i * 4 + 3], // fill.nonce
-                0
-            );
-        }
-    }
-
-    function _fillerReceive(
-        address[] memory _addresses,
-        uint256[] memory _values,
-        uint256[] memory _matches,
-        uint256 i,
-        uint256 j
-    )
-        private
-    {
-        uint256 receiveAmount = _matches[j + 2];
-
-        // reduce the receiveAmount by the feeAmount
-        // if fill.feeAssetId == fill.wantAssetId
-        if (_addresses[i * 4 + 3] == _addresses[i * 4 + 2]) {
-            receiveAmount = receiveAmount.sub(_values[i * 4 + 2]);
-        }
-
-        _increaseBalance(
-            _addresses[i * 4], // filler
-            _addresses[i * 4 + 2], // fill.wantAssetId
-            receiveAmount,
-            REASON_FILLER_RECEIVE,
-            _values[_matches[j] * 4 + 3], // make.nonce
-            _values[i * 4 + 3] // fill.nonce
-        );
-    }
-
-    function _fillerGive(
-        address[] memory _addresses,
-        uint256[] memory _values,
-        uint256[] memory _matches,
-        uint256 i,
-        uint256 j
-    )
-        private
-        returns (uint256)
-    {
-        // deduct the amount that will be given to the maker
-        // from the remainingOfferAmount
-        // giveAmount = make.wantAmount * takeAmount / make.offerAmount
-        uint256 giveAmount = _values[_matches[j] * 4 + 1].mul(
-                                 _matches[j + 2]
-                             ).div(
-                                 _values[_matches[j] * 4]
-                             );
-
-        // emit individual balance decrease events for more detailed tracking
-        emit BalanceDecrease(
-            _addresses[i * 4], // filler
-            _addresses[i * 4 + 1], // fill.offerAssetId
-            giveAmount,
-            REASON_FILLER_FEE_GIVE,
-            _values[_matches[j] * 4 + 3], // make.nonce
-            _values[i * 4 + 3] // fill.nonce
-        );
-
-        return giveAmount;
     }
 
     function _hashSwap(

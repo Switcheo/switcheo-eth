@@ -169,7 +169,7 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
     return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
 }
 
-async function trade({ makes, fills, matches }, { privateKeys }) {
+async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
     const broker = await getBroker()
     const addresses = []
     const values = []
@@ -214,7 +214,11 @@ async function trade({ makes, fills, matches }, { privateKeys }) {
 
     matches.unshift(makes.length)
 
-    return await broker.trade(addresses, values, hashes, matches, vArray)
+    if (optimize) {
+        return await broker.optrade(addresses, values, hashes, matches, vArray)
+    } else {
+        return await broker.trade(addresses, values, hashes, matches, vArray)
+    }
 }
 
 function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {

@@ -26,15 +26,15 @@ module.exports = {
             gasPrice: 20 * 1000000000
         }
     },
-    solc: {
-        optimizer: {
-            enabled: true,
-            runs: 200
-        }
-    },
     compilers: {
         solc: {
             version: "0.5.10",
+            settings: {
+                optimizer: {
+                    enabled: true,
+                    runs: 200
+                }
+            }
         },
     }
 };
