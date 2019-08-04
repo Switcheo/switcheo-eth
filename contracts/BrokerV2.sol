@@ -534,15 +534,6 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        bytes32[] memory hashKeys;
-        bytes32 v1;
-        address a1;
-        /* bytes32[] memory hashKeys = new bytes32[](_v.length); */
-        /* bytes32 key;
-        uint8 v;
-        bytes32 r;
-        bytes32 s; */
-
         // validate input lengths
         assembly {
             // there must be at least one make so
@@ -607,7 +598,7 @@ contract BrokerV2 is Ownable {
             }
         }
 
-        // calculate hashKeys for makes
+        // validate make signatures
         assembly {
             let hashKey
             let memptr := mload(0x40)
