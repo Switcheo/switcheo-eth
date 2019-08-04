@@ -111,62 +111,62 @@ contract('Test trade', async (accounts) => {
     //     })
     // })
 
-    contract('best-case batched trades', async () => {
-        it('test gas cost', async () => {
-            const batchSize = 5
-
-            const maker = accounts[1]
-            const filler = accounts[2]
-
-            await exchange.mintAndDeposit({ user: maker, token: jrc, amount: batchSize * 100, nonce: 1 })
-            await exchange.mintAndDeposit({ user: filler, token: swc, amount: batchSize * 50, nonce: 2 })
-
-            await exchange.mintAndDeposit({ user: operator, token: jrc, amount: 1, nonce: 3 })
-            await exchange.mintAndDeposit({ user: operator, token: swc, amount: 1, nonce: 4 })
-
-            await exchange.mintAndDeposit({ user: maker, token: swc, amount: 1, nonce: 5 })
-            await exchange.mintAndDeposit({ user: filler, token: jrc, amount: 1, nonce: 6 })
-
-            const makes = []
-            const fills = []
-            const matches = []
-
-            for (let i = 0; i < batchSize; i++) {
-                makes.push(
-                    {
-                        maker,
-                        offerAssetId: jrc.address,
-                        offerAmount: 100,
-                        wantAssetId: swc.address,
-                        wantAmount: 50,
-                        feeAssetId: swc.address,
-                        feeAmount: 2,
-                        nonce: batchSize * 2 + i
-                    }
-                )
-                fills.push({
-                    filler,
-                    offerAssetId: swc.address,
-                    offerAmount: 50,
-                    wantAssetId: jrc.address,
-                    wantAmount: 100,
-                    feeAssetId: jrc.address,
-                    feeAmount: 7,
-                    nonce: batchSize * 3 + i
-                })
-                matches.push(i, batchSize + i, 100)
-            }
-
-            const result = await exchange.trade({ makes, fills, matches }, {
-                privateKeys: {
-                    [maker]: getPrivateKey(maker),
-                    [filler]: getPrivateKey(filler)
-                }
-            })
-
-            console.log('gas used', result.receipt.gasUsed / batchSize)
-        })
-    })
+    // contract('best-case batched trades', async () => {
+    //     it('test gas cost', async () => {
+    //         const batchSize = 5
+    //
+    //         const maker = accounts[1]
+    //         const filler = accounts[2]
+    //
+    //         await exchange.mintAndDeposit({ user: maker, token: jrc, amount: batchSize * 100, nonce: 1 })
+    //         await exchange.mintAndDeposit({ user: filler, token: swc, amount: batchSize * 50, nonce: 2 })
+    //
+    //         await exchange.mintAndDeposit({ user: operator, token: jrc, amount: 1, nonce: 3 })
+    //         await exchange.mintAndDeposit({ user: operator, token: swc, amount: 1, nonce: 4 })
+    //
+    //         await exchange.mintAndDeposit({ user: maker, token: swc, amount: 1, nonce: 5 })
+    //         await exchange.mintAndDeposit({ user: filler, token: jrc, amount: 1, nonce: 6 })
+    //
+    //         const makes = []
+    //         const fills = []
+    //         const matches = []
+    //
+    //         for (let i = 0; i < batchSize; i++) {
+    //             makes.push(
+    //                 {
+    //                     maker,
+    //                     offerAssetId: jrc.address,
+    //                     offerAmount: 100,
+    //                     wantAssetId: swc.address,
+    //                     wantAmount: 50,
+    //                     feeAssetId: swc.address,
+    //                     feeAmount: 2,
+    //                     nonce: batchSize * 2 + i
+    //                 }
+    //             )
+    //             fills.push({
+    //                 filler,
+    //                 offerAssetId: swc.address,
+    //                 offerAmount: 50,
+    //                 wantAssetId: jrc.address,
+    //                 wantAmount: 100,
+    //                 feeAssetId: jrc.address,
+    //                 feeAmount: 7,
+    //                 nonce: batchSize * 3 + i
+    //             })
+    //             matches.push(i, batchSize + i, 100)
+    //         }
+    //
+    //         const result = await exchange.trade({ makes, fills, matches }, {
+    //             privateKeys: {
+    //                 [maker]: getPrivateKey(maker),
+    //                 [filler]: getPrivateKey(filler)
+    //             }
+    //         })
+    //
+    //         console.log('gas used', result.receipt.gasUsed / batchSize)
+    //     })
+    // })
 
     contract('test', async () => {
         it('tests', async () => {
@@ -231,8 +231,6 @@ contract('Test trade', async (accounts) => {
             })
 
             console.log('gas used', result.receipt.gasUsed / batchSize)
-            const { v1, v2, a1, a2 } = result.receipt.logs[0].args
-            console.log('v1, v2, a1, a2', v1.toString(), v2.toString(), a1, a2)
         })
     })
 })

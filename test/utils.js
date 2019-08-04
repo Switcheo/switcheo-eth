@@ -178,8 +178,8 @@ async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
 
     for (let i = 0; i < makes.length; i++) {
         const make = makes[i]
-        const { maker, offerAssetId, wantAssetId, feeAssetId } = make
-        const { offerAmount, wantAmount, feeAmount, nonce } = make
+        const { maker, offerAssetId, wantAssetId, feeAssetId,
+                offerAmount, wantAmount, feeAmount, nonce } = make
         const privateKey = privateKeys[maker]
 
         const { v, r, s } = await signParameters(
@@ -196,8 +196,8 @@ async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
 
     for (let i = 0; i < fills.length; i++) {
         const fill = fills[i]
-        const { filler, offerAssetId, wantAssetId, feeAssetId } = fill
-        const { offerAmount, wantAmount, feeAmount, nonce } = fill
+        const { filler, offerAssetId, wantAssetId, feeAssetId,
+                offerAmount, wantAmount, feeAmount, nonce } = fill
         const privateKey = privateKeys[filler]
 
         const { v, r, s } = await signParameters(

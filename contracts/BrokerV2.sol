@@ -38,6 +38,7 @@ contract BrokerV2 is Ownable {
         ")"
     ));
 
+    // DOMAIN_SEPARATOR: 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630
     bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
         EIP712_DOMAIN_TYPEHASH,
         CONTRACT_NAME,
@@ -66,6 +67,7 @@ contract BrokerV2 is Ownable {
         ")"
     ));
 
+    // OFFER_TYPEHASH: 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260
     bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
         "Offer(",
             "address maker,",
@@ -520,7 +522,6 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
-    event DLog(uint256 v1, uint256 v2, address a1, address a2);
     function optrade(
         address[] memory _addresses,
         uint256[] memory _values,
@@ -533,11 +534,16 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        uint256 v1;
-        uint256 v2;
+        bytes32[] memory hashKeys;
+        bytes32 v1;
         address a1;
-        address a2;
+        /* bytes32[] memory hashKeys = new bytes32[](_v.length); */
+        /* bytes32 key;
+        uint8 v;
+        bytes32 r;
+        bytes32 s; */
 
+        // validate input lengths
         assembly {
             // there must be at least one make so
             // revert if firstFillIndex == 0,
@@ -556,8 +562,10 @@ contract BrokerV2 is Ownable {
             // check that number of signatures matches number of r, s values
             // revert if _v.length * 2 != _hashes.length
             if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
+        }
 
-            // validate matches
+        // validate matches
+        assembly {
             for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
                 let makeIndex := mul(mload(add(_matches, add(0x20, mul(i, 0x20)))), 0x80) // _matches[i] * 4
                 let fillIndex := mul(mload(add(_matches, add(0x40, mul(i, 0x20)))), 0x80) // _matches[i + 1] * 4
@@ -599,7 +607,83 @@ contract BrokerV2 is Ownable {
             }
         }
 
-        emit DLog(v1, v2, a1, a2);
+        // calculate hashKeys for makes
+        assembly {
+            let hashKey
+            let memptr := mload(0x40)
+            for { let i := 0 } lt(i, firstFillIndex) { i := add(i, 1) } {
+                // OFFER_TYPEHASH
+                mstore(memptr, 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260)
+                // maker: _addresses[i * 4]
+                mstore(
+                    add(memptr, 0x20), // 32
+                    mload(add(_addresses, add(0x20, mul(i, 0x80))))
+                )
+                // make.offerAssetId: _addresses[i * 4 + 1]
+                mstore(
+                    add(memptr, 0x40), // 64
+                    mload(add(_addresses, add(0x40, mul(i, 0x80))))
+                )
+                // make.offerAmount: _values[i * 4]
+                mstore(
+                    add(memptr, 0x60), // 96
+                    mload(add(_values, add(0x20, mul(i, 0x80))))
+                )
+                // make.wantAssetId: _addresses[i * 4 + 2]
+                mstore(
+                    add(memptr, 0x80), // 128
+                    mload(add(_addresses, add(0x60, mul(i, 0x80))))
+                )
+                // make.wantAmount: _values[i * 4 + 1]
+                mstore(
+                    add(memptr, 0xA0),
+                    mload(add(_values, add(0x40, mul(i, 0x80))))
+                )
+                // make.feeAssetId: _addresses[i * 4 + 3]
+                mstore(
+                    add(memptr, 0xC0),
+                    mload(add(_addresses, add(0x80, mul(i, 0x80))))
+                )
+                // make.feeAmount: _values[i * 4 + 2]
+                mstore(
+                    add(memptr, 0xE0),
+                    mload(add(_values, add(0x60, mul(i, 0x80))))
+                )
+                // make.nonce: _values[i * 4 + 3]
+                mstore(
+                    add(memptr, 0x100),
+                    mload(add(_values, add(0x80, mul(i, 0x80))))
+                )
+
+                hashKey := keccak256(memptr, 0x120)
+
+                // store \x19\x01 prefix
+                mstore(add(memptr, 0x120), 0x0000000000000000000000000000000000000000000000000000000000001901)
+                // store DOMAIN_SEPARATOR
+                mstore(add(memptr, 0x140), 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630)
+                // store hashKey
+                mstore(add(memptr, 0x160), hashKey)
+
+                // calculate signHash for make, the values are 0x13E and 0x42
+                // as arguments are tightly packed for signHash
+                mstore(add(memptr, 0x180), keccak256(add(memptr, 0x13E), 0x42))
+                mstore(add(memptr, 0x1A0), mload(add(_v, add(0x20, mul(0x20, i))))) // v
+                mstore(add(memptr, 0x1C0), mload(add(_hashes, add(0x20, mul(0x40, i))))) // r: _hashes[i * 2]
+                mstore(add(memptr, 0x1E0), mload(add(_hashes, add(0x40, mul(0x40, i))))) // s: _hashes[i * 2 + 1]
+
+                // call(3000 gas limit, ecrecover at address 1, input start, input size, output start, output size)
+                // revert if call returns 0
+                if iszero(call(3000, 1, 0, add(memptr, 0x180), 0x80, add(memptr, 0x200), 0x20)) {
+                    revert(0, 0)
+                }
+
+                // revert if the returned address from ecrecover does not match the maker's address at _addresses[i * 4]
+                if iszero(eq(mload(add(memptr, 0x200)), mload(add(_addresses, add(0x20, mul(i, 0x80)))))) {
+                    revert(0, 0)
+                }
+            }
+
+        }
     }
 
     event DebugLog(uint256 v1, uint256 v2);
