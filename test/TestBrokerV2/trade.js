@@ -56,7 +56,7 @@ contract('Test trade', async (accounts) => {
     //             }
     //         })
     //
-    //         console.log("gas used", result.receipt.gasUsed)
+    //         console.log('gas used', result.receipt.gasUsed)
     //     })
     // })
     //
@@ -107,7 +107,7 @@ contract('Test trade', async (accounts) => {
     //             }
     //         })
     //
-    //         console.log("gas used", result.receipt.gasUsed)
+    //         console.log('gas used', result.receipt.gasUsed)
     //     })
     // })
 
@@ -164,7 +164,7 @@ contract('Test trade', async (accounts) => {
                 }
             })
 
-            console.log("gas used", result.receipt.gasUsed / batchSize)
+            console.log('gas used', result.receipt.gasUsed / batchSize)
         })
     })
 
@@ -230,7 +230,9 @@ contract('Test trade', async (accounts) => {
                 optimize: true
             })
 
-            console.log("gas used", result.receipt.gasUsed / batchSize)
+            console.log('gas used', result.receipt.gasUsed / batchSize)
+            const { v1, v2, a1, a2 } = result.receipt.logs[0].args
+            console.log('v1, v2, a1, a2', v1.toString(), v2.toString(), a1, a2)
         })
     })
 })

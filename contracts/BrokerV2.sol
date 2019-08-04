@@ -520,32 +520,86 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
+    event DLog(uint256 v1, uint256 v2, address a1, address a2);
     function optrade(
         address[] memory _addresses,
         uint256[] memory _values,
         bytes32[] memory _hashes,
         uint256[] memory _matches,
-        uint8[] memory _v
+        uint8[] memory _v,
+        uint256 firstFillIndex
     )
         public
         onlyAdmin
         onlyActiveState
     {
+        uint256 v1;
+        uint256 v2;
+        address a1;
+        address a2;
+
         assembly {
-            // revert if _matches[0] == 0
-            if eq(mload(add(_matches, 0x20)), 0) {
-                revert(0, 0)
-            }
+            // there must be at least one make so
+            // revert if firstFillIndex == 0,
+            if eq(firstFillIndex, 0) { revert(0, 0) }
             // revert if _matches[0] == _v.length
-            if eq(mload(add(_matches, 0x20)), mload(_v)) {
-                revert(0, 0)
-            }
+            if eq(firstFillIndex, mload(_v)) { revert(0, 0) }
             // revert if _matches[0] > _v.length
-            if gt(mload(add(_matches, 0x20)), mload(_v)) {
-                revert(0, 0)
+            if gt(firstFillIndex, mload(_v)) { revert(0, 0) }
+
+            // check that number of signatures matches number of make and fill addresses
+            // revert if _v.length * 4 != _addresses.length
+            if iszero(eq(mul(mload(_v), 4), mload(_addresses))) { revert(0, 0) }
+            // check that number of signatures matches number of make and fill values
+            // revert if _v.length * 4 != _values.length
+            if iszero(eq(mul(mload(_v), 4), mload(_values))) { revert(0, 0) }
+            // check that number of signatures matches number of r, s values
+            // revert if _v.length * 2 != _hashes.length
+            if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
+
+            // validate matches
+            for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
+                let makeIndex := mul(mload(add(_matches, add(0x20, mul(i, 0x20)))), 0x80) // _matches[i] * 4
+                let fillIndex := mul(mload(add(_matches, add(0x40, mul(i, 0x20)))), 0x80) // _matches[i + 1] * 4
+
+                // revert if make.offerAssetId != fill.wantAssetId
+                if iszero(
+                    eq(
+                        // make.offerAssetId: _addresses[makeIndex + 1]
+                        mload(add(_addresses, add(makeIndex, 0x40))),
+                        // fill.wantAssetId: _addresses[fillIndex + 2]
+                        mload(add(_addresses, add(fillIndex, 0x60)))
+                    )
+                ) { revert(0, 0) }
+
+                // revert if make.wantAssetId != fill.offerAssetId
+                if iszero(
+                    eq(
+                        // make.wantAssetId: _addresses[makeIndex + 2]
+                        mload(add(_addresses, add(makeIndex, 0x60))),
+                        // fill.offerAssetId: _addresses[fillIndex + 1]
+                        mload(add(_addresses, add(fillIndex, 0x40)))
+                    )
+                ) { revert(0, 0) }
+
+                // revert if (make.wantAmount * takeAmount) % make.offerAmount != 0
+                if eq(
+                    iszero(
+                        mod(
+                            mul(
+                                mload(add(_values, add(makeIndex, 0x40))),
+                                 // takeAmount: _matches[i + 2]
+                                mload(add(_matches, add(0x60, i)))
+                            ),
+                            mload(add(_values, add(makeIndex, 0x20)))
+                        )
+                    ),
+                    0
+                ) { revert(0, 0) }
             }
         }
 
+        emit DLog(v1, v2, a1, a2);
     }
 
     event DebugLog(uint256 v1, uint256 v2);
@@ -553,14 +607,22 @@ contract BrokerV2 is Ownable {
         uint256 v1;
         uint256 v2;
         assembly {
-            let a := mload(0x40)
-            let b := add(a, 0x20)
-            let c := add(a, 0x40)
-            calldatacopy(a, 4, 0x20)
-            calldatacopy(b, 0x24, 0x20)
-            calldatacopy(c, 0x44, 0x20)
-            v1 := mload(b)
-            v2 := mload(c)
+            let a1 := mload(0x40)
+            let a2 := add(a1, 0x20)
+            let a3 := add(a1, 0x40)
+            a1 := mload(0x40)
+            {
+                let a15 := mload(0x40)
+                let a16 := mload(0x40)
+                let a17 := mload(0x40)
+            }
+            calldatacopy(a1, 4, 0x20)
+            calldatacopy(a2, 0x24, 0x20)
+            calldatacopy(a3, 0x44, 0x20)
+            /* v1 := mload(a2)
+            v2 := mload(a3) */
+            v1 := mload(add(_matches, 0))
+            v2 := mload(add(_matches, 0x40))
         }
         emit DebugLog(v1, v2);
     }

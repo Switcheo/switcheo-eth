@@ -212,11 +212,14 @@ async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
         vArray.push(v)
     }
 
-    matches.unshift(makes.length)
-
     if (optimize) {
-        return await broker.optrade(addresses, values, hashes, matches, vArray)
+        // console.log('addresses', addresses)
+        // console.log('values', values)
+        // console.log('matches', matches)
+
+        return await broker.optrade(addresses, values, hashes, matches, vArray, makes.length)
     } else {
+        matches.unshift(makes.length)
         return await broker.trade(addresses, values, hashes, matches, vArray)
     }
 }
