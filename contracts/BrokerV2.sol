@@ -536,65 +536,103 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
+        // A: _v.length
+        // B: _v.length
+        // C: _numMakes
+        // D: _v.length * 4
+        // E: _v.length * 4
+        // 0..(A - 1): nonce lookup table
+        // A..(A + B - 1): nonce data
+        // (A + B)..(B + C - 1): available offer amounts for makes
+        // (B + C)..(C + D - 1): balance lookup table
+        // (C + D)..(D + E): balance data
+        uint256[] memory cache = new uint256[](
+                                         _v.length * 2 +
+                                         _numMakes +
+                                         _v.length * 8
+                                     );
+
         // a compacted version of the usedNonces mapping
-        uint256[] memory compactNonces = new uint256[](_v.length.mul(2));
+        /* uint256[] memory cache = new uint256[](_v.length.mul(2)); */
         // a compacted version of the offers mapping
-        uint256[] memory compactOffers = new uint256[](_numMakes);
+        /* uint256[] memory compactOffers = new uint256[](_numMakes); */
         bytes32[] memory hashKeys = new bytes32[](_numMakes);
 
         assembly {
+
+        function read(arr, index) -> item {
+            item := mload(add(arr, add(0x20, mul(index, 0x20))))
+        }
+
+        function write(arr, index, value) {
+            mstore(
+                add(arr, add(0x20, mul(index, 0x20))),
+                value
+            )
+        }
+
         // if the nonce is taken then isTaken will be a non-zero value
         // the non-zero value may not be 1
-        function compactNonceTaken(nonce, index, compactNoncesRef) -> isTaken {
-            // slotIndex: compactNoncesRef[index]
-            let slotIndex := mload(add(
-                                 compactNoncesRef,
-                                 add(0x20, mul(index, 0x20))
-                             ))
-
+        function compactNonceTaken(nonce, index, cache) -> isTaken {
             // isTaken: (1 << (nonce % 256)) & nonceData
             isTaken := and(
                            // 1 << (nonce % 256)
                            shl(mod(nonce, 256), 1),
-                           // nonceData: compactNoncesRef[slotIndex]
-                           mload(add(
-                               compactNoncesRef,
-                               add(0x20, mul( slotIndex, 0x20))
-                           ))
+                           // nonceData: cache[cache[index]]
+                           read(
+                               cache,
+                               read(cache, index)
+                           )
                       )
         }
 
-        function markCompactNonce(nonce, index, compactNoncesRef) {
-            // slotIndex: compactNoncesRef[index]
-            let slotIndex := mload(add(
-                                 compactNoncesRef,
-                                 add(0x20, mul(index, 0x20))
-                             ))
-            // set compactNonces[slotIndex]: (1 << (nonce % 256)) | compactNonces[slotIndex]
-            mstore(
-                add(compactNoncesRef, add(0x20, mul(slotIndex, 0x20))),
+        function markCompactNonce(nonce, index, cache) {
+            // set cache[cache[index]]: (1 << (nonce % 256)) | cache[cache[index]]
+            write(
+                cache,
+                read(cache, index),
                 or(
                     // 1 << (nonce % 256)
                     shl(mod(nonce, 256), 1),
-                    // nonceData: compactNoncesRef[slotIndex]
-                    mload(
-                        add(
-                            compactNoncesRef,
-                            add(0x20, mul(slotIndex, 0x20)
-                        )
-                    ))
+                    read(cache, index)
                 )
             )
+        }
+
+        // return a + b
+        function safeAdd(a, b) -> c {
+            c := add(a, b)
+            // revert if c < a
+            if lt(c, a) { revert(0, 0) }
+        }
+
+        // return a - b
+        function safeSub(a, b) -> c {
+            // revert if b > a
+            if gt(b, a) { revert(0, 0) }
+            c := sub(a, b)
+        }
+
+        // return a * b
+        function safeMul(a, b) -> c {
+            c := mul(a, b)
+            // revert if c / a != b
+            if iszero(eq(div(c, a), b)) { revert(0, 0) }
+        }
+
+        // return a / b
+        function safeDiv(a, b) -> c {
+            // revert if b == 0
+            if eq(b, 0) { revert(0, 0) }
+            c := div(a, b)
         }
 
         // VALIDATE INPUT LENGTHS
         // there must be at least one make so
         // revert if _numMakes == 0,
         if eq(_numMakes, 0) { revert(0, 0) }
-        // revert if _numMakes == _v.length
-        if eq(_numMakes, mload(_v)) { revert(0, 0) }
-        // revert if _numMakes > _v.length
-        if gt(_numMakes, mload(_v)) { revert(0, 0) }
+        // revert if !(_numMakes < _v.length)
+        if iszero(lt(_numMakes, mload(_v))) { revert(0, 0) }
 
         // check that number of signatures matches number of make and fill addresses
         // revert if _v.length * 4 != _addresses.length
@@ -606,7 +644,8 @@ contract BrokerV2 is Ownable {
         // revert if _v.length * 2 != _hashes.length
         if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
 
-        // VALIDATE NONCE UNIQUENESS AND CACHE NONCE DATA
+        // VALIDATE NONCE UNIQUENESS,
+        // CACHE NONCE DATA
         {
             let nonceA
             let nonceB
@@ -617,16 +656,16 @@ contract BrokerV2 is Ownable {
             for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
                 // nonce: _values[i * 4 + 3]
                 nonceA := mload(add(_values, add(0x80, mul(i, 0x80))))
-                if iszero(add(compactNonces, add(0x20, mul(i, 0x20)))) {
+                if iszero(add(cache, add(0x20, mul(i, 0x20)))) {
                     mstore(memptr, div(nonceA, 256))
-                    // set compactNonces[i]: _v.length + i
+                    // set cache[i]: _v.length + i
                     mstore(
-                        add(compactNonces, add(0x20, mul(i, 0x20))),
+                        add(cache, add(0x20, mul(i, 0x20))),
                         add(mload(_v), i)
                     )
-                    // set compactNonces[_v.length + i]: nonce data
+                    // set cache[_v.length + i]: nonce data
                     mstore(
-                        add(compactNonces, add(0x20, mul(add(mload(_v), i), 0x20))),
+                        add(cache, add(0x20, mul(add(mload(_v), i), 0x20))),
                         sload(keccak256(memptr, 0x40))
                     )
                 }
@@ -637,9 +676,9 @@ contract BrokerV2 is Ownable {
                     if eq(nonceA, nonceB) { revert(0, 0) }
 
                     if eq(div(nonceA, 256), div(nonceB, 256)) {
-                        // set compactNonces[j]: _v.length + i
+                        // set cache[j]: _v.length + i
                         mstore(
-                            add(compactNonces, add(0x20, mul(j, 0x20))),
+                            add(cache, add(0x20, mul(j, 0x20))),
                             add(mload(_v), add(0x20, mul(i, 0x20)))
                         )
                     }
@@ -688,7 +727,9 @@ contract BrokerV2 is Ownable {
             ) { revert(0, 0) }
         }
 
-        // VALIDATE MAKE SIGNATURES AND READ AVAILABLE OFFER AMOUNTS
+        // VALIDATE MAKE SIGNATURES,
+        // READ AVAILABLE OFFER AMOUNTS,
+        // MARK MAKE NONCES AS USED
         {
             let hashKey
             let existingMake
@@ -770,24 +811,24 @@ contract BrokerV2 is Ownable {
                     hashKey
                 )
 
-                // set compactOffers[i]: available offer amount
+                // set cache[_v.length * 2 + i]: available offer amount
                 existingMake := compactNonceTaken(
                                     // make.nonce: _values[i * 4 + 3]
                                     mload(add(_values, add(0x80, mul(i, 0x80)))),
                                     i,
-                                    compactNonces
+                                    cache
                                 )
 
                 // if this is an existing make then
-                // read the available offer amount from compactOffers
+                // read the available offer amount from offers
                 if existingMake {
                     // offers is the 5th declared contract variable
                     mstore(add(memptr, 0x220), 5)
                     mstore(add(memptr, 0x240), hashKey)
 
-                    // compactOffers[i] = offers[hashKey]
+                    // cache[_v.length * 2 + i] = offers[hashKey]
                     mstore(
-                        add(compactOffers, add(0x20, mul(i, 0x20))),
+                        add(cache, add(0x20, mul(add(mul(mload(_v), 2), i), 0x20))),
                         sload(keccak256(add(memptr, 0x220), 0x40))
                     )
                 }
@@ -795,9 +836,9 @@ contract BrokerV2 is Ownable {
                 // if this is not an existing make then
                 // set the available offer amount as the make.offerAmount
                 if iszero(existingMake) {
-                    // compactOffers[i] = make.offerAmount
+                    // cache[_v.length * 2 + i] = make.offerAmount
                     mstore(
-                        add(compactOffers, add(0x20, mul(i, 0x20))),
+                        add(cache, add(0x20, mul(add(mul(mload(_v), 2), i), 0x20))),
                         // make.offerAmount: _values[i * 4]
                         mload(add(_values, add(0x20, mul(i, 0x80))))
                     )
@@ -807,25 +848,26 @@ contract BrokerV2 is Ownable {
                     // make.nonce: _values[i * 4 + 3]
                     mload(add(_values, add(0x80, mul(i, 0x80)))),
                     i,
-                    compactNonces
+                    cache
                 )
             }
         }
 
-        // VALIDATE THAT ALL FILL NONCES ARE UNUSED
+        // VALIDATE THAT ALL FILL NONCES ARE UNUSED,
+        // MARK ALL FILL NONCES AS USED
         for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
             if compactNonceTaken(
                    // fill.nonce: _values[i * 4 + 3]
                    mload(add(_values, add(0x80, mul(i, 0x80)))),
                    i,
-                   compactNonces
+                   cache
                ) { revert(0, 0) }
 
             markCompactNonce(
                 // fill.nonce: _values[i * 4 + 3]
                 mload(add(_values, add(0x80, mul(i, 0x80)))),
                 i,
-                compactNonces
+                cache
             )
         }
 
@@ -836,7 +878,7 @@ contract BrokerV2 is Ownable {
             mstore(add(memptr, 0x20), 6)
             for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
                 slotIndex := mload(add(
-                                 compactNonces,
+                                 cache,
                                  add(0x20, mul(i, 0x20))
                              ))
 
@@ -851,14 +893,66 @@ contract BrokerV2 is Ownable {
                                    )
                           )
 
-                    // set usedNonces[slotIndex]: compactNonces[_v.length + i]
+                    // set usedNonces[slotIndex]: cache[_v.length + i]
                     sstore(
                         keccak256(memptr, 0x40),
                         mload(add(
-                            compactNonces,
+                            cache,
                             add(0x20, mul(add(mload(_v), i), 0x20))
                         ))
                     )
+                }
+            }
+        }
+
+        // PROCESS FILLS
+        {
+            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+                // fill.offerAmount: _values[i * 4]
+                let remainingOfferAmount := mload(add(
+                                                _values,
+                                                add(0x20, mul(i, 0x80))
+                                            ))
+                // fill.wantAmount: _values[i * 4 + 1]
+                let remainingWantAmount := mload(add(
+                                                _values,
+                                                add(0x40, mul(i, 0x80))
+                                            ))
+
+                for { let j := 0 } lt(j, mload(_matches)) { j := add(j, 3) } {
+                    // only process if _matches[j + 1] == i
+                    // _matches[j + 1]: fillIndex
+                    if eq(
+                           mload(add(_matches, add(0x20, mul(add(j, 1), 0x20)))),
+                           i
+                       )
+                    {
+                        // takeAmount: _matches[j + 2]
+                        let takeAmount := mload(add(_matches, add(0x20, mul(add(j, 1), 0x20))))
+                        // remainingWantAmount -= _matches[j + 2]
+                        remainingWantAmount := safeSub(remainingWantAmount, takeAmount)
+
+                        // giveAmount: make.wantAmount * takeAmount / make.offerAmount
+                        // make.wantAmount: _values[_matches[j] * 4 + 1]
+                        // make.offerAmount: _values[_matches[j] * 4]
+                        /* let giveAmount := div(
+                                            mul(
+                                                mload(add(
+                                                    _values,
+                                                    add(0x20,
+                                                        mload(add(_matches, add(0x20, mul(add(j, 1), 0x20))))
+                                                    )
+                                                ))
+                                            ),
+
+                                          ) */
+
+        /* uint256 giveAmount = _values[_matches[j] * 4 + 1].mul(
+                                 _matches[j + 2]
+                             ).div(
+                                 _values[_matches[j] * 4]
+                             ); */
+                    }
                 }
             }
         }
