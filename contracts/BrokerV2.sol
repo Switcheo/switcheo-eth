@@ -543,26 +543,48 @@ contract BrokerV2 is Ownable {
         bytes32[] memory hashKeys = new bytes32[](_numMakes);
 
         assembly {
+        // if the nonce is taken then isTaken will be a non-zero value
+        // the non-zero value may not be 1
         function compactNonceTaken(nonce, index, compactNoncesRef) -> isTaken {
-            let slotIndex := mload(
-                add(
-                    compactNoncesRef,
-                    add(
-                        0x20,
-                        mul(index, 0x20)
-                    )
-                )
-            )
+            // slotIndex: compactNoncesRef[index]
+            let slotIndex := mload(add(
+                                 compactNoncesRef,
+                                 add(0x20, mul(index, 0x20))
+                             ))
+
             // isTaken: (1 << (nonce % 256)) & nonceData
             isTaken := and(
                            // 1 << (nonce % 256)
                            shl(mod(nonce, 256), 1),
                            // nonceData: compactNoncesRef[slotIndex]
                            mload(add(
-                                   compactNoncesRef,
-                                   add(0x20, mul( slotIndex, 0x20))
+                               compactNoncesRef,
+                               add(0x20, mul( slotIndex, 0x20))
                            ))
                       )
+        }
+
+        function markCompactNonce(nonce, index, compactNoncesRef) {
+            // slotIndex: compactNoncesRef[index]
+            let slotIndex := mload(add(
+                                 compactNoncesRef,
+                                 add(0x20, mul(index, 0x20))
+                             ))
+            // set compactNonces[slotIndex]: (1 << (nonce % 256)) | compactNonces[slotIndex]
+            mstore(
+                add(compactNoncesRef, add(0x20, mul(slotIndex, 0x20))),
+                or(
+                    // 1 << (nonce % 256)
+                    shl(mod(nonce, 256), 1),
+                    // nonceData: compactNoncesRef[slotIndex]
+                    mload(
+                        add(
+                            compactNoncesRef,
+                            add(0x20, mul(slotIndex, 0x20)
+                        )
+                    ))
+                )
+            )
         }
 
         // VALIDATE INPUT LENGTHS
@@ -780,6 +802,13 @@ contract BrokerV2 is Ownable {
                         mload(add(_values, add(0x20, mul(i, 0x80))))
                     )
                 }
+
+                markCompactNonce(
+                    // make.nonce: _values[i * 4 + 3]
+                    mload(add(_values, add(0x80, mul(i, 0x80)))),
+                    i,
+                    compactNonces
+                )
             }
         }
 
@@ -791,6 +820,13 @@ contract BrokerV2 is Ownable {
                    i,
                    compactNonces
                ) { revert(0, 0) }
+
+            markCompactNonce(
+                // fill.nonce: _values[i * 4 + 3]
+                mload(add(_values, add(0x80, mul(i, 0x80)))),
+                i,
+                compactNonces
+            )
         }
 
         } // end assembly
