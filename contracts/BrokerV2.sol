@@ -524,6 +524,7 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
+    event Log1(uint256 v1);
     function optrade(
         address[] memory _addresses,
         uint256[] memory _values,
@@ -559,11 +560,12 @@ contract BrokerV2 is Ownable {
         bytes32[] memory hashKeys = new bytes32[](_numMakes);
 
         assembly {
-
+        // read array value at index
         function read(arr, index) -> item {
             item := mload(add(arr, add(0x20, mul(index, 0x20))))
         }
 
+        // write value to array at index
         function write(arr, index, value) {
             mstore(
                 add(arr, add(0x20, mul(index, 0x20))),
@@ -655,32 +657,27 @@ contract BrokerV2 is Ownable {
 
             for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
                 // nonce: _values[i * 4 + 3]
-                nonceA := mload(add(_values, add(0x80, mul(i, 0x80))))
-                if iszero(add(cache, add(0x20, mul(i, 0x20)))) {
+                nonceA := read(_values, add(mul(i, 4), 3))
+
+                if iszero(read(cache, i)) {
                     mstore(memptr, div(nonceA, 256))
                     // set cache[i]: _v.length + i
-                    mstore(
-                        add(cache, add(0x20, mul(i, 0x20))),
-                        add(mload(_v), i)
-                    )
+                    write(cache, i, add(mload(_v), i))
                     // set cache[_v.length + i]: nonce data
-                    mstore(
-                        add(cache, add(0x20, mul(add(mload(_v), i), 0x20))),
+                    write(
+                        cache,
+                        add(mload(_v), i),
                         sload(keccak256(memptr, 0x40))
                     )
                 }
 
                 for { let j := add(i, 1) } lt(j, mload(_v)) { j := add(j, 1) } {
                     // nonce: _values[j * 4 + 3]
-                    nonceB := mload(add(_values, add(0x80, mul(j, 0x80))))
+                    nonceB := read(_values, add(mul(j, 4), 3))
                     if eq(nonceA, nonceB) { revert(0, 0) }
-
                     if eq(div(nonceA, 256), div(nonceB, 256)) {
                         // set cache[j]: _v.length + i
-                        mstore(
-                            add(cache, add(0x20, mul(j, 0x20))),
-                            add(mload(_v), add(0x20, mul(i, 0x20)))
-                        )
+                        write(cache, j, add(mload(_v), i))
                     }
                 }
             }
@@ -688,16 +685,18 @@ contract BrokerV2 is Ownable {
 
         // VALIDATE MATCHES
         for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
-            let makeIndex := mul(mload(add(_matches, add(0x20, mul(i, 0x20)))), 0x80) // _matches[i] * 4
-            let fillIndex := mul(mload(add(_matches, add(0x40, mul(i, 0x20)))), 0x80) // _matches[i + 1] * 4
+            // makeIndex: _matches[i]
+            let makeIndex := read(_matches, i)
+             // fillIndex: _matches[i + 1]
+            let fillIndex := read(_matches, add(i, 1))
 
             // revert if make.offerAssetId != fill.wantAssetId
             if iszero(
                 eq(
-                    // make.offerAssetId: _addresses[makeIndex + 1]
-                    mload(add(_addresses, add(makeIndex, 0x40))),
-                    // fill.wantAssetId: _addresses[fillIndex + 2]
-                    mload(add(_addresses, add(fillIndex, 0x60)))
+                    // make.offerAssetId: _addresses[makeIndex * 4 + 1]
+                    read(_addresses, add(mul(makeIndex, 4), 1)),
+                    // fill.wantAssetId: _addresses[fillIndex * 4 + 2]
+                    read(_addresses, add(mul(fillIndex, 4), 2))
                 )
             ) { revert(0, 0) }
 
@@ -705,9 +704,9 @@ contract BrokerV2 is Ownable {
             if iszero(
                 eq(
                     // make.wantAssetId: _addresses[makeIndex + 2]
-                    mload(add(_addresses, add(makeIndex, 0x60))),
+                    read(_addresses, add(mul(makeIndex, 4), 2)),
                     // fill.offerAssetId: _addresses[fillIndex + 1]
-                    mload(add(_addresses, add(fillIndex, 0x40)))
+                    read(_addresses, add(mul(fillIndex, 4), 1))
                 )
             ) { revert(0, 0) }
 
@@ -716,11 +715,13 @@ contract BrokerV2 is Ownable {
                 iszero(
                     mod(
                         mul(
-                            mload(add(_values, add(makeIndex, 0x40))),
-                             // takeAmount: _matches[i + 2]
-                            mload(add(_matches, add(0x60, i)))
+                            // make.wantAmount: _values[makeIndex * 4 + 1]
+                            read(_values, add(mul(makeIndex, 4), 1)),
+                            // takeAmount: _matches[i + 2]
+                            read(_matches, add(i, 2))
                         ),
-                        mload(add(_values, add(makeIndex, 0x20)))
+                        // make.offerAmount: _values[makeIndex * 4]
+                        read(_values, mul(makeIndex, 4))
                     )
                 ),
                 0
@@ -740,42 +741,42 @@ contract BrokerV2 is Ownable {
                 // maker: _addresses[i * 4]
                 mstore(
                     add(memptr, 0x20), // 32
-                    mload(add(_addresses, add(0x20, mul(i, 0x80))))
+                    read(_addresses, mul(i, 4))
                 )
                 // make.offerAssetId: _addresses[i * 4 + 1]
                 mstore(
                     add(memptr, 0x40), // 64
-                    mload(add(_addresses, add(0x40, mul(i, 0x80))))
+                    read(_addresses, add(mul(i, 4), 1))
                 )
                 // make.offerAmount: _values[i * 4]
                 mstore(
                     add(memptr, 0x60), // 96
-                    mload(add(_values, add(0x20, mul(i, 0x80))))
+                    read(_values, mul(i, 4))
                 )
                 // make.wantAssetId: _addresses[i * 4 + 2]
                 mstore(
                     add(memptr, 0x80), // 128
-                    mload(add(_addresses, add(0x60, mul(i, 0x80))))
+                    read(_addresses, add(mul(i, 4), 2))
                 )
                 // make.wantAmount: _values[i * 4 + 1]
                 mstore(
                     add(memptr, 0xA0),
-                    mload(add(_values, add(0x40, mul(i, 0x80))))
+                    read(_values, add(mul(i, 4), 1))
                 )
                 // make.feeAssetId: _addresses[i * 4 + 3]
                 mstore(
                     add(memptr, 0xC0),
-                    mload(add(_addresses, add(0x80, mul(i, 0x80))))
+                    read(_addresses, add(mul(i, 4), 3))
                 )
                 // make.feeAmount: _values[i * 4 + 2]
                 mstore(
                     add(memptr, 0xE0),
-                    mload(add(_values, add(0x60, mul(i, 0x80))))
+                    read(_values, add(mul(i, 4), 2))
                 )
                 // make.nonce: _values[i * 4 + 3]
                 mstore(
                     add(memptr, 0x100),
-                    mload(add(_values, add(0x80, mul(i, 0x80))))
+                    read(_values, add(mul(i, 4), 3))
                 )
 
                 hashKey := keccak256(memptr, 0x120)
@@ -790,9 +791,12 @@ contract BrokerV2 is Ownable {
                 // calculate signHash for make, the values are 0x13E and 0x42
                 // as arguments are tightly packed for signHash
                 mstore(add(memptr, 0x180), keccak256(add(memptr, 0x13E), 0x42))
-                mstore(add(memptr, 0x1A0), mload(add(_v, add(0x20, mul(0x20, i))))) // v
-                mstore(add(memptr, 0x1C0), mload(add(_hashes, add(0x20, mul(0x40, i))))) // r: _hashes[i * 2]
-                mstore(add(memptr, 0x1E0), mload(add(_hashes, add(0x40, mul(0x40, i))))) // s: _hashes[i * 2 + 1]
+                // v: _v[i]
+                mstore(add(memptr, 0x1A0), read(_v, i))
+                // r: _hashes[i * 2]
+                mstore(add(memptr, 0x1C0), read(_hashes, mul(i, 2)))
+                // s: _hashes[i * 2 + 1]
+                mstore(add(memptr, 0x1E0), read(_hashes, add(mul(i, 2), 1)))
 
                 // call(3000 gas limit, ecrecover at address 1, input start, input size, output start, output size)
                 // revert if call returns 0
@@ -801,20 +805,18 @@ contract BrokerV2 is Ownable {
                 }
 
                 // revert if the returned address from ecrecover does not match the maker's address at _addresses[i * 4]
-                if iszero(eq(mload(add(memptr, 0x200)), mload(add(_addresses, add(0x20, mul(i, 0x80)))))) {
-                    revert(0, 0)
-                }
+                if iszero(eq(
+                       mload(add(memptr, 0x200)),
+                       read(_addresses, mul(i, 4))
+                   )) { revert(0, 0) }
 
                 // set hashKeys[i]: hashKey
-                mstore(
-                    add(hashKeys, add(0x20, mul(i, 0x20))),
-                    hashKey
-                )
+                write(hashKeys, i, hashKey)
 
                 // set cache[_v.length * 2 + i]: available offer amount
                 existingMake := compactNonceTaken(
                                     // make.nonce: _values[i * 4 + 3]
-                                    mload(add(_values, add(0x80, mul(i, 0x80)))),
+                                    read(_values, add(mul(i, 4), 3)),
                                     i,
                                     cache
                                 )
@@ -826,9 +828,10 @@ contract BrokerV2 is Ownable {
                     mstore(add(memptr, 0x220), 5)
                     mstore(add(memptr, 0x240), hashKey)
 
-                    // cache[_v.length * 2 + i] = offers[hashKey]
-                    mstore(
-                        add(cache, add(0x20, mul(add(mul(mload(_v), 2), i), 0x20))),
+                    // cache[_v.length * 2 + i]: offers[hashKey]
+                    write(
+                        cache,
+                        add(mul(mload(_v), 2), i),
                         sload(keccak256(add(memptr, 0x220), 0x40))
                     )
                 }
@@ -836,17 +839,18 @@ contract BrokerV2 is Ownable {
                 // if this is not an existing make then
                 // set the available offer amount as the make.offerAmount
                 if iszero(existingMake) {
-                    // cache[_v.length * 2 + i] = make.offerAmount
-                    mstore(
-                        add(cache, add(0x20, mul(add(mul(mload(_v), 2), i), 0x20))),
+                    // cache[_v.length * 2 + i]: make.offerAmount
+                    write(
+                        cache,
+                        add(mul(mload(_v), 2), i),
                         // make.offerAmount: _values[i * 4]
-                        mload(add(_values, add(0x20, mul(i, 0x80))))
+                        read(_values, mul(i, 4))
                     )
                 }
 
                 markCompactNonce(
                     // make.nonce: _values[i * 4 + 3]
-                    mload(add(_values, add(0x80, mul(i, 0x80)))),
+                    read(_values, add(mul(i, 4), 3)),
                     i,
                     cache
                 )
@@ -856,16 +860,17 @@ contract BrokerV2 is Ownable {
         // VALIDATE THAT ALL FILL NONCES ARE UNUSED,
         // MARK ALL FILL NONCES AS USED
         for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+            // fill.nonce: _values[i * 4 + 3]
+            let fillNonce := read(_values, add(mul(i, 4), 3))
+
             if compactNonceTaken(
-                   // fill.nonce: _values[i * 4 + 3]
-                   mload(add(_values, add(0x80, mul(i, 0x80)))),
+                   fillNonce,
                    i,
                    cache
                ) { revert(0, 0) }
 
             markCompactNonce(
-                // fill.nonce: _values[i * 4 + 3]
-                mload(add(_values, add(0x80, mul(i, 0x80)))),
+                fillNonce,
                 i,
                 cache
             )
@@ -886,9 +891,9 @@ contract BrokerV2 is Ownable {
                 // so that unnecessary storage updates will be avoided
                 if eq(slotIndex, add(mload(_v), i)) {
                     // store nonce / 256
-                    // nonce: _values[i * 4 + 3]
                     mstore(memptr, div(
-                                       mload(add(_values, add(0x80, mul(i, 0x80)))),
+                                       // nonce: _values[i * 4 + 3]
+                                       read(_values, add(mul(i, 4), 3)),
                                        256
                                    )
                           )
@@ -896,10 +901,7 @@ contract BrokerV2 is Ownable {
                     // set usedNonces[slotIndex]: cache[_v.length + i]
                     sstore(
                         keccak256(memptr, 0x40),
-                        mload(add(
-                            cache,
-                            add(0x20, mul(add(mload(_v), i), 0x20))
-                        ))
+                        read(cache, add(mload(_v), i))
                     )
                 }
             }
@@ -909,55 +911,66 @@ contract BrokerV2 is Ownable {
         {
             for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
                 // fill.offerAmount: _values[i * 4]
-                let remainingOfferAmount := mload(add(
-                                                _values,
-                                                add(0x20, mul(i, 0x80))
-                                            ))
                 // fill.wantAmount: _values[i * 4 + 1]
-                let remainingWantAmount := mload(add(
-                                                _values,
-                                                add(0x40, mul(i, 0x80))
-                                            ))
-
                 for { let j := 0 } lt(j, mload(_matches)) { j := add(j, 3) } {
                     // only process if _matches[j + 1] == i
                     // _matches[j + 1]: fillIndex
-                    if eq(
-                           mload(add(_matches, add(0x20, mul(add(j, 1), 0x20)))),
-                           i
-                       )
-                    {
-                        // takeAmount: _matches[j + 2]
-                        let takeAmount := mload(add(_matches, add(0x20, mul(add(j, 1), 0x20))))
-                        // remainingWantAmount -= _matches[j + 2]
-                        remainingWantAmount := safeSub(remainingWantAmount, takeAmount)
+                    if eq(read(_matches, add(j, 1)), i) {
+                        // remainingWantAmount -= takeAmount
+                        // fill.wantAmount -= takeAmount
+                        write(
+                            _values,
+                            // fill.wantAmount: _values[i * 4 + 1]
+                            add(mul(i, 4), 1),
+                            safeSub(
+                                read(_values, add(mul(i, 4), 1)),
+                                // takeAmount: _matches[j + 2]
+                                read(_matches, add(j, 2))
+                            )
+                        )
 
                         // giveAmount: make.wantAmount * takeAmount / make.offerAmount
-                        // make.wantAmount: _values[_matches[j] * 4 + 1]
-                        // make.offerAmount: _values[_matches[j] * 4]
-                        /* let giveAmount := div(
-                                            mul(
-                                                mload(add(
-                                                    _values,
-                                                    add(0x20,
-                                                        mload(add(_matches, add(0x20, mul(add(j, 1), 0x20))))
-                                                    )
-                                                ))
-                                            ),
+                        let giveAmount := safeDiv(
+                                          safeMul(
+                                              // make.wantAmount: _values[_matches[j] * 4 + 1]
+                                              read(
+                                                  _values,
+                                                  add(mul(read(_matches, j), 4), 1)
+                                              ),
+                                              // takeAmount: _matches[j + 2]
+                                              read(_matches, add(j, 2))
+                                          ),
+                                          // make.offerAmount: _values[_matches[j] * 4]
+                                          read(
+                                              _values,
+                                              mul(read(_matches, j), 4)
+                                          )
+                                      )
 
-                                          ) */
 
-        /* uint256 giveAmount = _values[_matches[j] * 4 + 1].mul(
-                                 _matches[j + 2]
-                             ).div(
-                                 _values[_matches[j] * 4]
-                             ); */
+                        // fill.offerAmount -= giveAmount
+                        write(
+                            _values,
+                            // fill.offerAmount: _values[i * 4]
+                            mul(i, 4),
+                            safeSub(
+                                read(_values, mul(i, 4)),
+                                giveAmount
+                            )
+                        )
                     }
                 }
+
+                // fill must be completely filled
+                // revert if the remaining fill.offerAmount != 0
+                if read(_values, mul(i, 4)) { revert(0, 0) }
+                // revert if the remaining fill.wantAmount != 0
+                if read(_values, add(mul(i, 4), 1)) { revert(0, 0) }
             }
         }
 
         } // end assembly
+        emit Log1(cache[cache.length - 1]);
     }
 
     event DebugLog(uint256 v1, uint256 v2);
