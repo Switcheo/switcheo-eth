@@ -544,32 +544,24 @@ contract BrokerV2 is Ownable {
 
         assembly {
         function compactNonceTaken(nonce, index, compactNoncesRef) -> isTaken {
+            let slotIndex := mload(
+                add(
+                    compactNoncesRef,
+                    add(
+                        0x20,
+                        mul(index, 0x20)
+                    )
+                )
+            )
             // isTaken: (1 << (nonce % 256)) & nonceData
             isTaken := and(
                            // 1 << (nonce % 256)
                            shl(mod(nonce, 256), 1),
                            // nonceData: compactNoncesRef[slotIndex]
-                           mload(
-                               add(
+                           mload(add(
                                    compactNoncesRef,
-                                   add(
-                                       0x20,
-                                       mul(
-                                           // slotIndex: compactNoncesRef[index]
-                                           mload(
-                                               add(
-                                                   compactNoncesRef,
-                                                   add(
-                                                       0x20,
-                                                       mul(index, 0x20)
-                                                   )
-                                               )
-                                           ),
-                                           0x20
-                                       )
-                                   )
-                               )
-                           )
+                                   add(0x20, mul( slotIndex, 0x20))
+                           ))
                       )
         }
 
@@ -790,6 +782,17 @@ contract BrokerV2 is Ownable {
                 }
             }
         }
+
+        // VALIDATE THAT ALL FILL NONCES ARE UNUSED
+        for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+            if compactNonceTaken(
+                   // fill.nonce: _values[i * 4 + 3]
+                   mload(add(_values, add(0x80, mul(i, 0x80)))),
+                   i,
+                   compactNonces
+               ) { revert(0, 0) }
+        }
+
         } // end assembly
     }
 
