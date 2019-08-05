@@ -530,7 +530,7 @@ contract BrokerV2 is Ownable {
         bytes32[] memory _hashes,
         uint256[] memory _matches,
         uint8[] memory _v,
-        uint256 _firstFillIndex
+        uint256 _numMakes
     )
         public
         onlyAdmin
@@ -539,17 +539,17 @@ contract BrokerV2 is Ownable {
         // a compacted version of the usedNonces mapping
         uint256[] memory compactNonces = new uint256[](_v.length.mul(2));
         // a compacted version of the offers mapping
-        uint256[] memory compactOffers = new uint256[](_firstFillIndex.mul(2));
+        uint256[] memory compactOffers = new uint256[](_numMakes.mul(2));
 
         // validate input lengths
         assembly {
             // there must be at least one make so
-            // revert if _firstFillIndex == 0,
-            if eq(_firstFillIndex, 0) { revert(0, 0) }
-            // revert if _firstFillIndex == _v.length
-            if eq(_firstFillIndex, mload(_v)) { revert(0, 0) }
-            // revert if _firstFillIndex > _v.length
-            if gt(_firstFillIndex, mload(_v)) { revert(0, 0) }
+            // revert if _numMakes == 0,
+            if eq(_numMakes, 0) { revert(0, 0) }
+            // revert if _numMakes == _v.length
+            if eq(_numMakes, mload(_v)) { revert(0, 0) }
+            // revert if _numMakes > _v.length
+            if gt(_numMakes, mload(_v)) { revert(0, 0) }
 
             // check that number of signatures matches number of make and fill addresses
             // revert if _v.length * 4 != _addresses.length
@@ -575,8 +575,14 @@ contract BrokerV2 is Ownable {
                 nonceA := mload(add(_values, add(0x80, mul(i, 0x80))))
                 if iszero(add(compactNonces, add(0x20, mul(i, 0x20)))) {
                     mstore(memptr, div(nonceA, 256))
+                    // set compactNonces[i]: _v.length + i
                     mstore(
                         add(compactNonces, add(0x20, mul(i, 0x20))),
+                        add(mload(_v), i)
+                    )
+                    // set compactNonces[_v.length + i]: nonce data
+                    mstore(
+                        add(compactNonces, add(mload(_v), add(0x20, mul(i, 0x20)))),
                         sload(keccak256(memptr, 0x40))
                     )
                 }
@@ -587,12 +593,11 @@ contract BrokerV2 is Ownable {
                     if eq(nonceA, nonceB) { revert(0, 0) }
 
                     if eq(div(nonceA, 256), div(nonceB, 256)) {
-                        // set the first bits of compactNonces[j] to be i
-                        // set the last bit of compactNonces[j] to be 1
+                        // set compactNonces[j]: i | (1 << 255)
                         mstore(
                             add(compactNonces, add(0x20, mul(j, 0x20))),
                             or(
-                                i,
+                                add(mload(_v), add(0x20, mul(i, 0x20))),
                                 shl(1, 255)
                             )
                         )
@@ -648,7 +653,7 @@ contract BrokerV2 is Ownable {
         assembly {
             let hashKey
             let memptr := mload(0x40)
-            for { let i := 0 } lt(i, _firstFillIndex) { i := add(i, 1) } {
+            for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
                 // OFFER_TYPEHASH
                 mstore(memptr, 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260)
                 // maker: _addresses[i * 4]
