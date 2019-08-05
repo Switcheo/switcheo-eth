@@ -524,7 +524,6 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
-    event Log1(uint256 v1);
     function optrade(
         address[] memory _addresses,
         uint256[] memory _values,
@@ -970,7 +969,6 @@ contract BrokerV2 is Ownable {
         }
 
         } // end assembly
-        emit Log1(cache[cache.length - 1]);
     }
 
     event DebugLog(uint256 v1, uint256 v2);

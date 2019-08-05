@@ -231,8 +231,6 @@ contract('Test trade', async (accounts) => {
             })
 
             console.log('gas used', result.receipt.gasUsed / batchSize)
-            const { v1 } = result.receipt.logs[0].args
-            console.log('v1', v1.toString())
         })
     })
 })
