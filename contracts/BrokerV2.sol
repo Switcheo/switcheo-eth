@@ -626,7 +626,7 @@ contract BrokerV2 is Ownable {
                     )
                     // set compactNonces[_v.length + i]: nonce data
                     mstore(
-                        add(compactNonces, add(mload(_v), add(0x20, mul(i, 0x20)))),
+                        add(compactNonces, add(0x20, mul(add(mload(_v), i), 0x20))),
                         sload(keccak256(memptr, 0x40))
                     )
                 }
@@ -827,6 +827,40 @@ contract BrokerV2 is Ownable {
                 i,
                 compactNonces
             )
+        }
+
+        // STORE USED NONCES
+        {
+            let slotIndex
+            let memptr := mload(0x40)
+            mstore(add(memptr, 0x20), 6)
+            for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
+                slotIndex := mload(add(
+                                 compactNonces,
+                                 add(0x20, mul(i, 0x20))
+                             ))
+
+                // only update storage if slotIndex == _v.length + i
+                // so that unnecessary storage updates will be avoided
+                if eq(slotIndex, add(mload(_v), i)) {
+                    // store nonce / 256
+                    // nonce: _values[i * 4 + 3]
+                    mstore(memptr, div(
+                                       mload(add(_values, add(0x80, mul(i, 0x80)))),
+                                       256
+                                   )
+                          )
+
+                    // set usedNonces[slotIndex]: compactNonces[_v.length + i]
+                    sstore(
+                        keccak256(memptr, 0x40),
+                        mload(add(
+                            compactNonces,
+                            add(0x20, mul(add(mload(_v), i), 0x20))
+                        ))
+                    )
+                }
+            }
         }
 
         } // end assembly
