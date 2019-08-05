@@ -539,31 +539,61 @@ contract BrokerV2 is Ownable {
         // a compacted version of the usedNonces mapping
         uint256[] memory compactNonces = new uint256[](_v.length.mul(2));
         // a compacted version of the offers mapping
-        uint256[] memory compactOffers = new uint256[](_numMakes.mul(2));
+        uint256[] memory compactOffers = new uint256[](_numMakes);
+        bytes32[] memory hashKeys = new bytes32[](_numMakes);
 
-        // validate input lengths
         assembly {
-            // there must be at least one make so
-            // revert if _numMakes == 0,
-            if eq(_numMakes, 0) { revert(0, 0) }
-            // revert if _numMakes == _v.length
-            if eq(_numMakes, mload(_v)) { revert(0, 0) }
-            // revert if _numMakes > _v.length
-            if gt(_numMakes, mload(_v)) { revert(0, 0) }
-
-            // check that number of signatures matches number of make and fill addresses
-            // revert if _v.length * 4 != _addresses.length
-            if iszero(eq(mul(mload(_v), 4), mload(_addresses))) { revert(0, 0) }
-            // check that number of signatures matches number of make and fill values
-            // revert if _v.length * 4 != _values.length
-            if iszero(eq(mul(mload(_v), 4), mload(_values))) { revert(0, 0) }
-            // check that number of signatures matches number of r, s values
-            // revert if _v.length * 2 != _hashes.length
-            if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
+        function compactNonceTaken(nonce, index, compactNoncesRef) -> isTaken {
+            // isTaken: (1 << (nonce % 256)) & nonceData
+            isTaken := and(
+                           // 1 << (nonce % 256)
+                           shl(mod(nonce, 256), 1),
+                           // nonceData: compactNoncesRef[slotIndex]
+                           mload(
+                               add(
+                                   compactNoncesRef,
+                                   add(
+                                       0x20,
+                                       mul(
+                                           // slotIndex: compactNoncesRef[index]
+                                           mload(
+                                               add(
+                                                   compactNoncesRef,
+                                                   add(
+                                                       0x20,
+                                                       mul(index, 0x20)
+                                                   )
+                                               )
+                                           ),
+                                           0x20
+                                       )
+                                   )
+                               )
+                           )
+                      )
         }
 
-        // validate nonce uniqueness and cache nonce data in compactNonces
-        assembly {
+        // VALIDATE INPUT LENGTHS
+        // there must be at least one make so
+        // revert if _numMakes == 0,
+        if eq(_numMakes, 0) { revert(0, 0) }
+        // revert if _numMakes == _v.length
+        if eq(_numMakes, mload(_v)) { revert(0, 0) }
+        // revert if _numMakes > _v.length
+        if gt(_numMakes, mload(_v)) { revert(0, 0) }
+
+        // check that number of signatures matches number of make and fill addresses
+        // revert if _v.length * 4 != _addresses.length
+        if iszero(eq(mul(mload(_v), 4), mload(_addresses))) { revert(0, 0) }
+        // check that number of signatures matches number of make and fill values
+        // revert if _v.length * 4 != _values.length
+        if iszero(eq(mul(mload(_v), 4), mload(_values))) { revert(0, 0) }
+        // check that number of signatures matches number of r, s values
+        // revert if _v.length * 2 != _hashes.length
+        if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
+
+        // VALIDATE NONCE UNIQUENESS AND CACHE NONCE DATA
+        {
             let nonceA
             let nonceB
             let memptr := mload(0x40)
@@ -593,65 +623,61 @@ contract BrokerV2 is Ownable {
                     if eq(nonceA, nonceB) { revert(0, 0) }
 
                     if eq(div(nonceA, 256), div(nonceB, 256)) {
-                        // set compactNonces[j]: i | (1 << 255)
+                        // set compactNonces[j]: _v.length + i
                         mstore(
                             add(compactNonces, add(0x20, mul(j, 0x20))),
-                            or(
-                                add(mload(_v), add(0x20, mul(i, 0x20))),
-                                shl(1, 255)
-                            )
+                            add(mload(_v), add(0x20, mul(i, 0x20)))
                         )
                     }
                 }
             }
         }
 
-        // validate matches
-        assembly {
-            for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
-                let makeIndex := mul(mload(add(_matches, add(0x20, mul(i, 0x20)))), 0x80) // _matches[i] * 4
-                let fillIndex := mul(mload(add(_matches, add(0x40, mul(i, 0x20)))), 0x80) // _matches[i + 1] * 4
+        // VALIDATE MATCHES
+        for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
+            let makeIndex := mul(mload(add(_matches, add(0x20, mul(i, 0x20)))), 0x80) // _matches[i] * 4
+            let fillIndex := mul(mload(add(_matches, add(0x40, mul(i, 0x20)))), 0x80) // _matches[i + 1] * 4
 
-                // revert if make.offerAssetId != fill.wantAssetId
-                if iszero(
-                    eq(
-                        // make.offerAssetId: _addresses[makeIndex + 1]
-                        mload(add(_addresses, add(makeIndex, 0x40))),
-                        // fill.wantAssetId: _addresses[fillIndex + 2]
-                        mload(add(_addresses, add(fillIndex, 0x60)))
+            // revert if make.offerAssetId != fill.wantAssetId
+            if iszero(
+                eq(
+                    // make.offerAssetId: _addresses[makeIndex + 1]
+                    mload(add(_addresses, add(makeIndex, 0x40))),
+                    // fill.wantAssetId: _addresses[fillIndex + 2]
+                    mload(add(_addresses, add(fillIndex, 0x60)))
+                )
+            ) { revert(0, 0) }
+
+            // revert if make.wantAssetId != fill.offerAssetId
+            if iszero(
+                eq(
+                    // make.wantAssetId: _addresses[makeIndex + 2]
+                    mload(add(_addresses, add(makeIndex, 0x60))),
+                    // fill.offerAssetId: _addresses[fillIndex + 1]
+                    mload(add(_addresses, add(fillIndex, 0x40)))
+                )
+            ) { revert(0, 0) }
+
+            // revert if (make.wantAmount * takeAmount) % make.offerAmount != 0
+            if eq(
+                iszero(
+                    mod(
+                        mul(
+                            mload(add(_values, add(makeIndex, 0x40))),
+                             // takeAmount: _matches[i + 2]
+                            mload(add(_matches, add(0x60, i)))
+                        ),
+                        mload(add(_values, add(makeIndex, 0x20)))
                     )
-                ) { revert(0, 0) }
-
-                // revert if make.wantAssetId != fill.offerAssetId
-                if iszero(
-                    eq(
-                        // make.wantAssetId: _addresses[makeIndex + 2]
-                        mload(add(_addresses, add(makeIndex, 0x60))),
-                        // fill.offerAssetId: _addresses[fillIndex + 1]
-                        mload(add(_addresses, add(fillIndex, 0x40)))
-                    )
-                ) { revert(0, 0) }
-
-                // revert if (make.wantAmount * takeAmount) % make.offerAmount != 0
-                if eq(
-                    iszero(
-                        mod(
-                            mul(
-                                mload(add(_values, add(makeIndex, 0x40))),
-                                 // takeAmount: _matches[i + 2]
-                                mload(add(_matches, add(0x60, i)))
-                            ),
-                            mload(add(_values, add(makeIndex, 0x20)))
-                        )
-                    ),
-                    0
-                ) { revert(0, 0) }
-            }
+                ),
+                0
+            ) { revert(0, 0) }
         }
 
-        // validate make signatures and read remaining make offer amounts
-        assembly {
+        // VALIDATE MAKE SIGNATURES AND READ AVAILABLE OFFER AMOUNTS
+        {
             let hashKey
+            let existingMake
             let memptr := mload(0x40)
             for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
                 // OFFER_TYPEHASH
@@ -723,8 +749,48 @@ contract BrokerV2 is Ownable {
                 if iszero(eq(mload(add(memptr, 0x200)), mload(add(_addresses, add(0x20, mul(i, 0x80)))))) {
                     revert(0, 0)
                 }
+
+                // set hashKeys[i]: hashKey
+                mstore(
+                    add(hashKeys, add(0x20, mul(i, 0x20))),
+                    hashKey
+                )
+
+                // set compactOffers[i]: available offer amount
+                existingMake := compactNonceTaken(
+                                    // make.nonce: _values[i * 4 + 3]
+                                    mload(add(_values, add(0x80, mul(i, 0x80)))),
+                                    i,
+                                    compactNonces
+                                )
+
+                // if this is an existing make then
+                // read the available offer amount from compactOffers
+                if existingMake {
+                    // offers is the 5th declared contract variable
+                    mstore(add(memptr, 0x220), 5)
+                    mstore(add(memptr, 0x240), hashKey)
+
+                    // compactOffers[i] = offers[hashKey]
+                    mstore(
+                        add(compactOffers, add(0x20, mul(i, 0x20))),
+                        sload(keccak256(add(memptr, 0x220), 0x40))
+                    )
+                }
+
+                // if this is not an existing make then
+                // set the available offer amount as the make.offerAmount
+                if iszero(existingMake) {
+                    // compactOffers[i] = make.offerAmount
+                    mstore(
+                        add(compactOffers, add(0x20, mul(i, 0x20))),
+                        // make.offerAmount: _values[i * 4]
+                        mload(add(_values, add(0x20, mul(i, 0x80))))
+                    )
+                }
             }
         }
+        } // end assembly
     }
 
     event DebugLog(uint256 v1, uint256 v2);
