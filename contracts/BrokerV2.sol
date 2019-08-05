@@ -134,18 +134,20 @@ contract BrokerV2 is Ownable {
 
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
 
-    State public state;
-    AdminState public adminState;
-    // The operator receives fees
-    address public operator;
 
-    uint256 public slowWithdrawDelay;
+    State public state; // position 0
+    AdminState public adminState; // position 1
+    // The operator receives fees
+    address public operator; // position 2
+
+    uint256 public slowWithdrawDelay; // position 3
+    uint256 public slowCancelDelay; // position 4
+
+    mapping(bytes32 => uint256) public offers; // position 5
+    mapping(uint256 => uint256) public usedNonces; // position 6
+    mapping(address => mapping(address => uint256)) public balances; // position 7
 
     mapping(address => bool) adminAddresses;
-
-    mapping(uint256 => uint256) public usedNonces;
-    mapping(address => mapping(address => uint256)) public balances;
-    mapping(bytes32 => uint256) public offers;
     mapping(bytes32 => bool) public atomicSwaps;
     mapping(address => bool) public tokenWhitelist;
     mapping(address => bool) public spenderWhitelist;
@@ -528,21 +530,26 @@ contract BrokerV2 is Ownable {
         bytes32[] memory _hashes,
         uint256[] memory _matches,
         uint8[] memory _v,
-        uint256 firstFillIndex
+        uint256 _firstFillIndex
     )
         public
         onlyAdmin
         onlyActiveState
     {
+        // a compacted version of the usedNonces mapping
+        uint256[] memory compactNonces = new uint256[](_v.length.mul(2));
+        // a compacted version of the offers mapping
+        uint256[] memory compactOffers = new uint256[](_firstFillIndex.mul(2));
+
         // validate input lengths
         assembly {
             // there must be at least one make so
-            // revert if firstFillIndex == 0,
-            if eq(firstFillIndex, 0) { revert(0, 0) }
-            // revert if _matches[0] == _v.length
-            if eq(firstFillIndex, mload(_v)) { revert(0, 0) }
-            // revert if _matches[0] > _v.length
-            if gt(firstFillIndex, mload(_v)) { revert(0, 0) }
+            // revert if _firstFillIndex == 0,
+            if eq(_firstFillIndex, 0) { revert(0, 0) }
+            // revert if _firstFillIndex == _v.length
+            if eq(_firstFillIndex, mload(_v)) { revert(0, 0) }
+            // revert if _firstFillIndex > _v.length
+            if gt(_firstFillIndex, mload(_v)) { revert(0, 0) }
 
             // check that number of signatures matches number of make and fill addresses
             // revert if _v.length * 4 != _addresses.length
@@ -553,6 +560,45 @@ contract BrokerV2 is Ownable {
             // check that number of signatures matches number of r, s values
             // revert if _v.length * 2 != _hashes.length
             if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
+        }
+
+        // validate nonce uniqueness and cache nonce data in compactNonces
+        assembly {
+            let nonceA
+            let nonceB
+            let memptr := mload(0x40)
+            // usedNonces is the 6th declared contract variable
+            mstore(add(memptr, 0x20), 6)
+
+            for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
+                // nonce: _values[i * 4 + 3]
+                nonceA := mload(add(_values, add(0x80, mul(i, 0x80))))
+                if iszero(add(compactNonces, add(0x20, mul(i, 0x20)))) {
+                    mstore(memptr, div(nonceA, 256))
+                    mstore(
+                        add(compactNonces, add(0x20, mul(i, 0x20))),
+                        sload(keccak256(memptr, 0x40))
+                    )
+                }
+
+                for { let j := add(i, 1) } lt(j, mload(_v)) { j := add(j, 1) } {
+                    // nonce: _values[j * 4 + 3]
+                    nonceB := mload(add(_values, add(0x80, mul(j, 0x80))))
+                    if eq(nonceA, nonceB) { revert(0, 0) }
+
+                    if eq(div(nonceA, 256), div(nonceB, 256)) {
+                        // set the first bits of compactNonces[j] to be i
+                        // set the last bit of compactNonces[j] to be 1
+                        mstore(
+                            add(compactNonces, add(0x20, mul(j, 0x20))),
+                            or(
+                                i,
+                                shl(1, 255)
+                            )
+                        )
+                    }
+                }
+            }
         }
 
         // validate matches
@@ -598,11 +644,11 @@ contract BrokerV2 is Ownable {
             }
         }
 
-        // validate make signatures
+        // validate make signatures and read remaining make offer amounts
         assembly {
             let hashKey
             let memptr := mload(0x40)
-            for { let i := 0 } lt(i, firstFillIndex) { i := add(i, 1) } {
+            for { let i := 0 } lt(i, _firstFillIndex) { i := add(i, 1) } {
                 // OFFER_TYPEHASH
                 mstore(memptr, 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260)
                 // maker: _addresses[i * 4]
@@ -673,7 +719,6 @@ contract BrokerV2 is Ownable {
                     revert(0, 0)
                 }
             }
-
         }
     }
 
@@ -681,23 +726,18 @@ contract BrokerV2 is Ownable {
     function test(uint256[] memory _matches) public {
         uint256 v1;
         uint256 v2;
+        usedNonces[20] = 100;
+
         assembly {
-            let a1 := mload(0x40)
-            let a2 := add(a1, 0x20)
-            let a3 := add(a1, 0x40)
-            a1 := mload(0x40)
-            {
-                let a15 := mload(0x40)
-                let a16 := mload(0x40)
-                let a17 := mload(0x40)
-            }
-            calldatacopy(a1, 4, 0x20)
-            calldatacopy(a2, 0x24, 0x20)
-            calldatacopy(a3, 0x44, 0x20)
-            /* v1 := mload(a2)
-            v2 := mload(a3) */
-            v1 := mload(add(_matches, 0))
-            v2 := mload(add(_matches, 0x40))
+            let memptr := mload(0x40)
+
+            // read usedNonces[20]
+            mstore(memptr, 20)
+            // usedNonces is the 6th declared contract variable
+            mstore(add(memptr, 0x20), 6)
+
+            let key := keccak256(memptr, 0x40)
+            v1 := sload(key)
         }
         emit DebugLog(v1, v2);
     }
@@ -1107,9 +1147,9 @@ contract BrokerV2 is Ownable {
     }
 
     function _nonceTaken(uint256 _nonce) private view returns (bool) {
-        uint256 slot = _nonce.div(256);
+        uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
-        uint256 bits = usedNonces[slot];
+        uint256 bits = usedNonces[slotData];
 
         return bits & shiftedBit != 0;
     }
@@ -1117,13 +1157,13 @@ contract BrokerV2 is Ownable {
     function _markNonce(uint256 _nonce) private {
         require(_nonce != 0, "Invalid nonce");
 
-        uint256 slot = _nonce.div(256);
+        uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
-        uint256 bits = usedNonces[slot];
+        uint256 bits = usedNonces[slotData];
 
         require(bits & shiftedBit == 0, "Nonce already used");
 
-        usedNonces[slot] = bits | shiftedBit;
+        usedNonces[slotData] = bits | shiftedBit;
     }
 
     function _validateSignature(
