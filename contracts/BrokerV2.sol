@@ -81,6 +81,7 @@ contract BrokerV2 is Ownable {
         ")"
     ));
 
+    // FILL_TYPEHASH: 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99
     bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
         "Fill(",
             "address filler,",
@@ -719,6 +720,84 @@ contract BrokerV2 is Ownable {
                 ),
                 0
             ) { revert(0, 0) }
+        }
+
+        // VALIDATE FILL SIGNATURES
+        {
+            let memptr := mload(0x40)
+            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+                // FILL_TYPEHASH
+                mstore(memptr, 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99)
+                // filler: _addresses[i * 4]
+                mstore(
+                    add(memptr, 0x20), // 32
+                    read(_addresses, mul(i, 4))
+                )
+                // fill.offerAssetId: _addresses[i * 4 + 1]
+                mstore(
+                    add(memptr, 0x40), // 64
+                    read(_addresses, add(mul(i, 4), 1))
+                )
+                // fill.offerAmount: _values[i * 4]
+                mstore(
+                    add(memptr, 0x60), // 96
+                    read(_values, mul(i, 4))
+                )
+                // fill.wantAssetId: _addresses[i * 4 + 2]
+                mstore(
+                    add(memptr, 0x80), // 128
+                    read(_addresses, add(mul(i, 4), 2))
+                )
+                // fill.wantAmount: _values[i * 4 + 1]
+                mstore(
+                    add(memptr, 0xA0),
+                    read(_values, add(mul(i, 4), 1))
+                )
+                // fill.feeAssetId: _addresses[i * 4 + 3]
+                mstore(
+                    add(memptr, 0xC0),
+                    read(_addresses, add(mul(i, 4), 3))
+                )
+                // fill.feeAmount: _values[i * 4 + 2]
+                mstore(
+                    add(memptr, 0xE0),
+                    read(_values, add(mul(i, 4), 2))
+                )
+                // fill.nonce: _values[i * 4 + 3]
+                mstore(
+                    add(memptr, 0x100),
+                    read(_values, add(mul(i, 4), 3))
+                )
+
+                // store \x19\x01 prefix
+                mstore(add(memptr, 0x120), 0x0000000000000000000000000000000000000000000000000000000000001901)
+                // store DOMAIN_SEPARATOR
+                mstore(add(memptr, 0x140), 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630)
+                // store hashKey
+                mstore(add(memptr, 0x160), keccak256(memptr, 0x120))
+
+                // calculate signHash for make, the values are 0x13E and 0x42
+                // as arguments are tightly packed for signHash
+                mstore(add(memptr, 0x180), keccak256(add(memptr, 0x13E), 0x42))
+                // v: _v[i]
+                mstore(add(memptr, 0x1A0), read(_v, i))
+                // r: _hashes[i * 2]
+                mstore(add(memptr, 0x1C0), read(_hashes, mul(i, 2)))
+                // s: _hashes[i * 2 + 1]
+                mstore(add(memptr, 0x1E0), read(_hashes, add(mul(i, 2), 1)))
+
+                // call(3000 gas limit, ecrecover at address 1, input start, input size, output start, output size)
+                // revert if call returns 0
+                if iszero(call(3000, 1, 0, add(memptr, 0x180), 0x80, add(memptr, 0x200), 0x20)) {
+                    revert(0, 0)
+                }
+
+                // revert if the returned address from ecrecover does not match the maker's address at _addresses[i * 4]
+                if iszero(eq(
+                       mload(add(memptr, 0x200)),
+                       read(_addresses, mul(i, 4))
+                   )) { revert(0, 0) }
+            }
         }
 
         // VALIDATE MAKE SIGNATURES,
