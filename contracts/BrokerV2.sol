@@ -536,26 +536,17 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        // A: _v.length
-        // B: _v.length
-        // C: _numMakes
-        // D: _v.length * 4
-        // E: _v.length * 4
-        // 0..(A - 1): nonce lookup table
-        // A..(A + B - 1): nonce data
-        // (A + B)..(B + C - 1): available offer amounts for makes
-        // (B + C)..(C + D - 1): balance lookup table
-        // (C + D)..(D + E): balance data
+        // 0..(_v.length): nonce lookup table
+        // (_v.length)..(_v.length * 2): nonce data
+        // (_v.length * 2)..(_v.length * 2 + _numMakes): available offer amounts for makes
+        // (_v.length * 2 + _numMakes)..(_v.length * 6 + _numMakes): balance lookup table
+        // (_v.length * 6 + _numMakes)..(_v.length * 10 + _numMakes): balance data
         uint256[] memory cache = new uint256[](
                                          _v.length * 2 +
                                          _numMakes +
                                          _v.length * 8
                                      );
 
-        // a compacted version of the usedNonces mapping
-        /* uint256[] memory cache = new uint256[](_v.length.mul(2)); */
-        // a compacted version of the offers mapping
-        /* uint256[] memory compactOffers = new uint256[](_numMakes); */
         bytes32[] memory hashKeys = new bytes32[](_numMakes);
 
         assembly {
@@ -574,28 +565,28 @@ contract BrokerV2 is Ownable {
 
         // if the nonce is taken then isTaken will be a non-zero value
         // the non-zero value may not be 1
-        function compactNonceTaken(nonce, index, cache) -> isTaken {
+        function nonceTaken(nonce, index, cacheRef) -> isTaken {
             // isTaken: (1 << (nonce % 256)) & nonceData
             isTaken := and(
                            // 1 << (nonce % 256)
                            shl(mod(nonce, 256), 1),
-                           // nonceData: cache[cache[index]]
+                           // nonceData: cacheRef[cacheRef[index]]
                            read(
-                               cache,
-                               read(cache, index)
+                               cacheRef,
+                               read(cacheRef, index)
                            )
                       )
         }
 
-        function markCompactNonce(nonce, index, cache) {
-            // set cache[cache[index]]: (1 << (nonce % 256)) | cache[cache[index]]
+        function markNonce(nonce, index, cacheRef) {
+            // set cacheRef[cacheRef[index]]: (1 << (nonce % 256)) | cacheRef[cacheRef[index]]
             write(
-                cache,
-                read(cache, index),
+                cacheRef,
+                read(cacheRef, index),
                 or(
                     // 1 << (nonce % 256)
                     shl(mod(nonce, 256), 1),
-                    read(cache, index)
+                    read(cacheRef, index)
                 )
             )
         }
@@ -651,7 +642,7 @@ contract BrokerV2 is Ownable {
             let nonceA
             let nonceB
             let memptr := mload(0x40)
-            // usedNonces is the 6th declared contract variable
+            // "usedNonces" is the 6th declared contract variable
             mstore(add(memptr, 0x20), 6)
 
             for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
@@ -812,8 +803,7 @@ contract BrokerV2 is Ownable {
                 // set hashKeys[i]: hashKey
                 write(hashKeys, i, hashKey)
 
-                // set cache[_v.length * 2 + i]: available offer amount
-                existingMake := compactNonceTaken(
+                existingMake := nonceTaken(
                                     // make.nonce: _values[i * 4 + 3]
                                     read(_values, add(mul(i, 4), 3)),
                                     i,
@@ -823,14 +813,15 @@ contract BrokerV2 is Ownable {
                 // if this is an existing make then
                 // read the available offer amount from offers
                 if existingMake {
-                    // offers is the 5th declared contract variable
-                    mstore(add(memptr, 0x220), 5)
-                    mstore(add(memptr, 0x240), hashKey)
+                    // "offers" is the 5th declared contract variable
+                    mstore(add(memptr, 0x220), hashKey)
+                    mstore(add(memptr, 0x240), 5)
 
                     // cache[_v.length * 2 + i]: offers[hashKey]
                     write(
                         cache,
                         add(mul(mload(_v), 2), i),
+                        // keccak256(hashKey, 5)
                         sload(keccak256(add(memptr, 0x220), 0x40))
                     )
                 }
@@ -847,7 +838,7 @@ contract BrokerV2 is Ownable {
                     )
                 }
 
-                markCompactNonce(
+                markNonce(
                     // make.nonce: _values[i * 4 + 3]
                     read(_values, add(mul(i, 4), 3)),
                     i,
@@ -862,13 +853,13 @@ contract BrokerV2 is Ownable {
             // fill.nonce: _values[i * 4 + 3]
             let fillNonce := read(_values, add(mul(i, 4), 3))
 
-            if compactNonceTaken(
+            if nonceTaken(
                    fillNonce,
                    i,
                    cache
                ) { revert(0, 0) }
 
-            markCompactNonce(
+            markNonce(
                 fillNonce,
                 i,
                 cache
@@ -897,8 +888,9 @@ contract BrokerV2 is Ownable {
                                    )
                           )
 
-                    // set usedNonces[slotIndex]: cache[_v.length + i]
+                    // set usedNonces[nonce / 256]: cache[_v.length + i]
                     sstore(
+                        // keccak256(nonce / 256, 6)
                         keccak256(memptr, 0x40),
                         read(cache, add(mload(_v), i))
                     )
@@ -982,7 +974,7 @@ contract BrokerV2 is Ownable {
 
             // read usedNonces[20]
             mstore(memptr, 20)
-            // usedNonces is the 6th declared contract variable
+            // "usedNonces" is the 6th declared contract variable
             mstore(add(memptr, 0x20), 6)
 
             let key := keccak256(memptr, 0x40)
