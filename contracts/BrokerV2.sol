@@ -627,6 +627,11 @@ contract BrokerV2 is Ownable {
         // revert if !(_numMakes < _v.length)
         if iszero(lt(_numMakes, mload(_v))) { revert(0, 0) }
 
+        // check that the length of the array parameters are reasonable numbers
+        // so that safe math functions will not be needed for array index calculations
+        if gt(mload(_v), 1000) { revert(0, 0) }
+        if gt(mload(_matches), 1000) { revert(0, 0) }
+
         // check that number of signatures matches number of make and fill addresses
         // revert if _v.length * 4 != _addresses.length
         if iszero(eq(mul(mload(_v), 4), mload(_addresses))) { revert(0, 0) }
@@ -935,6 +940,7 @@ contract BrokerV2 is Ownable {
                     )
                 }
 
+                // revert if available offer amount is zero
                 if iszero(read(
                        cache,
                        add(mul(mload(_v), 2), i)
@@ -943,11 +949,17 @@ contract BrokerV2 is Ownable {
         }
 
         // INCREMENT BALANCES OF FILLERS
+        // INCREMENT BALANCES OF OPERATORS
         {
             let receiveAmount
             let memptr := mload(0x40)
             // "balances" is the 7th declared contract variable
             mstore(add(memptr, 0x20), 7)
+            // cache the operator address
+            mstore(add(memptr, 0xA0), sload(operator_slot))
+            mstore(add(memptr, 0xC0), 7)
+            // cache keccak256(operator, 7)
+            mstore(add(memptr, 0x100), keccak256(add(memptr, 0xA0), 0x40))
             for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
                 // filler: _addresses[i * 4]
                 mstore(memptr, read(_addresses, mul(i, 4)))
@@ -982,6 +994,26 @@ contract BrokerV2 is Ownable {
                         receiveAmount
                     )
                 )
+
+                // fill.feeAmount != 0
+                if read(_values, add(mul(i, 4), 3)) {
+                    // fill.feeAssetId
+                    mstore(
+                        add(memptr, 0xE0),
+                        read(_addresses, add(mul(i, 4), 3))
+                    )
+                    // keccak256(fill.feeAssetId, keccak256(operator, 7))
+                    mstore(add(memptr, 0x120), keccak256(add(memptr, 0xE0), 0x40))
+
+                    // balances[operator][fill.feeAssetId] += fill.feeAmount
+                    sstore(
+                        mload(add(memptr, 0x120)),
+                        safeAdd(
+                            sload(mload(add(memptr, 0x120))),
+                            read(_values, add(mul(i, 4), 3))
+                        )
+                    )
+                }
             }
         }
 
@@ -1076,6 +1108,43 @@ contract BrokerV2 is Ownable {
                         read(_values, mul(i, 4))
                     )
                 )
+            }
+        }
+
+        // DECREMENT MAKER BALANCES
+        {
+            let memptr := mload(0x40)
+            // "balances" is the 7th declared contract variable
+            mstore(add(memptr, 0x20), 7)
+            for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
+                // decrease maker's balances if nonce is not yet taken
+                // as this indicates that it is a new make
+                // make.nonce: _values[i * 4 + 3]
+                if iszero(nonceTaken(
+                       read(_values, add(mul(i, 4), 3)),
+                       i,
+                       cache
+                   ))
+                {
+                    // maker: _addresses[i * 4]
+                    mstore(memptr, read(_addresses, mul(i, 4)))
+                    // maker.offerAssetId: _addresses[i * 4 + 1]
+                    mstore(add(memptr, 0x40), read(_addresses, add(mul(i, 4), 1)))
+                    // keccak256(maker, 7)
+                    mstore(add(memptr, 0x60), keccak256(memptr, 0x40))
+                    // keccak256(make.offerAssetId, keccak256(maker, 7))
+                    mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
+
+                    // balances[maker][make.offerAssetId] -= make.offerAmount
+                    sstore(
+                        mload(add(memptr, 0x80)),
+                        safeSub(
+                            sload(mload(add(memptr, 0x80))),
+                            // make.offerAmount: _values[i * 4]
+                            read(_values, mul(i, 4))
+                        )
+                    )
+                }
             }
         }
 
