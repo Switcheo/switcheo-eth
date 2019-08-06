@@ -681,6 +681,10 @@ contract BrokerV2 is Ownable {
              // fillIndex: _matches[i + 1]
             let fillIndex := read(_matches, add(i, 1))
 
+            // revert if takeAmount is zero
+            // takeAmount: _matches[i + 2]
+            if iszero(read(_matches, add(i, 2))) { revert(0, 0) }
+
             // revert if fillIndex < _numMakes
             if gt(_numMakes, fillIndex) { revert(0, 0) }
 
@@ -722,7 +726,7 @@ contract BrokerV2 is Ownable {
             ) { revert(0, 0) }
         }
 
-        // VALIDATE FILL SIGNATURES
+        // VALIDATE FILL AMOUNTS AND FILL SIGNATURES
         {
             let memptr := mload(0x40)
             for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
@@ -743,6 +747,9 @@ contract BrokerV2 is Ownable {
                     add(memptr, 0x60), // 96
                     read(_values, mul(i, 4))
                 )
+                // revert if fill.offerAmount == 0
+                if iszero(read(_values, mul(i, 4))) { revert(0, 0) }
+
                 // fill.wantAssetId: _addresses[i * 4 + 2]
                 mstore(
                     add(memptr, 0x80), // 128
@@ -753,6 +760,9 @@ contract BrokerV2 is Ownable {
                     add(memptr, 0xA0),
                     read(_values, add(mul(i, 4), 1))
                 )
+                // revert if fill.wantAmount == 0
+                if iszero(read(_values, add(mul(i, 4), 1))) { revert(0, 0) }
+
                 // fill.feeAssetId: _addresses[i * 4 + 3]
                 mstore(
                     add(memptr, 0xC0),
@@ -800,8 +810,8 @@ contract BrokerV2 is Ownable {
             }
         }
 
-        // VALIDATE MAKE SIGNATURES,
-        // READ AVAILABLE OFFER AMOUNTS,
+        // VALIDATE MAKE AMOUNTS AND MAKE SIGNATURES,
+        // CACHE AVAILABLE OFFER AMOUNTS
         {
             let hashKey
             let existingMake
@@ -824,6 +834,9 @@ contract BrokerV2 is Ownable {
                     add(memptr, 0x60), // 96
                     read(_values, mul(i, 4))
                 )
+                // revert if make.offerAmount == 0
+                if iszero(read(_values, mul(i, 4))) { revert(0, 0) }
+
                 // make.wantAssetId: _addresses[i * 4 + 2]
                 mstore(
                     add(memptr, 0x80), // 128
@@ -834,6 +847,9 @@ contract BrokerV2 is Ownable {
                     add(memptr, 0xA0),
                     read(_values, add(mul(i, 4), 1))
                 )
+                // revert if make.wantAmount == 0
+                if iszero(read(_values, add(mul(i, 4), 1))) { revert(0, 0) }
+
                 // make.feeAssetId: _addresses[i * 4 + 3]
                 mstore(
                     add(memptr, 0xC0),
@@ -918,11 +934,17 @@ contract BrokerV2 is Ownable {
                         read(_values, mul(i, 4))
                     )
                 }
+
+                if iszero(read(
+                       cache,
+                       add(mul(mload(_v), 2), i)
+                   )) { revert(0, 0) }
             }
         }
 
         // INCREMENT BALANCES OF FILLERS
         {
+            let receiveAmount
             let memptr := mload(0x40)
             // "balances" is the 7th declared contract variable
             mstore(add(memptr, 0x20), 7)
@@ -936,39 +958,124 @@ contract BrokerV2 is Ownable {
                 // keccak256(fill.wantAssetId, keccak256(filler, 7))
                 mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
 
+                // fill.wantAmount: _values[i * 4 + 1]
+                receiveAmount := read(_values, add(mul(i, 4), 1))
+
+                // fill.wantAssetId == fill.feeAssetId
+                if eq(
+                       read(_addresses, add(mul(i, 4), 2)),
+                       read(_addresses, add(mul(i, 4), 3))
+                   )
+                {
+                    // receiveAmount -= fill.feeAmount
+                    receiveAmount := safeSub(
+                                         receiveAmount,
+                                         read(_values, add(mul(i, 4), 3))
+                                     )
+                }
+
                 // balances[filler][fill.wantAssetId] += fill.wantAmount
                 sstore(
                     mload(add(memptr, 0x80)),
                     safeAdd(
                         sload(mload(add(memptr, 0x80))),
-                        // fill.wantAmount: _values[i * 4 + 1]
-                        read(_values, add(mul(i, 4), 1))
+                        receiveAmount
                     )
                 )
             }
         }
 
+        // INCREMENT BALANCES OF MAKERS
+        // INCREMENT BALANCES OF OPERATOR
         {
-            let fillIndex
-            let makeIndex
+            let memptr := mload(0x40)
+            // "balances" is the 7th declared contract variable
+            mstore(add(memptr, 0x40), 7)
+            for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
+                // makeIndex: _matches[i]
+                mstore(memptr, read(_matches, i))
+
+                // maker: _addresses[makeIndex * 4]
+                mstore(add(memptr, 0x20), read(_addresses, mul(mload(memptr), 4)))
+                // make.wantAssetId: _addresses[i * 4 + 2]
+                mstore(add(memptr, 0x60), read(_addresses, add(mul(mload(memptr), 4), 2)))
+                // keccak256(maker, 7)
+                mstore(add(memptr, 0x80), keccak256(add(memptr, 0x20), 0x40))
+                // keccak256(make.wantAssetId, keccak256(maker, 7))
+                mstore(add(memptr, 0xA0), keccak256(add(memptr, 0x60), 0x40))
+
+                // calculate receive amount: make.wantAmount * takeAmount / make.offerAmount
+                mstore(
+                    add(memptr, 0xC0),
+                    safeDiv(
+                        safeMul(
+                            // make.wantAmount: _values[makeIndex * 4 + 1]
+                            read(
+                                _values,
+                                add(mul(mload(memptr), 4), 1)
+                            ),
+                            // takeAmount: _matches[i + 2]
+                            read(_matches, add(i, 2))
+                        ),
+                        // make.offerAmount: _values[makeIndex * 4]
+                        read(
+                            _values,
+                            mul(mload(memptr), 4)
+                        )
+                    )
+                )
+
+                // make.wantAssetId == make.feeAssetId
+                if eq(
+                       read(_addresses, add(mul(mload(memptr), 4), 2)),
+                       read(_addresses, add(mul(mload(memptr), 4), 3))
+                   )
+                {
+                    // receiveAmount -= make.feeAmount
+                    mstore(
+                        add(memptr, 0xC0),
+                        safeSub(
+                            mload(add(memptr, 0xC0)),
+                            read(_values, add(mul(mload(memptr), 4), 3))
+                        )
+                    )
+                }
+
+                // balances[maker][make.wantAssetId] += receiveAmount
+                sstore(
+                    mload(add(memptr, 0xA0)),
+                    safeAdd(
+                        sload(mload(add(memptr, 0xA0))),
+                        mload(add(memptr, 0xC0))
+                    )
+                )
+            }
+        }
+
+        // DECREMENT BALANCES OF FILLERS
+        {
             let memptr := mload(0x40)
             // "balances" is the 7th declared contract variable
             mstore(add(memptr, 0x20), 7)
-            for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 1) } {
-                // makeIndex: _matches[i]
-                makeIndex := read(_matches, i)
-                // fillIndex: _matches[i + 1]
-                fillIndex := read(_matches, add(i, 1))
+            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+                // filler: _addresses[i * 4]
+                mstore(memptr, read(_addresses, mul(i, 4)))
+                // fill.offerAssetId: _addresses[i * 4 + 1]
+                mstore(add(memptr, 0x40), read(_addresses, add(mul(i, 4), 1)))
+                // keccak256(filler, 7)
+                mstore(add(memptr, 0x60), keccak256(memptr, 0x40))
+                // keccak256(fill.offerAssetId, keccak256(filler, 7))
+                mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
 
-                /* mstore(memptr, read(_addresses, mul(fillIndex, 4))) */
-
-                /* // increase filler.wantAssetId by fill.wantAmount
-                // fill.wantAmount: _values[j * 4 + 1]
+                // balances[filler][fill.offerAssetId] -= fill.offerAmount
                 sstore(
-                    // keccak256(nonce / 256, 6)
-                    keccak256(memptr, 0x40),
-                    read(cache, add(mload(_v), i))
-                ) */
+                    mload(add(memptr, 0x80)),
+                    safeAdd(
+                        sload(mload(add(memptr, 0x80))),
+                        // fill.offerAmount: _values[i * 4]
+                        read(_values, mul(i, 4))
+                    )
+                )
             }
         }
 
