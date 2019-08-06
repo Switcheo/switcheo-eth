@@ -680,6 +680,9 @@ contract BrokerV2 is Ownable {
              // fillIndex: _matches[i + 1]
             let fillIndex := read(_matches, add(i, 1))
 
+            // revert if fillIndex < _numMakes
+            if gt(_numMakes, fillIndex) { revert(0, 0) }
+
             // revert if make.offerAssetId != fill.wantAssetId
             if iszero(
                 eq(
@@ -898,66 +901,62 @@ contract BrokerV2 is Ownable {
             }
         }
 
-        // PROCESS FILLS
-        {
-            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
-                // fill.offerAmount: _values[i * 4]
-                // fill.wantAmount: _values[i * 4 + 1]
-                for { let j := 0 } lt(j, mload(_matches)) { j := add(j, 3) } {
-                    // only process if _matches[j + 1] == i
-                    // _matches[j + 1]: fillIndex
-                    if eq(read(_matches, add(j, 1)), i) {
-                        // remainingWantAmount -= takeAmount
-                        // fill.wantAmount -= takeAmount
-                        write(
-                            _values,
-                            // fill.wantAmount: _values[i * 4 + 1]
-                            add(mul(i, 4), 1),
-                            safeSub(
-                                read(_values, add(mul(i, 4), 1)),
-                                // takeAmount: _matches[j + 2]
-                                read(_matches, add(j, 2))
-                            )
-                        )
+        // REDUCE FILL AMOUNTS
+        for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
+            // _matches[i + 1]: fillIndex
+            let fillIndex := read(_matches, add(i, 1))
 
-                        // giveAmount: make.wantAmount * takeAmount / make.offerAmount
-                        let giveAmount := safeDiv(
-                                          safeMul(
-                                              // make.wantAmount: _values[_matches[j] * 4 + 1]
-                                              read(
-                                                  _values,
-                                                  add(mul(read(_matches, j), 4), 1)
-                                              ),
-                                              // takeAmount: _matches[j + 2]
-                                              read(_matches, add(j, 2))
-                                          ),
-                                          // make.offerAmount: _values[_matches[j] * 4]
-                                          read(
-                                              _values,
-                                              mul(read(_matches, j), 4)
-                                          )
-                                      )
+            // remainingWantAmount -= takeAmount
+            // fill.wantAmount -= takeAmount
+            write(
+                _values,
+                // fill.wantAmount: _values[fillIndex * 4 + 1]
+                add(mul(fillIndex, 4), 1),
+                safeSub(
+                    read(_values, add(mul(fillIndex, 4), 1)),
+                    // takeAmount: _matches[i + 2]
+                    read(_matches, add(i, 2))
+                )
+            )
 
+            // giveAmount: make.wantAmount * takeAmount / make.offerAmount
+            let giveAmount := safeDiv(
+                                  safeMul(
+                                      // make.wantAmount: _values[_matches[i] * 4 + 1]
+                                      read(
+                                          _values,
+                                          add(mul(read(_matches, i), 4), 1)
+                                      ),
+                                      // takeAmount: _matches[i + 2]
+                                      read(_matches, add(i, 2))
+                                  ),
+                                  // make.offerAmount: _values[_matches[i] * 4]
+                                  read(
+                                      _values,
+                                      mul(read(_matches, i), 4)
+                                  )
+                              )
 
-                        // fill.offerAmount -= giveAmount
-                        write(
-                            _values,
-                            // fill.offerAmount: _values[i * 4]
-                            mul(i, 4),
-                            safeSub(
-                                read(_values, mul(i, 4)),
-                                giveAmount
-                            )
-                        )
-                    }
-                }
+            // fill.offerAmount -= giveAmount
+            write(
+                _values,
+                // fill.offerAmount: _values[fillIndex * 4]
+                mul(fillIndex, 4),
+                safeSub(
+                    read(_values, mul(fillIndex, 4)),
+                    giveAmount
+                )
+            )
+        }
 
-                // fill must be completely filled
-                // revert if the remaining fill.offerAmount != 0
-                if read(_values, mul(i, 4)) { revert(0, 0) }
-                // revert if the remaining fill.wantAmount != 0
-                if read(_values, add(mul(i, 4), 1)) { revert(0, 0) }
-            }
+        // VALIDATE THAT ALL FILLS ARE COMPLETELY FILLED
+        for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+            // revert if the remaining fill.offerAmount != 0
+            // fill.offerAmount: _values[i * 4]
+            if read(_values, mul(i, 4)) { revert(0, 0) }
+            // revert if the remaining fill.wantAmount != 0
+            // fill.wantAmount: _values[i * 4 + 1]
+            if read(_values, add(mul(i, 4), 1)) { revert(0, 0) }
         }
 
         } // end assembly
