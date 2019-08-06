@@ -205,7 +205,7 @@ contract('Test trade', async (accounts) => {
                         wantAssetId: swc.address,
                         wantAmount: 50,
                         feeAssetId: swc.address,
-                        feeAmount: 2,
+                        feeAmount: 0,
                         nonce: batchSize * 2 + i
                     }
                 )
