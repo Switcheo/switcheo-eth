@@ -16,6 +16,12 @@ $ npm install solc@0.5.10
 6. Run `truffle migrate` to deploy the contracts to Ganache
 7. Run `truffle test` to run test files
 
+ALternatively [Ganache-CLI ^6.5.0](https://github.com/trufflesuite/ganache-cli/tree/v6.5.0) can be used:
+```
+$ npm install ganache-cli@latest -g
+$ ganache-cli -m "ladder soft balcony kiwi sword shadow volcano reform cricket wall initial normal" -p 7545
+```
+
 ## Definitions
 ### Broker contract
 The Broker contract refers to the contract at `/contracts/Broker.sol` in this repository. Further references to "the contract", when not referring to other contracts, refer to this Broker contract.
