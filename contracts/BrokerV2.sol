@@ -788,7 +788,7 @@ contract BrokerV2 is Ownable {
 
                 // call(3000 gas limit, ecrecover at address 1, input start, input size, output start, output size)
                 // revert if call returns 0
-                if iszero(call(3000, 1, 0, add(memptr, 0x180), 0x80, add(memptr, 0x200), 0x20)) {
+                if iszero(staticcall(3000, 1, add(memptr, 0x180), 0x80, add(memptr, 0x200), 0x20)) {
                     revert(0, 0)
                 }
 
@@ -802,7 +802,6 @@ contract BrokerV2 is Ownable {
 
         // VALIDATE MAKE SIGNATURES,
         // READ AVAILABLE OFFER AMOUNTS,
-        // MARK MAKE NONCES AS USED
         {
             let hashKey
             let existingMake
@@ -919,14 +918,68 @@ contract BrokerV2 is Ownable {
                         read(_values, mul(i, 4))
                     )
                 }
+            }
+        }
 
-                markNonce(
-                    // make.nonce: _values[i * 4 + 3]
-                    read(_values, add(mul(i, 4), 3)),
-                    i,
-                    cache
+        // INCREMENT BALANCES OF FILLERS
+        {
+            let memptr := mload(0x40)
+            // "balances" is the 7th declared contract variable
+            mstore(add(memptr, 0x20), 7)
+            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
+                // filler: _addresses[i * 4]
+                mstore(memptr, read(_addresses, mul(i, 4)))
+                // fill.wantAssetId: _addresses[i * 4 + 2]
+                mstore(add(memptr, 0x40), read(_addresses, add(mul(i, 4), 2)))
+                // keccak256(filler, 7)
+                mstore(add(memptr, 0x60), keccak256(memptr, 0x40))
+                // keccak256(fill.wantAssetId, keccak256(filler, 7))
+                mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
+
+                // balances[filler][fill.wantAssetId] += fill.wantAmount
+                sstore(
+                    mload(add(memptr, 0x80)),
+                    safeAdd(
+                        sload(mload(add(memptr, 0x80))),
+                        // fill.wantAmount: _values[i * 4 + 1]
+                        read(_values, add(mul(i, 4), 1))
+                    )
                 )
             }
+        }
+
+        {
+            let fillIndex
+            let makeIndex
+            let memptr := mload(0x40)
+            // "balances" is the 7th declared contract variable
+            mstore(add(memptr, 0x20), 7)
+            for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 1) } {
+                // makeIndex: _matches[i]
+                makeIndex := read(_matches, i)
+                // fillIndex: _matches[i + 1]
+                fillIndex := read(_matches, add(i, 1))
+
+                /* mstore(memptr, read(_addresses, mul(fillIndex, 4))) */
+
+                /* // increase filler.wantAssetId by fill.wantAmount
+                // fill.wantAmount: _values[j * 4 + 1]
+                sstore(
+                    // keccak256(nonce / 256, 6)
+                    keccak256(memptr, 0x40),
+                    read(cache, add(mload(_v), i))
+                ) */
+            }
+        }
+
+        // MARK MAKE NONCES AS USED
+        for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
+            markNonce(
+                // make.nonce: _values[i * 4 + 3]
+                read(_values, add(mul(i, 4), 3)),
+                i,
+                cache
+            )
         }
 
         // VALIDATE THAT ALL FILL NONCES ARE UNUSED,
