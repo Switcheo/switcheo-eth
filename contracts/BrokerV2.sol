@@ -618,7 +618,53 @@ contract BrokerV2 is Ownable {
             mstore(p, h)
             mstore(p, i)
             mstore(p, j)
-            mstore(p, operatorValue)
+
+            // VALIDATE INPUT LENGTHS
+            // validate that _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches
+            a := mload(_values) // _values.length
+            b := mload(add(_values, 0x20))  // lengths
+
+            h := not(shl(8, not(0))) // numMakes bitmask
+            c := and(b, h) // numMakes
+
+            h := not(shl(16, not(0))) // numFills bitmask
+            d := and(b, h) // shifted numFills
+            d := shr(8, d) // numFills
+
+            h := not(shl(24, not(0))) // numMatches bitmask
+            e := and(b, h) // shifted numMatches
+            e := shr(16, e) // numMatches
+
+            f := add(1, mul(c, 2))
+            f := add(f, mul(d, 2))
+            f := add(f, e) // f: 1 + numMakes * 2 + numFills * 2 + numMatches
+
+            if iszero(eq(a, f)) { revert(0, 0) }
+
+            // VALIDATE NONCE UNIQUENESS (loop makes + fills)
+            // CACHE USED NONCES (loop makes + fills)
+            // VALIDATE MATCHES (loop matches)
+            // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
+            // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
+            // CACHE OFFERS (loop makes)
+            // CACHE BALANCES (loop makes + fills)
+            // VALIDATE BALANCE MAP UNIQUENESS (loop makes + fills)
+            // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
+            // INCREASE BALANCE OF OPERATOR FOR FILL.FEE_AMOUNT (loop fills)
+            // INCREASE BALANCE OF MAKERS FOR RECEIVE_AMOUNT (loop matches)
+            // INCREASE BALANCE OF OPERATOR FOR MAKE.FEE_AMOUNT (loop makes)
+            // DECREASE BALANCE OF FILLERS FOR FILL.OFFER_AMOUNT (loop fills)
+            // DECREASE BALANCE OF FILLERS FOR FILL.FEE_AMOUNT (loop fills)
+            // DECREASE BALANCE OF MAKERS FOR MAKE.OFFER_AMOUNT (loop makes)
+            // DECREASE BALANCE OF MAKERS FOR MAKE.FEE_AMOUNT (loop makes)
+            // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
+            // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
+            // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
+            // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
+            // STORE NONCES (loop makes + fills)
+            // STORE OFFERS (loop makes)
+            // STORE BALANCES (loop addresses)
+
 
         } // end assembly
     }
