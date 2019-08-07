@@ -261,14 +261,16 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
             privateKey
         );
 
-        const dataA = userIndexMap[maker] |
-                      (assetBalanceIndexMap[maker + offerAssetId] << 8) |
-                      (assetBalanceIndexMap[maker + wantAssetId] << 16) |
-                      (assetBalanceIndexMap[maker + feeAssetId] << 24) |
-                      (assetBalanceIndexMap[operator + feeAssetId] << 32) |
-                      (v << 40) |
-                      (nonce << 48) |
-                      (feeAmount << 128)
+        // need to use BN methods for this
+        // const dataA = userIndexMap[maker] |
+        //               (assetBalanceIndexMap[maker + offerAssetId] << 8) |
+        //               (assetBalanceIndexMap[maker + wantAssetId] << 16) |
+        //               (assetBalanceIndexMap[maker + feeAssetId] << 24) |
+        //               (assetBalanceIndexMap[operator + feeAssetId] << 32) |
+        //               (v << 40) |
+        //               (nonce << 48) |
+        //               (feeAmount << 128)
+        const dataA = nonce << 48
 
         const dataB = offerAmount | (wantAmount << 128)
 
@@ -288,14 +290,15 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
             privateKey
         );
 
-        const dataA = userIndexMap[filler] |
-                      (assetBalanceIndexMap[filler + offerAssetId] << 8) |
-                      (assetBalanceIndexMap[filler + wantAssetId] << 16) |
-                      (assetBalanceIndexMap[filler + feeAssetId] << 24) |
-                      (assetBalanceIndexMap[operator + feeAssetId] << 32) |
-                      (v << 40) |
-                      (nonce << 48) |
-                      (feeAmount << 128)
+        // const dataA = userIndexMap[filler] |
+        //               (assetBalanceIndexMap[filler + offerAssetId] << 8) |
+        //               (assetBalanceIndexMap[filler + wantAssetId] << 16) |
+        //               (assetBalanceIndexMap[filler + feeAssetId] << 24) |
+        //               (assetBalanceIndexMap[operator + feeAssetId] << 32) |
+        //               (v << 40) |
+        //               (nonce << 48) |
+        //               (feeAmount << 128)
+        const dataA = nonce
 
         const dataB = offerAmount | (wantAmount << 128)
 

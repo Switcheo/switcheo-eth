@@ -70,6 +70,15 @@ async function batchTrade(batchSize, accounts) {
     })
 
     console.log('gas used', result.receipt.gasUsed / batchSize)
+    // const { v1, v2, v3, v4 } = result.receipt.logs[0].args
+    // console.log('v1, v2, v3, v4', v1.toString(), v2.toString(), v3.toString(), v4.toString())
+    const { logs } = result.receipt
+    for (let i = 0; i < logs.length; i++) {
+        const log = logs[i]
+        const { nonce, prevNonce } = log.args
+        if (nonce === undefined) { continue }
+        console.log('log', nonce.toString(), prevNonce.toString())
+    }
 }
 
 contract('Test trade', async (accounts) => {

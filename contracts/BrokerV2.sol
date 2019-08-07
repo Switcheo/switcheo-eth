@@ -594,97 +594,110 @@ contract BrokerV2 is Ownable {
         onlyActiveState
     {
         address operatorValue = operator;
+        _validateTradeInputs(_values, _hashes, _addresses);
+        _validateNonceUniqueness(_values);
 
-        assembly {
-            let a
-            let b
-            let c
-            let d
-            let e
-            let f
-            let g
-            let i
-            let j
+        // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
+        // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
+        // CACHE USED NONCES (loop makes + fills)
+        // VALIDATE MATCHES (loop matches)
+        // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
+        // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
+        // CACHE OFFERS (loop makes)
+        // CACHE BALANCES (loop makes + fills)
+        // VALIDATE BALANCE MAP UNIQUENESS (loop makes + fills)
+        // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
+        // INCREASE BALANCE OF OPERATOR FOR FILL.FEE_AMOUNT (loop fills)
+        // INCREASE BALANCE OF MAKERS FOR RECEIVE_AMOUNT (loop matches)
+        // INCREASE BALANCE OF OPERATOR FOR MAKE.FEE_AMOUNT (loop makes)
+        // DECREASE BALANCE OF FILLERS FOR FILL.OFFER_AMOUNT (loop fills)
+        // DECREASE BALANCE OF FILLERS FOR FILL.FEE_AMOUNT (loop fills)
+        // DECREASE BALANCE OF MAKERS FOR MAKE.OFFER_AMOUNT (loop makes)
+        // DECREASE BALANCE OF MAKERS FOR MAKE.FEE_AMOUNT (loop makes)
+        // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
+        // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
+        // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
+        // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
+        // STORE NONCES (loop makes + fills)
+        // STORE OFFERS (loop makes)
+        // STORE BALANCES (loop addresses)
+    }
 
-            let p := mload(0x40)
-            let q
+    /* event Log(uint256 v1, uint256 v2, uint256 v3, uint256 v4); */
+    function _validateTradeInputs(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
+    )
+        private
+        pure
+    {
+        uint256 lengths = _values[0];
+        uint256 numMakes = lengths & ~(~uint256(0) << 8);
+        uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
+        uint256 numMatches = (lengths & ~(~uint256(0) << 24)) >> 16;
 
-            // VALIDATE INPUT LENGTHS
-            // validate that _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches
-            a := mload(_values) // _values.length
-            b := mload(add(_values, 16))  // lengths
+        // sanity check on input length so that we will not need safe math methods
+        // for array index calculations
+        require(
+            numMakes + numFills + numMatches + _addresses.length < 10000,
+            "Input too large"
+        );
 
-            g := not(shl(8, not(0))) // numMakes bitmask
-            c := and(b, g) // numMakes
+        require(
+            numMakes > 0 && numFills > 0 && numMatches > 0,
+            "Invalid input"
+        );
 
-            g := not(shl(16, not(0))) // numFills bitmask
-            d := and(b, g) // shifted numFills
-            d := shr(8, d) // numFills
+        require(
+            _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches,
+            "Invalid _values.length"
+        );
 
-            g := not(shl(24, not(0))) // numMatches bitmask
-            e := and(b, g) // shifted numMatches
-            e := shr(16, e) // numMatches
+        require(
+            _hashes.length == (numMakes + numFills) * 2,
+            "Invalid _hashes.length"
+        );
+    }
 
-            f := add(1, mul(c, 2))
-            f := add(f, mul(d, 2))
-            f := add(f, e) // f: 1 + numMakes * 2 + numFills * 2 + numMatches
+    function _validateNonceUniqueness(
+        uint256[] memory _values
+    )
+        private
+    {
+        uint256 lengths = _values[0];
+        uint256 numMakes = lengths & ~(~uint256(0) << 8);
+        uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
+        _validateNonceUniquenessInSet(_values, 0, numMakes);
+        _validateNonceUniquenessInSet(_values, numMakes, numFills);
+    }
 
-            mstore(p, c) // store numMakes
-            mstore(add(p, 32), d) // store numFills
-            mstore(add(p, 64), e) // store numMatches
-            mstore(add(p, 96), add(c, d)) // store numMakes + numFills
+    event Log(uint256 nonce, uint256 prevNonce);
+    function _validateNonceUniquenessInSet(
+        uint256[] memory _values,
+        uint256 start,
+        uint256 length
+    )
+        private
+    {
+        uint256 prevNonce = 0;
+        uint256 mask = ~(~uint256(0) << 128);
 
-            q := add(p, 128)
+        start = start * 2 + 1;
+        uint256 end = start + length * 2;
 
-            // revert if _values.length != 1 + numMakes * 2 + numFills * 2 + numMatches
-            /* if iszero(eq(a, f)) { revert(0, 0) } */
+        for(uint256 i = start; i < end; i += 2) {
+            /* uint256 nonce = (_values[i] & mask) >> 20; */
+            uint256 nonce = _values[i] >> 48;
 
-            // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
-            i := 0
-            b := mload(p) // numMakes
-            c := add(_values, 64) // start of makes and fills
-            e := 0 // prevNonce
-            for { } lt(i, b) { i := add(i, 1) } {
-                d := mload(add(c, mul(i, 64))) // dataA
-                g := not(shl(48, not(0))) // first bitmask
-                d := and(g, d)
-                g := not(shl(127, not(0))) // second bitmask
-                d := and(g, d) // nonce
-
-                if iszero(i) { e := d }
-
-                f := iszero(gt(d, e)) // if nonce <= prevNonce
-                // check that nonce is strictly greater than prevNonce
-                /* if and(gt(i, 0), f) { revert(0, 0) } */
+            if (i == start) {
+                prevNonce = nonce;
+            } else {
+                emit Log(nonce, prevNonce);
+                /* require(nonce > prevNonce, "Invalid nonces"); */
+                prevNonce = nonce;
             }
-
-            // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
-
-            // CACHE USED NONCES (loop makes + fills)
-            // VALIDATE MATCHES (loop matches)
-            // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
-            // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
-            // CACHE OFFERS (loop makes)
-            // CACHE BALANCES (loop makes + fills)
-            // VALIDATE BALANCE MAP UNIQUENESS (loop makes + fills)
-            // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
-            // INCREASE BALANCE OF OPERATOR FOR FILL.FEE_AMOUNT (loop fills)
-            // INCREASE BALANCE OF MAKERS FOR RECEIVE_AMOUNT (loop matches)
-            // INCREASE BALANCE OF OPERATOR FOR MAKE.FEE_AMOUNT (loop makes)
-            // DECREASE BALANCE OF FILLERS FOR FILL.OFFER_AMOUNT (loop fills)
-            // DECREASE BALANCE OF FILLERS FOR FILL.FEE_AMOUNT (loop fills)
-            // DECREASE BALANCE OF MAKERS FOR MAKE.OFFER_AMOUNT (loop makes)
-            // DECREASE BALANCE OF MAKERS FOR MAKE.FEE_AMOUNT (loop makes)
-            // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
-            // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
-            // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
-            // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
-            // STORE NONCES (loop makes + fills)
-            // STORE OFFERS (loop makes)
-            // STORE BALANCES (loop addresses)
-
-
-        } // end assembly
+        }
     }
 
     function withdraw(
