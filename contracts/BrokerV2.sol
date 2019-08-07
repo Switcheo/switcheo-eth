@@ -596,52 +596,70 @@ contract BrokerV2 is Ownable {
         address operatorValue = operator;
 
         assembly {
-            let a := 1
-            let b := 2
-            let c := 3
-            let d := 4
-            let e := 5
-            let f := 6
-            let g := 7
-            let h := 8
-            let i := 9
-            let j := 10
+            let a
+            let b
+            let c
+            let d
+            let e
+            let f
+            let g
+            let i
+            let j
 
             let p := mload(0x40)
-            mstore(p, a)
-            mstore(p, b)
-            mstore(p, c)
-            mstore(p, d)
-            mstore(p, e)
-            mstore(p, f)
-            mstore(p, g)
-            mstore(p, h)
-            mstore(p, i)
-            mstore(p, j)
+            let q
 
             // VALIDATE INPUT LENGTHS
             // validate that _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches
             a := mload(_values) // _values.length
-            b := mload(add(_values, 0x20))  // lengths
+            b := mload(add(_values, 16))  // lengths
 
-            h := not(shl(8, not(0))) // numMakes bitmask
-            c := and(b, h) // numMakes
+            g := not(shl(8, not(0))) // numMakes bitmask
+            c := and(b, g) // numMakes
 
-            h := not(shl(16, not(0))) // numFills bitmask
-            d := and(b, h) // shifted numFills
+            g := not(shl(16, not(0))) // numFills bitmask
+            d := and(b, g) // shifted numFills
             d := shr(8, d) // numFills
 
-            h := not(shl(24, not(0))) // numMatches bitmask
-            e := and(b, h) // shifted numMatches
+            g := not(shl(24, not(0))) // numMatches bitmask
+            e := and(b, g) // shifted numMatches
             e := shr(16, e) // numMatches
 
             f := add(1, mul(c, 2))
             f := add(f, mul(d, 2))
             f := add(f, e) // f: 1 + numMakes * 2 + numFills * 2 + numMatches
 
-            if iszero(eq(a, f)) { revert(0, 0) }
+            mstore(p, c) // store numMakes
+            mstore(add(p, 32), d) // store numFills
+            mstore(add(p, 64), e) // store numMatches
+            mstore(add(p, 96), add(c, d)) // store numMakes + numFills
 
-            // VALIDATE NONCE UNIQUENESS (loop makes + fills)
+            q := add(p, 128)
+
+            // revert if _values.length != 1 + numMakes * 2 + numFills * 2 + numMatches
+            /* if iszero(eq(a, f)) { revert(0, 0) } */
+
+            // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
+            i := 0
+            b := mload(p) // numMakes
+            c := add(_values, 64) // start of makes and fills
+            e := 0 // prevNonce
+            for { } lt(i, b) { i := add(i, 1) } {
+                d := mload(add(c, mul(i, 64))) // dataA
+                g := not(shl(48, not(0))) // first bitmask
+                d := and(g, d)
+                g := not(shl(127, not(0))) // second bitmask
+                d := and(g, d) // nonce
+
+                if iszero(i) { e := d }
+
+                f := iszero(gt(d, e)) // if nonce <= prevNonce
+                // check that nonce is strictly greater than prevNonce
+                /* if and(gt(i, 0), f) { revert(0, 0) } */
+            }
+
+            // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
+
             // CACHE USED NONCES (loop makes + fills)
             // VALIDATE MATCHES (loop matches)
             // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
