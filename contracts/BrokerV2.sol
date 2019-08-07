@@ -525,817 +525,102 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
-    function optrade(
-        address[] memory _addresses,
+    // values = [
+    //    * at index 0
+    //    lengths // [0]
+    //        numMakes, // bits(0..8)
+    //        numFills, // bits(8..16)
+    //        numMatches, // bits(16..24)
+    //
+    //    * starting at index 1
+    //    * nonces must be sorted in ascending order
+    //    make.dataA // [i]
+    //        makerIndex, // bits(0..8)
+    //        maker.offerAssetIdIndex, // bits(8..16)
+    //        maker.wantAssetIdIndex, // bits(16..24)
+    //        maker.feeAssetIdIndex, // bits(24..32)
+    //        operator.feeAssetIdIndex, // bits(32..40)
+    //        make.v // bits(40..48)
+    //        make.nonce // bits(48..128)
+    //        make.feeAmount // bits(128..256)
+    //    make.dataB // [i + 1]
+    //        make.offerAmount, // bits(0..128)
+    //        make.wantAmount, // bits(128..256)
+    //
+    //    * starting at index 1 + numMakes * 2
+    //    * nonces must be sorted in ascending order
+    //    fill.dataA // [i]
+    //        fillerIndex, // bits(0..8)
+    //        filler.offerAssetIdIndex, // bits(8..16)
+    //        filler.wantAssetIdIndex, // bits(16..24)
+    //        filler.feeAssetIdIndex, // bits(24..32)
+    //        operator.feeAssetIdIndex, // bits(32..40)
+    //        fill.v // bits(40..48)
+    //        fill.nonce // bits(48..128)
+    //        fill.feeAmount // bits(128..256)
+    //    fill.dataB // [i + 1]
+    //        fill.offerAmount, // bits(0..128)
+    //        fill.wantAmount, // bits(128..256)
+    //
+    //    * starting at index 3 + numMakes * 5 + numFills * 5
+    //    matchData
+    //        match.makeIndex, // bits(0..8)
+    //        match.fillIndex, // bits(6..16)
+    //        match.takeAmount // bits(16..256)
+    // ]
+    //
+    // hashes = [
+    //     r, // 0
+    //     s // 1
+    // ]
+    //
+    // addresses must be sorted first by accounts then assetIds
+    // in ascending order
+    // addresses = [
+    //    account,
+    //    assetId,
+    //    account,
+    //    assetId,
+    //    account,
+    //    assetId,
+    // ]
+    function trade(
         uint256[] memory _values,
         bytes32[] memory _hashes,
-        uint256[] memory _matches,
-        uint8[] memory _v,
-        uint256 _numMakes
+        address[] memory _addresses
     )
         public
         onlyAdmin
         onlyActiveState
     {
-        // 0..(_v.length): nonce lookup table
-        // (_v.length)..(_v.length * 2): nonce data
-        // (_v.length * 2)..(_v.length * 2 + _numMakes): available offer amounts for makes
-        // (_v.length * 2 + _numMakes)..(_v.length * 6 + _numMakes): balance lookup table
-        // (_v.length * 6 + _numMakes)..(_v.length * 10 + _numMakes): balance data
-        uint256[] memory cache = new uint256[](
-                                         _v.length * 2 +
-                                         _numMakes +
-                                         _v.length * 8
-                                     );
-
-        bytes32[] memory hashKeys = new bytes32[](_numMakes);
+        address operatorValue = operator;
 
         assembly {
-        // read array value at index
-        function read(arr, index) -> item {
-            item := mload(add(arr, add(0x20, mul(index, 0x20))))
-        }
-
-        // write value to array at index
-        function write(arr, index, value) {
-            mstore(
-                add(arr, add(0x20, mul(index, 0x20))),
-                value
-            )
-        }
-
-        // if the nonce is taken then isTaken will be a non-zero value
-        // the non-zero value may not be 1
-        function nonceTaken(nonce, index, cacheRef) -> isTaken {
-            // isTaken: (1 << (nonce % 256)) & nonceData
-            isTaken := and(
-                           // 1 << (nonce % 256)
-                           shl(mod(nonce, 256), 1),
-                           // nonceData: cacheRef[cacheRef[index]]
-                           read(
-                               cacheRef,
-                               read(cacheRef, index)
-                           )
-                      )
-        }
-
-        function markNonce(nonce, index, cacheRef) {
-            // set cacheRef[cacheRef[index]]: (1 << (nonce % 256)) | cacheRef[cacheRef[index]]
-            write(
-                cacheRef,
-                read(cacheRef, index),
-                or(
-                    // 1 << (nonce % 256)
-                    shl(mod(nonce, 256), 1),
-                    read(cacheRef, index)
-                )
-            )
-        }
-
-        // return a + b
-        function safeAdd(a, b) -> c {
-            c := add(a, b)
-            // revert if c < a
-            if lt(c, a) { revert(0, 0) }
-        }
-
-        // return a - b
-        function safeSub(a, b) -> c {
-            // revert if b > a
-            if gt(b, a) { revert(0, 0) }
-            c := sub(a, b)
-        }
-
-        // return a * b
-        function safeMul(a, b) -> c {
-            c := mul(a, b)
-            // revert if c / a != b
-            if iszero(eq(div(c, a), b)) { revert(0, 0) }
-        }
-
-        // return a / b
-        function safeDiv(a, b) -> c {
-            // revert if b == 0
-            if eq(b, 0) { revert(0, 0) }
-            c := div(a, b)
-        }
-
-        // VALIDATE INPUT LENGTHS
-        // there must be at least one make so
-        // revert if _numMakes == 0,
-        if eq(_numMakes, 0) { revert(0, 0) }
-        // revert if !(_numMakes < _v.length)
-        if iszero(lt(_numMakes, mload(_v))) { revert(0, 0) }
-
-        // check that the length of the array parameters are reasonable numbers
-        // so that safe math functions will not be needed for array index calculations
-        if gt(mload(_v), 1000) { revert(0, 0) }
-        if gt(mload(_matches), 1000) { revert(0, 0) }
-
-        // check that number of signatures matches number of make and fill addresses
-        // revert if _v.length * 4 != _addresses.length
-        if iszero(eq(mul(mload(_v), 4), mload(_addresses))) { revert(0, 0) }
-        // check that number of signatures matches number of make and fill values
-        // revert if _v.length * 4 != _values.length
-        if iszero(eq(mul(mload(_v), 4), mload(_values))) { revert(0, 0) }
-        // check that number of signatures matches number of r, s values
-        // revert if _v.length * 2 != _hashes.length
-        if iszero(eq(mul(mload(_v), 2), mload(_hashes))) { revert(0, 0) }
-
-        // VALIDATE NONCE UNIQUENESS,
-        // CACHE NONCE DATA
-        {
-            let nonceA
-            let nonceB
-            let memptr := mload(0x40)
-            // "usedNonces" is the 6th declared contract variable
-            mstore(add(memptr, 0x20), 6)
-
-            for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
-                // nonce: _values[i * 4 + 3]
-                nonceA := read(_values, add(mul(i, 4), 3))
-
-                if iszero(read(cache, i)) {
-                    mstore(memptr, div(nonceA, 256))
-                    // set cache[i]: _v.length + i
-                    write(cache, i, add(mload(_v), i))
-                    // set cache[_v.length + i]: nonce data
-                    write(
-                        cache,
-                        add(mload(_v), i),
-                        sload(keccak256(memptr, 0x40))
-                    )
-                }
-
-                for { let j := add(i, 1) } lt(j, mload(_v)) { j := add(j, 1) } {
-                    // nonce: _values[j * 4 + 3]
-                    nonceB := read(_values, add(mul(j, 4), 3))
-                    if eq(nonceA, nonceB) { revert(0, 0) }
-                    if eq(div(nonceA, 256), div(nonceB, 256)) {
-                        // set cache[j]: _v.length + i
-                        write(cache, j, add(mload(_v), i))
-                    }
-                }
-            }
-        }
-
-        // VALIDATE MATCHES
-        for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
-            // makeIndex: _matches[i]
-            let makeIndex := read(_matches, i)
-             // fillIndex: _matches[i + 1]
-            let fillIndex := read(_matches, add(i, 1))
-
-            // revert if takeAmount is zero
-            // takeAmount: _matches[i + 2]
-            if iszero(read(_matches, add(i, 2))) { revert(0, 0) }
-
-            // revert if fillIndex < _numMakes
-            if gt(_numMakes, fillIndex) { revert(0, 0) }
-
-            // revert if make.offerAssetId != fill.wantAssetId
-            if iszero(
-                eq(
-                    // make.offerAssetId: _addresses[makeIndex * 4 + 1]
-                    read(_addresses, add(mul(makeIndex, 4), 1)),
-                    // fill.wantAssetId: _addresses[fillIndex * 4 + 2]
-                    read(_addresses, add(mul(fillIndex, 4), 2))
-                )
-            ) { revert(0, 0) }
-
-            // revert if make.wantAssetId != fill.offerAssetId
-            if iszero(
-                eq(
-                    // make.wantAssetId: _addresses[makeIndex + 2]
-                    read(_addresses, add(mul(makeIndex, 4), 2)),
-                    // fill.offerAssetId: _addresses[fillIndex + 1]
-                    read(_addresses, add(mul(fillIndex, 4), 1))
-                )
-            ) { revert(0, 0) }
-
-            // revert if (make.wantAmount * takeAmount) % make.offerAmount != 0
-            if eq(
-                iszero(
-                    mod(
-                        mul(
-                            // make.wantAmount: _values[makeIndex * 4 + 1]
-                            read(_values, add(mul(makeIndex, 4), 1)),
-                            // takeAmount: _matches[i + 2]
-                            read(_matches, add(i, 2))
-                        ),
-                        // make.offerAmount: _values[makeIndex * 4]
-                        read(_values, mul(makeIndex, 4))
-                    )
-                ),
-                0
-            ) { revert(0, 0) }
-        }
-
-        // VALIDATE FILL AMOUNTS AND FILL SIGNATURES
-        {
-            let memptr := mload(0x40)
-            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
-                // FILL_TYPEHASH
-                mstore(memptr, 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99)
-                // filler: _addresses[i * 4]
-                mstore(
-                    add(memptr, 0x20), // 32
-                    read(_addresses, mul(i, 4))
-                )
-                // fill.offerAssetId: _addresses[i * 4 + 1]
-                mstore(
-                    add(memptr, 0x40), // 64
-                    read(_addresses, add(mul(i, 4), 1))
-                )
-                // fill.offerAmount: _values[i * 4]
-                mstore(
-                    add(memptr, 0x60), // 96
-                    read(_values, mul(i, 4))
-                )
-                // revert if fill.offerAmount == 0
-                if iszero(read(_values, mul(i, 4))) { revert(0, 0) }
-
-                // fill.wantAssetId: _addresses[i * 4 + 2]
-                mstore(
-                    add(memptr, 0x80), // 128
-                    read(_addresses, add(mul(i, 4), 2))
-                )
-                // fill.wantAmount: _values[i * 4 + 1]
-                mstore(
-                    add(memptr, 0xA0),
-                    read(_values, add(mul(i, 4), 1))
-                )
-                // revert if fill.wantAmount == 0
-                if iszero(read(_values, add(mul(i, 4), 1))) { revert(0, 0) }
-
-                // fill.feeAssetId: _addresses[i * 4 + 3]
-                mstore(
-                    add(memptr, 0xC0),
-                    read(_addresses, add(mul(i, 4), 3))
-                )
-                // fill.feeAmount: _values[i * 4 + 2]
-                mstore(
-                    add(memptr, 0xE0),
-                    read(_values, add(mul(i, 4), 2))
-                )
-                // fill.nonce: _values[i * 4 + 3]
-                mstore(
-                    add(memptr, 0x100),
-                    read(_values, add(mul(i, 4), 3))
-                )
-
-                // store \x19\x01 prefix
-                mstore(add(memptr, 0x120), 0x0000000000000000000000000000000000000000000000000000000000001901)
-                // store DOMAIN_SEPARATOR
-                mstore(add(memptr, 0x140), 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630)
-                // store hashKey
-                mstore(add(memptr, 0x160), keccak256(memptr, 0x120))
-
-                // calculate signHash for make, the values are 0x13E and 0x42
-                // as arguments are tightly packed for signHash
-                mstore(add(memptr, 0x180), keccak256(add(memptr, 0x13E), 0x42))
-                // v: _v[i]
-                mstore(add(memptr, 0x1A0), read(_v, i))
-                // r: _hashes[i * 2]
-                mstore(add(memptr, 0x1C0), read(_hashes, mul(i, 2)))
-                // s: _hashes[i * 2 + 1]
-                mstore(add(memptr, 0x1E0), read(_hashes, add(mul(i, 2), 1)))
-
-                // call(3000 gas limit, ecrecover at address 1, input start, input size, output start, output size)
-                // revert if call returns 0
-                if iszero(staticcall(3000, 1, add(memptr, 0x180), 0x80, add(memptr, 0x200), 0x20)) {
-                    revert(0, 0)
-                }
-
-                // revert if the returned address from ecrecover does not match the maker's address at _addresses[i * 4]
-                if iszero(eq(
-                       mload(add(memptr, 0x200)),
-                       read(_addresses, mul(i, 4))
-                   )) { revert(0, 0) }
-            }
-        }
-
-        // VALIDATE MAKE AMOUNTS AND MAKE SIGNATURES,
-        // CACHE AVAILABLE OFFER AMOUNTS
-        {
-            let hashKey
-            let existingMake
-            let memptr := mload(0x40)
-            for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
-                // OFFER_TYPEHASH
-                mstore(memptr, 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260)
-                // maker: _addresses[i * 4]
-                mstore(
-                    add(memptr, 0x20), // 32
-                    read(_addresses, mul(i, 4))
-                )
-                // make.offerAssetId: _addresses[i * 4 + 1]
-                mstore(
-                    add(memptr, 0x40), // 64
-                    read(_addresses, add(mul(i, 4), 1))
-                )
-                // make.offerAmount: _values[i * 4]
-                mstore(
-                    add(memptr, 0x60), // 96
-                    read(_values, mul(i, 4))
-                )
-                // revert if make.offerAmount == 0
-                if iszero(read(_values, mul(i, 4))) { revert(0, 0) }
-
-                // make.wantAssetId: _addresses[i * 4 + 2]
-                mstore(
-                    add(memptr, 0x80), // 128
-                    read(_addresses, add(mul(i, 4), 2))
-                )
-                // make.wantAmount: _values[i * 4 + 1]
-                mstore(
-                    add(memptr, 0xA0),
-                    read(_values, add(mul(i, 4), 1))
-                )
-                // revert if make.wantAmount == 0
-                if iszero(read(_values, add(mul(i, 4), 1))) { revert(0, 0) }
-
-                // make.feeAssetId: _addresses[i * 4 + 3]
-                mstore(
-                    add(memptr, 0xC0),
-                    read(_addresses, add(mul(i, 4), 3))
-                )
-                // make.feeAmount: _values[i * 4 + 2]
-                mstore(
-                    add(memptr, 0xE0),
-                    read(_values, add(mul(i, 4), 2))
-                )
-                // make.nonce: _values[i * 4 + 3]
-                mstore(
-                    add(memptr, 0x100),
-                    read(_values, add(mul(i, 4), 3))
-                )
-
-                hashKey := keccak256(memptr, 0x120)
-
-                // store \x19\x01 prefix
-                mstore(add(memptr, 0x120), 0x0000000000000000000000000000000000000000000000000000000000001901)
-                // store DOMAIN_SEPARATOR
-                mstore(add(memptr, 0x140), 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630)
-                // store hashKey
-                mstore(add(memptr, 0x160), hashKey)
-
-                // calculate signHash for make, the values are 0x13E and 0x42
-                // as arguments are tightly packed for signHash
-                mstore(add(memptr, 0x180), keccak256(add(memptr, 0x13E), 0x42))
-                // v: _v[i]
-                mstore(add(memptr, 0x1A0), read(_v, i))
-                // r: _hashes[i * 2]
-                mstore(add(memptr, 0x1C0), read(_hashes, mul(i, 2)))
-                // s: _hashes[i * 2 + 1]
-                mstore(add(memptr, 0x1E0), read(_hashes, add(mul(i, 2), 1)))
-
-                // call(3000 gas limit, ecrecover at address 1, input start, input size, output start, output size)
-                // revert if call returns 0
-                if iszero(call(3000, 1, 0, add(memptr, 0x180), 0x80, add(memptr, 0x200), 0x20)) {
-                    revert(0, 0)
-                }
-
-                // revert if the returned address from ecrecover does not match the maker's address at _addresses[i * 4]
-                if iszero(eq(
-                       mload(add(memptr, 0x200)),
-                       read(_addresses, mul(i, 4))
-                   )) { revert(0, 0) }
-
-                // set hashKeys[i]: hashKey
-                write(hashKeys, i, hashKey)
-
-                existingMake := nonceTaken(
-                                    // make.nonce: _values[i * 4 + 3]
-                                    read(_values, add(mul(i, 4), 3)),
-                                    i,
-                                    cache
-                                )
-
-                // if this is an existing make then
-                // read the available offer amount from offers
-                if existingMake {
-                    // "offers" is the 5th declared contract variable
-                    mstore(add(memptr, 0x220), hashKey)
-                    mstore(add(memptr, 0x240), 5)
-
-                    // cache[_v.length * 2 + i]: offers[hashKey]
-                    write(
-                        cache,
-                        add(mul(mload(_v), 2), i),
-                        // keccak256(hashKey, 5)
-                        sload(keccak256(add(memptr, 0x220), 0x40))
-                    )
-                }
-
-                // if this is not an existing make then
-                // set the available offer amount as the make.offerAmount
-                if iszero(existingMake) {
-                    // cache[_v.length * 2 + i]: make.offerAmount
-                    write(
-                        cache,
-                        add(mul(mload(_v), 2), i),
-                        // make.offerAmount: _values[i * 4]
-                        read(_values, mul(i, 4))
-                    )
-                }
-
-                // revert if available offer amount is zero
-                if iszero(read(
-                       cache,
-                       add(mul(mload(_v), 2), i)
-                   )) { revert(0, 0) }
-            }
-        }
-
-        // INCREMENT BALANCES OF FILLERS
-        // INCREMENT BALANCES OF OPERATORS
-        {
-            let receiveAmount
-            let memptr := mload(0x40)
-            // "balances" is the 7th declared contract variable
-            mstore(add(memptr, 0x20), 7)
-            // cache the operator address
-            mstore(add(memptr, 0xA0), sload(operator_slot))
-            mstore(add(memptr, 0xC0), 7)
-            // cache keccak256(operator, 7)
-            mstore(add(memptr, 0x100), keccak256(add(memptr, 0xA0), 0x40))
-            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
-                // filler: _addresses[i * 4]
-                mstore(memptr, read(_addresses, mul(i, 4)))
-                // fill.wantAssetId: _addresses[i * 4 + 2]
-                mstore(add(memptr, 0x40), read(_addresses, add(mul(i, 4), 2)))
-                // keccak256(filler, 7)
-                mstore(add(memptr, 0x60), keccak256(memptr, 0x40))
-                // keccak256(fill.wantAssetId, keccak256(filler, 7))
-                mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
-
-                // fill.wantAmount: _values[i * 4 + 1]
-                receiveAmount := read(_values, add(mul(i, 4), 1))
-
-                // fill.wantAssetId == fill.feeAssetId
-                if eq(
-                       read(_addresses, add(mul(i, 4), 2)),
-                       read(_addresses, add(mul(i, 4), 3))
-                   )
-                {
-                    // receiveAmount -= fill.feeAmount
-                    receiveAmount := safeSub(
-                                         receiveAmount,
-                                         read(_values, add(mul(i, 4), 3))
-                                     )
-                }
-
-                // balances[filler][fill.wantAssetId] += fill.wantAmount
-                sstore(
-                    mload(add(memptr, 0x80)),
-                    safeAdd(
-                        sload(mload(add(memptr, 0x80))),
-                        receiveAmount
-                    )
-                )
-
-                // fill.feeAmount != 0
-                if read(_values, add(mul(i, 4), 3)) {
-                    // fill.feeAssetId
-                    mstore(
-                        add(memptr, 0xE0),
-                        read(_addresses, add(mul(i, 4), 3))
-                    )
-                    // keccak256(fill.feeAssetId, keccak256(operator, 7))
-                    mstore(add(memptr, 0x120), keccak256(add(memptr, 0xE0), 0x40))
-
-                    // balances[operator][fill.feeAssetId] += fill.feeAmount
-                    sstore(
-                        mload(add(memptr, 0x120)),
-                        safeAdd(
-                            sload(mload(add(memptr, 0x120))),
-                            read(_values, add(mul(i, 4), 3))
-                        )
-                    )
-                }
-            }
-        }
-
-        // INCREMENT BALANCES OF MAKERS
-        // INCREMENT BALANCES OF OPERATOR
-        {
-            let memptr := mload(0x40)
-            // "balances" is the 7th declared contract variable
-            mstore(add(memptr, 0x40), 7)
-            for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
-                // makeIndex: _matches[i]
-                mstore(memptr, read(_matches, i))
-
-                // maker: _addresses[makeIndex * 4]
-                mstore(add(memptr, 0x20), read(_addresses, mul(mload(memptr), 4)))
-                // make.wantAssetId: _addresses[i * 4 + 2]
-                mstore(add(memptr, 0x60), read(_addresses, add(mul(mload(memptr), 4), 2)))
-                // keccak256(maker, 7)
-                mstore(add(memptr, 0x80), keccak256(add(memptr, 0x20), 0x40))
-                // keccak256(make.wantAssetId, keccak256(maker, 7))
-                mstore(add(memptr, 0xA0), keccak256(add(memptr, 0x60), 0x40))
-
-                // calculate receive amount: make.wantAmount * takeAmount / make.offerAmount
-                mstore(
-                    add(memptr, 0xC0),
-                    safeDiv(
-                        safeMul(
-                            // make.wantAmount: _values[makeIndex * 4 + 1]
-                            read(
-                                _values,
-                                add(mul(mload(memptr), 4), 1)
-                            ),
-                            // takeAmount: _matches[i + 2]
-                            read(_matches, add(i, 2))
-                        ),
-                        // make.offerAmount: _values[makeIndex * 4]
-                        read(
-                            _values,
-                            mul(mload(memptr), 4)
-                        )
-                    )
-                )
-
-                // make.wantAssetId == make.feeAssetId
-                if eq(
-                       read(_addresses, add(mul(mload(memptr), 4), 2)),
-                       read(_addresses, add(mul(mload(memptr), 4), 3))
-                   )
-                {
-                    // receiveAmount -= make.feeAmount
-                    mstore(
-                        add(memptr, 0xC0),
-                        safeSub(
-                            mload(add(memptr, 0xC0)),
-                            read(_values, add(mul(mload(memptr), 4), 3))
-                        )
-                    )
-                }
-
-                // balances[maker][make.wantAssetId] += receiveAmount
-                sstore(
-                    mload(add(memptr, 0xA0)),
-                    safeAdd(
-                        sload(mload(add(memptr, 0xA0))),
-                        mload(add(memptr, 0xC0))
-                    )
-                )
-            }
-        }
-
-        // DECREMENT BALANCES OF FILLERS
-        {
-            let memptr := mload(0x40)
-            // "balances" is the 7th declared contract variable
-            mstore(add(memptr, 0x20), 7)
-            for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
-                // filler: _addresses[i * 4]
-                mstore(memptr, read(_addresses, mul(i, 4)))
-                // fill.offerAssetId: _addresses[i * 4 + 1]
-                mstore(add(memptr, 0x40), read(_addresses, add(mul(i, 4), 1)))
-                // keccak256(filler, 7)
-                mstore(add(memptr, 0x60), keccak256(memptr, 0x40))
-                // keccak256(fill.offerAssetId, keccak256(filler, 7))
-                mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
-
-                // balances[filler][fill.offerAssetId] -= fill.offerAmount
-                sstore(
-                    mload(add(memptr, 0x80)),
-                    safeAdd(
-                        sload(mload(add(memptr, 0x80))),
-                        // fill.offerAmount: _values[i * 4]
-                        read(_values, mul(i, 4))
-                    )
-                )
-            }
-        }
-
-        // DECREMENT MAKER BALANCES
-        {
-            let memptr := mload(0x40)
-            // "balances" is the 7th declared contract variable
-            mstore(add(memptr, 0x20), 7)
-            for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
-                // decrease maker's balances if nonce is not yet taken
-                // as this indicates that it is a new make
-                // make.nonce: _values[i * 4 + 3]
-                if iszero(nonceTaken(
-                       read(_values, add(mul(i, 4), 3)),
-                       i,
-                       cache
-                   ))
-                {
-                    // maker: _addresses[i * 4]
-                    mstore(memptr, read(_addresses, mul(i, 4)))
-                    // maker.offerAssetId: _addresses[i * 4 + 1]
-                    mstore(add(memptr, 0x40), read(_addresses, add(mul(i, 4), 1)))
-                    // keccak256(maker, 7)
-                    mstore(add(memptr, 0x60), keccak256(memptr, 0x40))
-                    // keccak256(make.offerAssetId, keccak256(maker, 7))
-                    mstore(add(memptr, 0x80), keccak256(add(memptr, 0x40), 0x40))
-
-                    // balances[maker][make.offerAssetId] -= make.offerAmount
-                    sstore(
-                        mload(add(memptr, 0x80)),
-                        safeSub(
-                            sload(mload(add(memptr, 0x80))),
-                            // make.offerAmount: _values[i * 4]
-                            read(_values, mul(i, 4))
-                        )
-                    )
-                }
-            }
-        }
-
-        // MARK MAKE NONCES AS USED
-        for { let i := 0 } lt(i, _numMakes) { i := add(i, 1) } {
-            markNonce(
-                // make.nonce: _values[i * 4 + 3]
-                read(_values, add(mul(i, 4), 3)),
-                i,
-                cache
-            )
-        }
-
-        // VALIDATE THAT ALL FILL NONCES ARE UNUSED,
-        // MARK ALL FILL NONCES AS USED
-        for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
-            // fill.nonce: _values[i * 4 + 3]
-            let fillNonce := read(_values, add(mul(i, 4), 3))
-
-            if nonceTaken(
-                   fillNonce,
-                   i,
-                   cache
-               ) { revert(0, 0) }
-
-            markNonce(
-                fillNonce,
-                i,
-                cache
-            )
-        }
-
-        // STORE USED NONCES
-        {
-            let slotIndex
-            let memptr := mload(0x40)
-            mstore(add(memptr, 0x20), 6)
-            for { let i := 0 } lt(i, mload(_v)) { i := add(i, 1) } {
-                slotIndex := mload(add(
-                                 cache,
-                                 add(0x20, mul(i, 0x20))
-                             ))
-
-                // only update storage if slotIndex == _v.length + i
-                // so that unnecessary storage updates will be avoided
-                if eq(slotIndex, add(mload(_v), i)) {
-                    // store nonce / 256
-                    mstore(memptr, div(
-                                       // nonce: _values[i * 4 + 3]
-                                       read(_values, add(mul(i, 4), 3)),
-                                       256
-                                   )
-                          )
-
-                    // set usedNonces[nonce / 256]: cache[_v.length + i]
-                    sstore(
-                        // keccak256(nonce / 256, 6)
-                        keccak256(memptr, 0x40),
-                        read(cache, add(mload(_v), i))
-                    )
-                }
-            }
-        }
-
-        // REDUCE FILL AMOUNTS
-        for { let i := 0 } lt(i, mload(_matches)) { i := add(i, 3) } {
-            // _matches[i + 1]: fillIndex
-            let fillIndex := read(_matches, add(i, 1))
-
-            // remainingWantAmount -= takeAmount
-            // fill.wantAmount -= takeAmount
-            write(
-                _values,
-                // fill.wantAmount: _values[fillIndex * 4 + 1]
-                add(mul(fillIndex, 4), 1),
-                safeSub(
-                    read(_values, add(mul(fillIndex, 4), 1)),
-                    // takeAmount: _matches[i + 2]
-                    read(_matches, add(i, 2))
-                )
-            )
-
-            // giveAmount: make.wantAmount * takeAmount / make.offerAmount
-            let giveAmount := safeDiv(
-                                  safeMul(
-                                      // make.wantAmount: _values[_matches[i] * 4 + 1]
-                                      read(
-                                          _values,
-                                          add(mul(read(_matches, i), 4), 1)
-                                      ),
-                                      // takeAmount: _matches[i + 2]
-                                      read(_matches, add(i, 2))
-                                  ),
-                                  // make.offerAmount: _values[_matches[i] * 4]
-                                  read(
-                                      _values,
-                                      mul(read(_matches, i), 4)
-                                  )
-                              )
-
-            // fill.offerAmount -= giveAmount
-            write(
-                _values,
-                // fill.offerAmount: _values[fillIndex * 4]
-                mul(fillIndex, 4),
-                safeSub(
-                    read(_values, mul(fillIndex, 4)),
-                    giveAmount
-                )
-            )
-        }
-
-        // VALIDATE THAT ALL FILLS ARE COMPLETELY FILLED
-        for { let i := _numMakes } lt(i, mload(_v)) { i := add(i, 1) } {
-            // revert if the remaining fill.offerAmount != 0
-            // fill.offerAmount: _values[i * 4]
-            if read(_values, mul(i, 4)) { revert(0, 0) }
-            // revert if the remaining fill.wantAmount != 0
-            // fill.wantAmount: _values[i * 4 + 1]
-            if read(_values, add(mul(i, 4), 1)) { revert(0, 0) }
-        }
+            let a := 1
+            let b := 2
+            let c := 3
+            let d := 4
+            let e := 5
+            let f := 6
+            let g := 7
+            let h := 8
+            let i := 9
+            let j := 10
+
+            let p := mload(0x40)
+            mstore(p, a)
+            mstore(p, b)
+            mstore(p, c)
+            mstore(p, d)
+            mstore(p, e)
+            mstore(p, f)
+            mstore(p, g)
+            mstore(p, h)
+            mstore(p, i)
+            mstore(p, j)
+            mstore(p, operatorValue)
 
         } // end assembly
-    }
-
-    event DebugLog(uint256 v1, uint256 v2);
-    function test(uint256[] memory _matches) public {
-        uint256 v1;
-        uint256 v2;
-        usedNonces[20] = 100;
-
-        assembly {
-            let memptr := mload(0x40)
-
-            // read usedNonces[20]
-            mstore(memptr, 20)
-            // "usedNonces" is the 6th declared contract variable
-            mstore(add(memptr, 0x20), 6)
-
-            let key := keccak256(memptr, 0x40)
-            v1 := sload(key)
-        }
-        emit DebugLog(v1, v2);
-    }
-
-    // _addresses =>
-    //     [i * 4]: maker
-    //     [i * 4 + 1]: make.offerAssetId
-    //     [i * 4 + 2]: make.wantAssetId
-    //     [i * 4 + 3]: make.feeAssetId
-    //     [j * 4]: filler
-    //     [j * 4 + 1]: fill.offerAssetId
-    //     [j * 4 + 2]: fill.wantAssetId
-    //     [j * 4 + 3]: fill.feeAssetId
-    // _values =>
-    //     [i * 4]: make.offerAmount
-    //     [i * 4 + 1]: make.wantAmount
-    //     [i * 4 + 2]: make.feeAmount
-    //     [i * 4 + 3]: make.nonce
-    //     [j * 4]: fill.offerAmount
-    //     [j * 4 + 1]: fill.wantAmount
-    //     [j * 4 + 2]: fill.feeAmount
-    //     [j * 4 + 3]: fill.nonce
-    // _hashes =>
-    //     [i * 2]: make.r
-    //     [i * 2 + 1]: make.s
-    //     [j * 2]: fill.r
-    //     [j * 2 + 1]: fill.s
-    // _matches =>
-    //     [0]: index of first fill
-    //     [i * 3 + 1]: fillIndex
-    //     [i * 3 + 2]: makeIndex
-    //     [i * 3 + 3]: fill.takeAmount
-    // _v =>
-    //     [i]: make.v
-    //     [j]: fill.v
-    function trade(
-        address[] memory _addresses,
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        uint256[] memory _matches,
-        uint8[] memory _v
-    )
-        public
-        onlyAdmin
-        onlyActiveState
-    {
-        require(
-            _matches[0] > 0 && _matches[0] <= _v.length,
-            "Invalid fill index"
-        );
     }
 
     function withdraw(

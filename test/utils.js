@@ -169,12 +169,81 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
     return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
 }
 
-async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
+async function trade({ makes, fills, matches, operator }, { privateKeys }) {
     const broker = await getBroker()
-    const addresses = []
-    const values = []
+    const values = [makes.length, fills.length, matches.length]
     const hashes = []
-    const vArray = []
+    const addresses = []
+
+    const addressPairUniqMap = {}
+    const allAddressPairs = []
+    const uniqAddressPairs = []
+    const assetBalanceIndexMap = {}
+    const userIndexMap = {}
+
+    for (let i = 0; i < makes.length; i++) {
+        const make = makes[i]
+        const { maker, offerAssetId, wantAssetId, feeAssetId } = make
+        allAddressPairs.push(
+            { user: maker, assetId: offerAssetId },
+            { user: maker, assetId: wantAssetId },
+            { user: maker, assetId: feeAssetId },
+            { user: operator, assetId: feeAssetId }
+        )
+    }
+
+    for (let i = 0; i < fills.length; i++) {
+        const fill = fills[i]
+        const { filler, offerAssetId, wantAssetId, feeAssetId } = fill
+        allAddressPairs.push(
+            { user: filler, assetId: offerAssetId },
+            { user: filler, assetId: wantAssetId },
+            { user: filler, assetId: feeAssetId },
+            { user: operator, assetId: feeAssetId }
+        )
+    }
+
+    for (let i = 0; i < allAddressPairs.length; i++) {
+        const { user, assetId } = allAddressPairs[i]
+        if (addressPairUniqMap[user] === undefined) { addressPairUniqMap[user] = {} }
+        if (addressPairUniqMap[user][assetId] === undefined) {
+            addressPairUniqMap[user][assetId] = true
+            uniqAddressPairs.push({ user, assetId })
+        }
+    }
+
+    // sort by pair.address then pair.assetId
+    uniqAddressPairs.sort((a, b) => {
+        const userA = web3.utils.toBN(a.user)
+        const userB = web3.utils.toBN(b.user)
+        const addressDiff = userA.sub(userB)
+
+        if (addressDiff.isZero()) {
+            const assetIdA = web3.utils.toBN(a.assetId)
+            const assetIdB = web3.utils.toBN(b.assetId)
+            const assetIdDiff = assetIdA.sub(assetIdB)
+            if (assetIdDiff.isZero()) {
+                return 0
+            } else if (assetIdDiff.isNeg()) {
+                return -1
+            } else {
+                return 1
+            }
+        } else if (addressDiff.isNeg()) {
+            return -1
+        } else {
+            return 1
+        }
+    })
+
+    for (let i = 0; i < uniqAddressPairs.length; i++) {
+        const { user, assetId } = uniqAddressPairs[i]
+        assetBalanceIndexMap[user + assetId] = i
+        addresses.push(user, assetId)
+        if (userIndexMap[user] === undefined) {
+            userIndexMap[user] = i
+        }
+    }
 
     for (let i = 0; i < makes.length; i++) {
         const make = makes[i]
@@ -188,10 +257,19 @@ async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
             privateKey
         );
 
-        addresses.push(maker, offerAssetId, wantAssetId, feeAssetId)
-        values.push(offerAmount, wantAmount, feeAmount, nonce)
+        const dataA = userIndexMap[maker] |
+                      (assetBalanceIndexMap[maker + offerAssetId] << 8) |
+                      (assetBalanceIndexMap[maker + wantAssetId] << 16) |
+                      (assetBalanceIndexMap[maker + feeAssetId] << 24) |
+                      (assetBalanceIndexMap[operator + feeAssetId] << 32) |
+                      (v << 40) |
+                      (nonce << 48) |
+                      (feeAmount << 128)
+
+        const dataB = offerAmount | (wantAmount << 128)
+
+        values.push(dataA, dataB)
         hashes.push(r, s)
-        vArray.push(v)
     }
 
     for (let i = 0; i < fills.length; i++) {
@@ -206,22 +284,30 @@ async function trade({ makes, fills, matches }, { privateKeys, optimize }) {
             privateKey
         );
 
-        addresses.push(filler, offerAssetId, wantAssetId, feeAssetId)
-        values.push(offerAmount, wantAmount, feeAmount, nonce)
+        const dataA = userIndexMap[filler] |
+                      (assetBalanceIndexMap[filler + offerAssetId] << 8) |
+                      (assetBalanceIndexMap[filler + wantAssetId] << 16) |
+                      (assetBalanceIndexMap[filler + feeAssetId] << 24) |
+                      (assetBalanceIndexMap[operator + feeAssetId] << 32) |
+                      (v << 40) |
+                      (nonce << 48) |
+                      (feeAmount << 128)
+
+        const dataB = offerAmount | (wantAmount << 128)
+
+        values.push(dataA, dataB)
         hashes.push(r, s)
-        vArray.push(v)
     }
 
-    if (optimize) {
-        // console.log('addresses', addresses)
-        // console.log('values', values)
-        // console.log('matches', matches)
-
-        return await broker.optrade(addresses, values, hashes, matches, vArray, makes.length)
-    } else {
-        matches.unshift(makes.length)
-        return await broker.trade(addresses, values, hashes, matches, vArray)
+    for (let i = 0; i < matches.length; i++) {
+        const match = matches[i]
+        const data = match.makeIndex |
+                     (match.fillIndex << 8) |
+                     (match.takeAmount << 16)
+        values.push(data)
     }
+
+    return await broker.trade(values, hashes, addresses)
 }
 
 function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {
