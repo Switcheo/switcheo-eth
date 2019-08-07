@@ -171,7 +171,11 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
 
 async function trade({ makes, fills, matches, operator }, { privateKeys }) {
     const broker = await getBroker()
-    const values = [makes.length, fills.length, matches.length]
+    const values = [
+        makes.length |
+        (fills.length << 8) |
+        (matches.length << 16)
+    ]
     const hashes = []
     const addresses = []
 
