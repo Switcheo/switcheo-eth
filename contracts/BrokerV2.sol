@@ -536,11 +536,12 @@ contract BrokerV2 is Ownable {
     //    * nonces must be sorted in ascending order
     //    make.dataA // [i]
     //        makerIndex, // bits(0..8)
-    //        make.offerAssetIdIndex, // bits(8..16)
-    //        make.wantAssetIdIndex, // bits(16..24)
-    //        make.feeAssetIdIndex, // bits(24..32)
-    //        make.v // bits(32..40)
-    //        make.nonce // bits(40..128)
+    //        maker.offerAssetIndex, // bits(8..16)
+    //        maker.wantAssetIndex, // bits(16..24)
+    //        maker.feeAssetIndex, // bits(24..32)
+    //        operator.feeAssetIndex, // bits(32..40)
+    //        make.v // bits(40..48)
+    //        make.nonce // bits(48..128)
     //        make.feeAmount // bits(128..256)
     //    make.dataB // [i + 1]
     //        make.offerAmount, // bits(0..128)
@@ -550,11 +551,12 @@ contract BrokerV2 is Ownable {
     //    * nonces must be sorted in ascending order
     //    fill.dataA // [i]
     //        fillerIndex, // bits(0..8)
-    //        fill.offerAssetIdIndex, // bits(8..16)
-    //        fill.wantAssetIdIndex, // bits(16..24)
-    //        fill.feeAssetIdIndex, // bits(24..32)
-    //        fill.v // bits(32..40)
-    //        fill.nonce // bits(40..128)
+    //        filler.offerAssetIndex, // bits(8..16)
+    //        filler.wantAssetIndex, // bits(16..24)
+    //        filler.feeAssetIndex, // bits(24..32)
+    //        operator.feeAssetIndex, // bits(32..40)
+    //        fill.v // bits(40..48)
+    //        fill.nonce // bits(48..128)
     //        fill.feeAmount // bits(128..256)
     //    fill.dataB // [i + 1]
     //        fill.offerAmount, // bits(0..128)
@@ -588,8 +590,6 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        // cache operator value
-        _addresses[_addresses.length - 1] = operator;
         _validateTradeInputs(_values, _hashes, _addresses);
         // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
         // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
@@ -634,6 +634,10 @@ contract BrokerV2 is Ownable {
     )
         private
     {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory deductions = new uint256[](_addresses.length / 2);
+
         uint256 i = 1;
         // i + numMakes * 2
         uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
@@ -643,17 +647,31 @@ contract BrokerV2 is Ownable {
             uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 40;
             if (_nonceTaken(nonce)) { continue; }
 
-            address maker = _addresses[_values[i] & ~(~uint256(0) << 8)];
-            address offerAssetId = _addresses[(_values[i] & ~(~uint256(0) << 16)) >> 8];
+            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
-            balances[maker][offerAssetId] = balances[maker][offerAssetId].sub(offerAmount);
-
-            address wantAssetId = _addresses[(_values[i] & ~(~uint256(0) << 24)) >> 16];
-            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 wantAssetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             uint256 feeAmount = _values[i] >> 128;
-            if (wantAssetId != feeAssetId && feeAmount > 0) {
-                balances[maker][feeAssetId] = balances[maker][feeAssetId].sub(feeAmount);
+
+            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
+            if (min > offerAssetIndex) { min = offerAssetIndex; }
+            if (max < offerAssetIndex) { max = offerAssetIndex; }
+
+            if (feeAmount == 0 || _addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1] ) {
+                continue;
+            }
+
+            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 deduction = deductions[i];
+            if (deduction > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
             }
         }
     }
@@ -664,6 +682,10 @@ contract BrokerV2 is Ownable {
     )
         private
     {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory deductions = new uint256[](_addresses.length / 2);
+
         // 1 + numMakes * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i + numFills * 2
@@ -671,18 +693,31 @@ contract BrokerV2 is Ownable {
 
         // loop fills
         for(i; i < end; i += 2) {
-            address filler = _addresses[_values[i] & ~(~uint256(0) << 8)];
-            address offerAssetId = _addresses[(_values[i] & ~(~uint256(0) << 16)) >> 8];
+            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
-            address wantAssetId = _addresses[(_values[i] & ~(~uint256(0) << 24)) >> 16];
-            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 wantAssetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             uint256 feeAmount = _values[i] >> 128;
 
-            balances[filler][offerAssetId] = balances[filler][offerAssetId].sub(offerAmount);
+            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
+            if (min > offerAssetIndex) { min = offerAssetIndex; }
+            if (max < offerAssetIndex) { max = offerAssetIndex; }
 
-            if (wantAssetId != feeAssetId && feeAmount > 0) {
-                balances[filler][feeAssetId] = balances[filler][feeAssetId].sub(feeAmount);
+            if (feeAmount == 0 || _addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1] ) {
+                continue;
+            }
+
+            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 deduction = deductions[i];
+            if (deduction > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
             }
         }
     }
@@ -693,20 +728,33 @@ contract BrokerV2 is Ownable {
     )
         private
     {
-        address operatorAddress = _addresses[_addresses.length - 1];
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+
         uint256 i = 1;
         // i + numMakes * 2
         uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
 
         // loop makes
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 40;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             if (_nonceTaken(nonce)) { continue; }
 
-            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
             uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount > 0) {
-                balances[operatorAddress][feeAssetId] = balances[operatorAddress][feeAssetId].add(feeAmount);
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 40)) >> 32;
+            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 increment = increments[i];
+            if (increment > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
             }
         }
     }
@@ -717,6 +765,10 @@ contract BrokerV2 is Ownable {
     )
         private
     {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+
         uint256 i = 1;
         // i += numMakes * 2
         i += (_values[0] & ~(~uint256(0) << 8)) * 2;
@@ -728,8 +780,8 @@ contract BrokerV2 is Ownable {
         // loop matches
         for(i; i < end; i++) {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            address maker = _addresses[_values[1 + makeIndex * 2] & ~(~uint256(0) << 8)];
-            address wantAssetId = _addresses[(_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16];
+            uint256 wantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            uint256 feeAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 32)) >> 24;
 
             // takeAmount
             uint256 amount = _values[i] >> 16;
@@ -737,11 +789,22 @@ contract BrokerV2 is Ownable {
             amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
                            .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
 
-            address feeAssetId = _addresses[(_values[1 + makeIndex * 2] & ~(~uint256(0) << 32)) >> 24];
-            if (wantAssetId == feeAssetId) {
+            if (_addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1]) {
                 amount = amount.sub(_values[1 + makeIndex * 2] >> 128);
             }
-            balances[maker][wantAssetId] = balances[maker][wantAssetId].add(amount);
+
+            increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
+
+            if (min > wantAssetIndex) { min = wantAssetIndex; }
+            if (max < wantAssetIndex) { max = wantAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 increment = increments[i];
+            if (increment > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+            }
         }
     }
 
@@ -751,7 +814,10 @@ contract BrokerV2 is Ownable {
     )
         private
     {
-        address operatorAddress = _addresses[_addresses.length - 1];
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+
         // 1 + numMakes * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i + numFills * 2
@@ -759,19 +825,32 @@ contract BrokerV2 is Ownable {
 
         // loop fills
         for(i; i < end; i += 2) {
-            address filler = _addresses[_values[i] & ~(~uint256(0) << 8)];
-            address wantAssetId = _addresses[(_values[i] & ~(~uint256(0) << 24)) >> 16];
+            uint256 wantAssetIndex = ((_values[i] & ~(~uint256(0) << 24)) >> 16);
             uint256 wantAmount = _values[i + 1] >> 128;
 
-            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
             uint256 feeAmount = _values[i] >> 128;
 
-            if (wantAssetId == feeAssetId) { wantAmount -= feeAmount; }
+            if (_addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1]) {
+                wantAmount = wantAmount.sub(feeAmount);
+            }
 
-            balances[filler][wantAssetId] = balances[filler][wantAssetId].add(wantAmount);
+            increments[wantAssetIndex] = increments[wantAssetIndex].add(wantAmount);
+            if (min > wantAssetIndex) { min = wantAssetIndex; }
+            if (max < wantAssetIndex) { max = wantAssetIndex; }
 
-            if (feeAmount > 0) {
-                balances[operatorAddress][feeAssetId] = balances[operatorAddress][feeAssetId].add(feeAmount);
+            if (feeAmount == 0) { continue; }
+
+            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 increment = increments[i];
+            if (increment > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
             }
         }
     }
@@ -834,7 +913,7 @@ contract BrokerV2 is Ownable {
         uint256 end = start + length * 2;
 
         for(uint256 i = start; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask) >> 40;
+            uint256 nonce = (_values[i] & mask) >> 48;
 
             if (i == start) {
                 prevNonce = nonce;

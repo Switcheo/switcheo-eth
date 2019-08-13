@@ -69,16 +69,42 @@ async function batchTrade(batchSize, accounts) {
         }
     })
 
-    console.log('gas used', result.receipt.gasUsed / batchSize)
+    // console.log('operator', operator)
+    // console.log('maker', maker)
+    // console.log('filler', filler)
+    // console.log('jrc', jrc.address)
+    // console.log('swc', swc.address)
+
     // console.log('gas used', result.receipt.gasUsed)
-    // const { v1, v2, v3, v4 } = result.receipt.logs[0].args
-    // console.log('v1, v2, v3, v4', v1.toString(), v2.toString(), v3.toString(), v4.toString())
+    console.log('gas used', result.receipt.gasUsed / batchSize)
+
     const { logs } = result.receipt
+    const events = ['Log']
+
     for (let i = 0; i < logs.length; i++) {
         const log = logs[i]
-        const { num1 } = log.args
-        if (num1 === undefined) { continue }
-        console.log('log', log.event, num1.toString())
+        let print = false
+        for (let j = 0; j < events.length; j++) {
+            if (log.event === events[j]) {
+                print = true
+                break
+            }
+        }
+
+        if (print) {
+            const values = {}
+            for (const key in log.args) {
+                if (key === '__length__') { continue }
+                if (key === '0') { continue }
+                if (!isNaN(parseInt(key))) { continue }
+
+                values[key] = log.args[key]
+                if (values[key].toString !== undefined) {
+                    values[key] = values[key].toString()
+                }
+            }
+            console.log('log', log.event, values)
+        }
     }
 }
 

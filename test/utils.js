@@ -174,15 +174,18 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
 }
 
 function constructTradeData(data) {
-    const { addressMap, user, offerAssetId, wantAssetId, feeAssetId,
+    const { addressMap, operator, user, offerAssetId, wantAssetId, feeAssetId,
             v, nonce, feeAmount, offerAmount, wantAmount } = data
 
-    const dataA = bn(addressMap[user]).or(shl(addressMap[offerAssetId], 8))
-                                      .or(shl(addressMap[wantAssetId], 16))
-                                      .or(shl(addressMap[feeAssetId], 24))
-                                      .or(shl(v, 32))
-                                      .or(shl(nonce, 40))
-                                      .or(shl(feeAmount, 128))
+
+    const userIndex = addressMap[user][offerAssetId]
+    const dataA = bn(userIndex).or(shl(addressMap[user][offerAssetId], 8))
+                               .or(shl(addressMap[user][wantAssetId], 16))
+                               .or(shl(addressMap[user][feeAssetId], 24))
+                               .or(shl(addressMap[operator][feeAssetId], 32))
+                               .or(shl(v, 40))
+                               .or(shl(nonce, 48))
+                               .or(shl(feeAmount, 128))
 
     const dataB = bn(offerAmount).or(shl(wantAmount, 128))
 
@@ -195,25 +198,36 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
                                     .or(shl(matches.length, 16))
     const values = [lengths]
     const hashes = []
-    const allAddresses = []
     const addresses = []
+    const addressPairs = []
     const addressMap = {}
 
     for (let i = 0; i < makes.length; i++) {
         const { maker, offerAssetId, wantAssetId, feeAssetId } = makes[i]
-        allAddresses.push(maker, offerAssetId, wantAssetId, feeAssetId)
+        addressPairs.push(
+            { user: maker, assetId: offerAssetId },
+            { user: maker, assetId: wantAssetId },
+            { user: maker, assetId: feeAssetId },
+            { user: operator, assetId: feeAssetId }
+        )
     }
 
     for (let i = 0; i < fills.length; i++) {
         const { filler, offerAssetId, wantAssetId, feeAssetId } = fills[i]
-        allAddresses.push(filler, offerAssetId, wantAssetId, feeAssetId)
+        addressPairs.push(
+            { user: filler, assetId: offerAssetId },
+            { user: filler, assetId: wantAssetId },
+            { user: filler, assetId: feeAssetId },
+            { user: operator, assetId: feeAssetId }
+        )
     }
 
-    for (let i = 0; i < allAddresses.length; i++) {
-        const address = allAddresses[i]
-        if (addressMap[address] === undefined) {
-            addresses.push(address)
-            addressMap[address] = addresses.length - 1
+    for (let i = 0; i < addressPairs.length; i++) {
+        const { user, assetId } = addressPairs[i]
+        if (addressMap[user] === undefined) { addressMap[user] = {} }
+        if (addressMap[user][assetId] === undefined) {
+            addresses.push(user, assetId)
+            addressMap[user][assetId] = addresses.length / 2 - 1
         }
     }
 
@@ -229,7 +243,7 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
             privateKey
         );
 
-        const data = { addressMap, user: maker, offerAssetId, wantAssetId,
+        const data = { addressMap, operator, user: maker, offerAssetId, wantAssetId,
                        feeAssetId, v, nonce, feeAmount, offerAmount, wantAmount }
         const { dataA, dataB } = constructTradeData(data)
 
@@ -249,7 +263,7 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
             privateKey
         );
 
-        const data = { addressMap, user: filler, offerAssetId, wantAssetId,
+        const data = { addressMap, operator, user: filler, offerAssetId, wantAssetId,
                        feeAssetId, v, nonce, feeAmount, offerAmount, wantAmount }
         const { dataA, dataB } = constructTradeData(data)
 
@@ -264,9 +278,6 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
                      (match.takeAmount << 16)
         values.push(value)
     }
-
-    // an empty address slot to store the operator address
-    addresses.push(ZERO_ADDR)
 
     return await broker.trade(values, hashes, addresses)
 }
