@@ -67,7 +67,7 @@ async function increaseEvmTime(time) {
   await web3.currentProvider.send('evm_mine', [])
 }
 
-async function assertRevert(promise) {
+async function assertReversion(promise) {
     try {
         await promise;
     } catch (error) {
@@ -381,7 +381,7 @@ module.exports = {
     hashSecret,
     validateBalance,
     validateExternalBalance,
-    assertRevert,
+    assertReversion,
     assertAsync,
     getEvmTime,
     increaseEvmTime,

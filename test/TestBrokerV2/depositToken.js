@@ -1,5 +1,5 @@
 const { web3, getBroker, getJrc, validateBalance,
-        validateExternalBalance, assertRevert } = require('../utils')
+        validateExternalBalance, assertReversion } = require('../utils')
 
 contract('Test depositToken', async (accounts) => {
     let broker, jrc
@@ -30,7 +30,7 @@ contract('Test depositToken', async (accounts) => {
             await validateBalance(user, jrc, 20)
 
             await jrc.approve(broker.address, 21, { from: user })
-            await assertRevert(broker.depositToken(user, jrc.address, nonce))
+            await assertReversion(broker.depositToken(user, jrc.address, nonce))
 
             broker.depositToken(user, jrc.address, nonce + 1)
             await validateBalance(user, jrc, 41)
