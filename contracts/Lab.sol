@@ -29,6 +29,14 @@ contract Lab {
         balances[user][assetId] += amount * 5;
     }
 
+    function loopIncrementBalance(uint256 amount) public {
+        address user = address(this);
+        address assetId = address(this);
+        for (uint256 i = 0; i < 5; i++) {
+            balances[user][assetId] += amount * i;
+        }
+    }
+
     function clearBalance() public {
         address user = address(this);
         address assetId = address(this);

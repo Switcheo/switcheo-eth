@@ -18,7 +18,7 @@ const { soliditySha3, keccak256 } = web3.utils
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const { DOMAIN_SEPARATOR, TYPEHASHES } = require('./constants')
+const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR } = require('./constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
@@ -264,6 +264,9 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
                      (match.takeAmount << 16)
         values.push(value)
     }
+
+    // an empty address slot to store the operator address
+    addresses.push(ZERO_ADDR)
 
     return await broker.trade(values, hashes, addresses)
 }

@@ -253,7 +253,7 @@ contract BrokerV2 is Ownable {
         uint256 amount,
         bytes32 indexed hashedSecret,
         uint256 expiryTime,
-        address feeAsset,
+        address feeAssetId,
         uint256 feeAmount,
         uint256 nonce
     );
@@ -265,7 +265,7 @@ contract BrokerV2 is Ownable {
         uint256 amount,
         bytes32 indexed hashedSecret,
         uint256 expiryTime,
-        address feeAsset,
+        address feeAssetId,
         uint256 feeAmount,
         uint256 nonce,
         bytes preimage
@@ -278,7 +278,7 @@ contract BrokerV2 is Ownable {
         uint256 amount,
         bytes32 indexed hashedSecret,
         uint256 expiryTime,
-        address feeAsset,
+        address feeAssetId,
         uint256 feeAmount,
         uint256 nonce,
         uint256 cancelFeeAmount
@@ -588,37 +588,194 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        address operatorValue = operator;
+        // cache operator value
+        _addresses[_addresses.length - 1] = operator;
         _validateTradeInputs(_values, _hashes, _addresses);
-        _validateNonceUniqueness(_values);
-
         // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
         // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
-        // CACHE USED NONCES (loop makes + fills)
+        _validateNonceUniqueness(_values);
+
         // VALIDATE MATCHES (loop matches)
         // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
         // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
         // CACHE OFFERS (loop makes)
         // CACHE BALANCES (loop makes + fills)
         // VALIDATE BALANCE MAP UNIQUENESS (loop makes + fills)
+
         // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
         // INCREASE BALANCE OF OPERATOR FOR FILL.FEE_AMOUNT (loop fills)
+        _creditFillBalances(_values, _addresses);
+
         // INCREASE BALANCE OF MAKERS FOR RECEIVE_AMOUNT (loop matches)
+        _creditMakerBalances(_values, _addresses);
+
         // INCREASE BALANCE OF OPERATOR FOR MAKE.FEE_AMOUNT (loop makes)
+        _creditMakerFeeBalances(_values, _addresses);
+
         // DECREASE BALANCE OF FILLERS FOR FILL.OFFER_AMOUNT (loop fills)
         // DECREASE BALANCE OF FILLERS FOR FILL.FEE_AMOUNT (loop fills)
+        _deductFillBalances(_values, _addresses);
+
         // DECREASE BALANCE OF MAKERS FOR MAKE.OFFER_AMOUNT (loop makes)
         // DECREASE BALANCE OF MAKERS FOR MAKE.FEE_AMOUNT (loop makes)
+        _deductMakerBalances(_values, _addresses);
+
         // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
         // STORE NONCES (loop makes + fills)
         // STORE OFFERS (loop makes)
-        // STORE BALANCES (loop addresses)
     }
 
-    /* event Log(uint256 v1, uint256 v2, uint256 v3, uint256 v4); */
+    function _deductMakerBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 i = 1;
+        // i + numMakes * 2
+        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+
+        // loop makes
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 40;
+            if (_nonceTaken(nonce)) { continue; }
+
+            address maker = _addresses[_values[i] & ~(~uint256(0) << 8)];
+            address offerAssetId = _addresses[(_values[i] & ~(~uint256(0) << 16)) >> 8];
+            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
+
+            balances[maker][offerAssetId] = balances[maker][offerAssetId].sub(offerAmount);
+
+            address wantAssetId = _addresses[(_values[i] & ~(~uint256(0) << 24)) >> 16];
+            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 feeAmount = _values[i] >> 128;
+            if (wantAssetId != feeAssetId && feeAmount > 0) {
+                balances[maker][feeAssetId] = balances[maker][feeAssetId].sub(feeAmount);
+            }
+        }
+    }
+
+    function _deductFillBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        // 1 + numMakes * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            address filler = _addresses[_values[i] & ~(~uint256(0) << 8)];
+            address offerAssetId = _addresses[(_values[i] & ~(~uint256(0) << 16)) >> 8];
+            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
+
+            address wantAssetId = _addresses[(_values[i] & ~(~uint256(0) << 24)) >> 16];
+            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 feeAmount = _values[i] >> 128;
+
+            balances[filler][offerAssetId] = balances[filler][offerAssetId].sub(offerAmount);
+
+            if (wantAssetId != feeAssetId && feeAmount > 0) {
+                balances[filler][feeAssetId] = balances[filler][feeAssetId].sub(feeAmount);
+            }
+        }
+    }
+
+    function _creditMakerFeeBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        address operatorAddress = _addresses[_addresses.length - 1];
+        uint256 i = 1;
+        // i + numMakes * 2
+        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+
+        // loop makes
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 40;
+            if (_nonceTaken(nonce)) { continue; }
+
+            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount > 0) {
+                balances[operatorAddress][feeAssetId] = balances[operatorAddress][feeAssetId].add(feeAmount);
+            }
+        }
+    }
+
+    function _creditMakerBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            address maker = _addresses[_values[1 + makeIndex * 2] & ~(~uint256(0) << 8)];
+            address wantAssetId = _addresses[(_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16];
+
+            // takeAmount
+            uint256 amount = _values[i] >> 16;
+            // receiveAmount = takeAmount * wantAmount / offerAmount
+            amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
+                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
+
+            address feeAssetId = _addresses[(_values[1 + makeIndex * 2] & ~(~uint256(0) << 32)) >> 24];
+            if (wantAssetId == feeAssetId) {
+                amount = amount.sub(_values[1 + makeIndex * 2] >> 128);
+            }
+            balances[maker][wantAssetId] = balances[maker][wantAssetId].add(amount);
+        }
+    }
+
+    function _creditFillBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        address operatorAddress = _addresses[_addresses.length - 1];
+        // 1 + numMakes * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            address filler = _addresses[_values[i] & ~(~uint256(0) << 8)];
+            address wantAssetId = _addresses[(_values[i] & ~(~uint256(0) << 24)) >> 16];
+            uint256 wantAmount = _values[i + 1] >> 128;
+
+            address feeAssetId = _addresses[(_values[i] & ~(~uint256(0) << 32)) >> 24];
+            uint256 feeAmount = _values[i] >> 128;
+
+            if (wantAssetId == feeAssetId) { wantAmount -= feeAmount; }
+
+            balances[filler][wantAssetId] = balances[filler][wantAssetId].add(wantAmount);
+
+            if (feeAmount > 0) {
+                balances[operatorAddress][feeAssetId] = balances[operatorAddress][feeAssetId].add(feeAmount);
+            }
+        }
+    }
+
     function _validateTradeInputs(
         uint256[] memory _values,
         bytes32[] memory _hashes,
@@ -627,10 +784,9 @@ contract BrokerV2 is Ownable {
         private
         pure
     {
-        uint256 lengths = _values[0];
-        uint256 numMakes = lengths & ~(~uint256(0) << 8);
-        uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
-        uint256 numMatches = (lengths & ~(~uint256(0) << 24)) >> 16;
+        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
 
         // sanity check on input length so that we will not need safe math methods
         // for array index calculations
@@ -655,11 +811,7 @@ contract BrokerV2 is Ownable {
         );
     }
 
-    function _validateNonceUniqueness(
-        uint256[] memory _values
-    )
-        private
-    {
+    function _validateNonceUniqueness(uint256[] memory _values) private pure {
         uint256 lengths = _values[0];
         uint256 numMakes = lengths & ~(~uint256(0) << 8);
         uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
@@ -673,6 +825,7 @@ contract BrokerV2 is Ownable {
         uint256 length
     )
         private
+        pure
     {
         uint256 prevNonce = 0;
         uint256 mask = ~(~uint256(0) << 128);

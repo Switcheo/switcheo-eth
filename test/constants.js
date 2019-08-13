@@ -3,6 +3,7 @@ const web3 = new Web3(Web3.givenProvider)
 
 const { soliditySha3, keccak256 } = web3.utils
 
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
 
 const DOMAIN_TYPE_HASH = web3.utils.soliditySha3(
@@ -48,6 +49,7 @@ TYPEHASHES = {
 
 
 module.exports = {
+    ZERO_ADDR,
     ETHER_ADDR,
     DOMAIN_SEPARATOR,
     TYPEHASHES

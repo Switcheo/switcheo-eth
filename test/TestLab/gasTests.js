@@ -32,4 +32,11 @@ contract('Test gas costs', async (accounts) => {
             await printGasUsed(lab.batchIncrementBalance(20), 'lab.batchIncrementBalance 2')
         })
     })
+
+    contract('loopIncrementBalance', async () => {
+        it('prints gas used', async () => {
+            await printGasUsed(lab.loopIncrementBalance(10), 'lab.loopIncrementBalance 1')
+            await printGasUsed(lab.loopIncrementBalance(20), 'lab.loopIncrementBalance 2')
+        })
+    })
 })
