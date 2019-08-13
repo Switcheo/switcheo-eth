@@ -53,7 +53,7 @@ async function batchTrade(batchSize, accounts) {
             wantAmount: 100,
             feeAssetId: jrc.address,
             feeAmount: 7,
-            nonce: batchSize * 3 + i
+            nonce: batchSize * 4 + i
         })
         matches.push({
             makeIndex: i,

@@ -536,12 +536,11 @@ contract BrokerV2 is Ownable {
     //    * nonces must be sorted in ascending order
     //    make.dataA // [i]
     //        makerIndex, // bits(0..8)
-    //        maker.offerAssetIdIndex, // bits(8..16)
-    //        maker.wantAssetIdIndex, // bits(16..24)
-    //        maker.feeAssetIdIndex, // bits(24..32)
-    //        operator.feeAssetIdIndex, // bits(32..40)
-    //        make.v // bits(40..48)
-    //        make.nonce // bits(48..128)
+    //        make.offerAssetIdIndex, // bits(8..16)
+    //        make.wantAssetIdIndex, // bits(16..24)
+    //        make.feeAssetIdIndex, // bits(24..32)
+    //        make.v // bits(32..40)
+    //        make.nonce // bits(40..128)
     //        make.feeAmount // bits(128..256)
     //    make.dataB // [i + 1]
     //        make.offerAmount, // bits(0..128)
@@ -551,12 +550,11 @@ contract BrokerV2 is Ownable {
     //    * nonces must be sorted in ascending order
     //    fill.dataA // [i]
     //        fillerIndex, // bits(0..8)
-    //        filler.offerAssetIdIndex, // bits(8..16)
-    //        filler.wantAssetIdIndex, // bits(16..24)
-    //        filler.feeAssetIdIndex, // bits(24..32)
-    //        operator.feeAssetIdIndex, // bits(32..40)
-    //        fill.v // bits(40..48)
-    //        fill.nonce // bits(48..128)
+    //        fill.offerAssetIdIndex, // bits(8..16)
+    //        fill.wantAssetIdIndex, // bits(16..24)
+    //        fill.feeAssetIdIndex, // bits(24..32)
+    //        fill.v // bits(32..40)
+    //        fill.nonce // bits(40..128)
     //        fill.feeAmount // bits(128..256)
     //    fill.dataB // [i + 1]
     //        fill.offerAmount, // bits(0..128)
@@ -574,15 +572,12 @@ contract BrokerV2 is Ownable {
     //     s // 1
     // ]
     //
-    // addresses must be sorted first by accounts then assetIds
-    // in ascending order
+    // list of user addresses and assetIds
     // addresses = [
-    //    account,
-    //    assetId,
-    //    account,
-    //    assetId,
-    //    account,
-    //    assetId,
+    //    account1,
+    //    account2,
+    //    assetId1,
+    //    assetId2,
     // ]
     function trade(
         uint256[] memory _values,
@@ -672,7 +667,6 @@ contract BrokerV2 is Ownable {
         _validateNonceUniquenessInSet(_values, numMakes, numFills);
     }
 
-    event Log(uint256 nonce, uint256 prevNonce);
     function _validateNonceUniquenessInSet(
         uint256[] memory _values,
         uint256 start,
@@ -687,14 +681,12 @@ contract BrokerV2 is Ownable {
         uint256 end = start + length * 2;
 
         for(uint256 i = start; i < end; i += 2) {
-            /* uint256 nonce = (_values[i] & mask) >> 20; */
-            uint256 nonce = _values[i] >> 48;
+            uint256 nonce = (_values[i] & mask) >> 40;
 
             if (i == start) {
                 prevNonce = nonce;
             } else {
-                emit Log(nonce, prevNonce);
-                /* require(nonce > prevNonce, "Invalid nonces"); */
+                require(nonce > prevNonce, "Invalid nonces");
                 prevNonce = nonce;
             }
         }
