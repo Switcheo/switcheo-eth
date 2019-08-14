@@ -79,7 +79,7 @@ async function batchTrade(batchSize, accounts) {
     console.log('gas used', result.receipt.gasUsed / batchSize)
 
     const { logs } = result.receipt
-    const events = ['Log']
+    const events = ['Log', 'Log2', 'Log3', 'LogSig']
 
     for (let i = 0; i < logs.length; i++) {
         const log = logs[i]

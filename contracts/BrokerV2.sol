@@ -522,16 +522,35 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
+        _addresses[_addresses.length - 1] = operator;
+
         _validateTradeInputs(_values, _hashes, _addresses);
         // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
         // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
         _validateNonceUniqueness(_values);
 
         // VALIDATE MATCHES (loop matches)
+        _validateMatches(_values, _addresses);
 
         // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
-        _validateMakes(_values, _hashes, _addresses);
+        _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            OFFER_TYPEHASH,
+            0,
+            _values[0] & ~(~uint256(0) << 8) // numMakes
+        );
+
         // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
+        _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            FILL_TYPEHASH,
+            _values[0] & ~(~uint256(0) << 8), // numMakes
+            (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numMakes + numFills
+        );
 
         // CACHE OFFERS (loop makes)
         // CACHE BALANCES (loop makes + fills)
@@ -559,54 +578,101 @@ contract BrokerV2 is Ownable {
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
+        // VALIDATE THAT FILLS ARE COMPLETE FILLED (loop matches)
         // STORE NONCES (loop makes + fills)
         // STORE OFFERS (loop makes)
     }
 
-    event Log(address maker, address offerAssetId, uint256 offerAmount, address wantAssetId, uint256 wantAmount, address feeAssetId, uint256 feeAmount, uint256 nonce);
-    function _validateMakes(
+    function _validateMatches(
         uint256[] memory _values,
-        bytes32[] memory _hashes,
         address[] memory _addresses
     )
         private
+        pure
     {
-        uint256 i = 0;
-        // numMakes
-        uint256 end = _values[0] & ~(~uint256(0) << 8);
 
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+
+            uint256 assetIndexA = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8; // maker.offerAssetIndex
+            uint256 assetIndexB = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16; // filler.wantAssetIndex
+
+            require(
+                // make.offerAssetId == fill.wantAssetId
+                _addresses[assetIndexA * 2 + 1] == _addresses[assetIndexB * 2 + 1],
+                "Invalid match"
+            );
+
+            assetIndexA = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16; // maker.wantAssetIndex
+            assetIndexB = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8; // filler.offerAssetIndex
+
+            require(
+                // make.wantAssetId == fill.offerAssetId
+                _addresses[assetIndexA * 2 + 1] == _addresses[assetIndexB * 2 + 1],
+                "Invalid match"
+            );
+
+            uint256 takeAmount = _values[i] >> 16;
+            uint256 makeDataB = _values[2 + makeIndex * 2];
+            // (make.wantAmount * takeAmount) % make.offerAmount == 0
+            require(
+                (makeDataB >> 128).mul(takeAmount).mod(makeDataB & ~(~uint256(0) << 128)) == 0,
+                "Invalid amounts"
+            );
+        }
+    }
+
+
+    function _validateTradeSignatures(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses,
+        bytes32 typeHash,
+        uint256 i,
+        uint256 end
+    )
+        private
+        pure
+    {
         for (i; i < end; i++) {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
-            address maker = _addresses[dataA & ~(~uint256(0) << 8)];
+            address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
+            uint256 offerAmount = dataB & ~(~uint256(0) << 128);
+            uint256 wantAmount = dataB >> 128;
+
+            require(offerAmount > 0 && wantAmount > 0, "Invalid amounts");
+            require(_addresses[_addresses.length - 1] == _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2], "Invalid operator");
+
             bytes32 hashKey = keccak256(abi.encode(
-                                  OFFER_TYPEHASH,
-                                  maker, // maker
-                                  _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) + 1], // make.offerAssetId
-                                  dataB & ~(~uint256(0) << 128), // make.offerAmount
-                                  _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) + 1], // make.wantAssetId
-                                  dataB >> 128, // make.wantAmount
-                                  _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) + 1], // make.feeAssetId
-                                  dataA >> 128, // make.feeAmount
-                                  (dataA & ~(~uint256(0) << 128)) >> 48 // make.nonce
+                                  typeHash,
+                                  user,
+                                  _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
+                                  offerAmount,
+                                  _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
+                                  wantAmount,
+                                  _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
+                                  dataA >> 128, // feeAmount
+                                  (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
                               ));
-            emit Log(
-                maker, // maker
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) + 1], // make.offerAssetId
-                dataB & ~(~uint256(0) << 128), // make.offerAmount
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) + 1], // make.wantAssetId
-                dataB >> 128, // make.wantAmount
-                _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) + 1], // make.feeAssetId
-                dataA >> 128, // make.feeAmount
-                (dataA & ~(~uint256(0) << 128)) >> 48 // make.nonce
-            );
-            /* _validateSignature(
-                maker,
+
+            _validateSignature(
+                user,
                 uint8((dataA & ~(~uint256(0) << 48)) >> 40),
                 _hashes[i * 2],
                 _hashes[i * 2 + 1],
                 hashKey
-            ); */
+            );
         }
     }
 

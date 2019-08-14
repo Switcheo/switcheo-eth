@@ -273,11 +273,12 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
 
     for (let i = 0; i < matches.length; i++) {
         const match = matches[i]
-        const value = match.makeIndex |
-                     (match.fillIndex << 8) |
-                     (match.takeAmount << 16)
+        const value = bn(match.makeIndex).or(shl(match.fillIndex, 8))
+                                         .or(shl(match.takeAmount, 16))
         values.push(value)
     }
+
+    addresses.push(ZERO_ADDR)
 
     return await broker.trade(values, hashes, addresses)
 }
