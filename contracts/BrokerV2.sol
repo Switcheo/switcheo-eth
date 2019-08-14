@@ -20,15 +20,15 @@ contract BrokerV2 is Ownable {
     enum State { Active, Inactive }
     enum AdminState { Normal, Escalated }
 
-    bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
+    /* bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
     bytes32 public constant CONTRACT_VERSION = keccak256("2");
     // TODO: update this before deployment
     uint256 public constant CHAIN_ID = 3;
     // TODO: pre-calculate and update this before deployment
     address public constant VERIFYING_CONTRACT = address(1);
-    bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
+    bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt"); */
 
-    bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
+    /* bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
         "EIP712Domain(",
             "string name,",
             "string version,",
@@ -36,27 +36,29 @@ contract BrokerV2 is Ownable {
             "address verifyingContract,",
             "bytes32 salt",
         ")"
-    ));
+    )); */
+    bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
 
-    // DOMAIN_SEPARATOR: 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630
-    bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
+    /* bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
         EIP712_DOMAIN_TYPEHASH,
         CONTRACT_NAME,
         CONTRACT_VERSION,
         CHAIN_ID,
         VERIFYING_CONTRACT,
         SALT
-    ));
+    )); */
+    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
 
-    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
+    /* bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
         "AuthorizeSpender(",
             "address user,",
             "address spender,",
             "uint256 nonce",
         ")"
-    ));
+    )); */
+    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
 
-    bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
+    /* bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
         "Withdraw(",
             "address withdrawer,",
             "address assetId,",
@@ -65,10 +67,10 @@ contract BrokerV2 is Ownable {
             "uint256 feeAmount,",
             "uint256 nonce",
         ")"
-    ));
+    )); */
+    bytes32 public constant WITHDRAW_TYPEHASH = 0x022201e899466f5f66e5c18267f163396774140999328264ade6a71fa5be02de;
 
-    // OFFER_TYPEHASH: 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260
-    bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
+    /* bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
         "Offer(",
             "address maker,",
             "address offerAssetId,",
@@ -79,10 +81,10 @@ contract BrokerV2 is Ownable {
             "uint256 feeAmount,",
             "uint256 nonce",
         ")"
-    ));
+    )); */
+    bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
 
-    // FILL_TYPEHASH: 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99
-    bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
+    /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
         "Fill(",
             "address filler,",
             "address offerAssetId,",
@@ -93,9 +95,10 @@ contract BrokerV2 is Ownable {
             "uint256 feeAmount,",
             "uint256 nonce",
         ")"
-    ));
+    )); */
+    bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
 
-    bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
+    /* bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
         "Swap(",
             "address maker,",
             "address taker,",
@@ -107,7 +110,8 @@ contract BrokerV2 is Ownable {
             "uint256 feeAmount,",
             "uint256 nonce",
         ")"
-    ));
+    )); */
+    bytes32 public constant SWAP_TYPEHASH = 0x6ba9001457a287c210b728198a424a4222098d7fac48f8c5fb5ab10ef907d3ef;
 
     // Ether token "address" is set as the constant 0x00
     address private constant ETHER_ADDR = address(0);
@@ -175,13 +179,6 @@ contract BrokerV2 is Ownable {
         uint256 nonceB
     );
 
-    event AddAdmin(address indexed admin);
-    event RemoveAdmin(address indexed admin);
-    event WhitelistToken(address indexed assetId);
-    event UnwhitelistToken(address indexed assetId);
-    event AddSpender(address indexed spender);
-    event RemoveSpender(address indexed spender);
-
     event AuthorizeSpender(
         address indexed user,
         address indexed spender,
@@ -189,22 +186,6 @@ contract BrokerV2 is Ownable {
     );
 
     event UnauthorizeSpender(address indexed user, address indexed spender);
-
-    event SpendFrom(
-        address indexed from,
-        address indexed to,
-        address indexed assetId,
-        uint256 amount
-    );
-
-    event Deposit(address indexed user, uint256 amount);
-
-    event DepositToken(
-        address indexed user,
-        address indexed assetId,
-        uint256 amount,
-        uint256 nonce
-    );
 
     event TokenFallback(
         address indexed user,
@@ -214,21 +195,6 @@ contract BrokerV2 is Ownable {
 
     event TokensReceived(
         address indexed user,
-        address indexed assetId,
-        uint256 amount
-    );
-
-    event Withdraw(
-        address withdrawer,
-        address assetId,
-        uint256 amount,
-        address feeAssetId,
-        uint256 feeAmount,
-        uint256 nonce
-    );
-
-    event AdminWithdraw(
-        address indexed withdrawer,
         address indexed assetId,
         uint256 amount
     );
@@ -258,31 +224,8 @@ contract BrokerV2 is Ownable {
         uint256 nonce
     );
 
-    event ExecuteSwap(
-        address indexed maker,
-        address indexed taker,
-        address assetId,
-        uint256 amount,
-        bytes32 indexed hashedSecret,
-        uint256 expiryTime,
-        address feeAssetId,
-        uint256 feeAmount,
-        uint256 nonce,
-        bytes preimage
-    );
-
-    event CancelSwap(
-        address indexed maker,
-        address indexed taker,
-        address assetId,
-        uint256 amount,
-        bytes32 indexed hashedSecret,
-        uint256 expiryTime,
-        address feeAssetId,
-        uint256 feeAmount,
-        uint256 nonce,
-        uint256 cancelFeeAmount
-    );
+    event ExecuteSwap(bytes32 indexed hashedSecret);
+    event CancelSwap(bytes32 indexed hashedSecret);
 
     constructor() public {
         adminAddresses[msg.sender] = true;
@@ -333,42 +276,36 @@ contract BrokerV2 is Ownable {
         _validateAddress(_admin);
         require(!adminAddresses[_admin], "Admin already added");
         adminAddresses[_admin] = true;
-        emit AddAdmin(_admin);
     }
 
     function removeAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
         require(adminAddresses[_admin], "Admin not yet added");
         delete adminAddresses[_admin];
-        emit RemoveAdmin(_admin);
     }
 
     function whitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
         require(!tokenWhitelist[_assetId], "Token already whitelisted");
         tokenWhitelist[_assetId] = true;
-        emit WhitelistToken(_assetId);
     }
 
     function unwhitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
         require(tokenWhitelist[_assetId], "Token not yet whitelisted");
         delete tokenWhitelist[_assetId];
-        emit UnwhitelistToken(_assetId);
     }
 
     function whitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
         require(!spenderWhitelist[_spender], "Spender already added");
         spenderWhitelist[_spender] = true;
-        emit AddSpender(_spender);
     }
 
     function unwhitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
         require(spenderWhitelist[_spender], "Spender not yet added");
         delete spenderWhitelist[_spender];
-        emit RemoveSpender(_spender);
     }
 
     function authorizeSpender(
@@ -427,14 +364,11 @@ contract BrokerV2 is Ownable {
 
         balances[_from][_assetId] = balances[_from][_assetId].sub(_amount);
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
-
-        emit SpendFrom(_from, _to, _assetId, _amount);
     }
 
     function deposit() external payable onlyActiveState {
         require(msg.value > 0, "Invalid value");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0, 0);
-        emit Deposit(msg.sender, msg.value);
     }
 
     function depositToken(
@@ -487,8 +421,6 @@ contract BrokerV2 is Ownable {
             _nonce,
             0
         );
-
-        emit DepositToken(_user, _assetId, transferredAmount, _nonce);
     }
 
     // ERC223
@@ -596,8 +528,11 @@ contract BrokerV2 is Ownable {
         _validateNonceUniqueness(_values);
 
         // VALIDATE MATCHES (loop matches)
-        // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
+
         // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
+        _validateMakes(_values, _hashes, _addresses);
+        // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
+
         // CACHE OFFERS (loop makes)
         // CACHE BALANCES (loop makes + fills)
         // VALIDATE BALANCE MAP UNIQUENESS (loop makes + fills)
@@ -628,6 +563,53 @@ contract BrokerV2 is Ownable {
         // STORE OFFERS (loop makes)
     }
 
+    event Log(address maker, address offerAssetId, uint256 offerAmount, address wantAssetId, uint256 wantAmount, address feeAssetId, uint256 feeAmount, uint256 nonce);
+    function _validateMakes(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 i = 0;
+        // numMakes
+        uint256 end = _values[0] & ~(~uint256(0) << 8);
+
+        for (i; i < end; i++) {
+            uint256 dataA = _values[i * 2 + 1];
+            uint256 dataB = _values[i * 2 + 2];
+            address maker = _addresses[dataA & ~(~uint256(0) << 8)];
+            bytes32 hashKey = keccak256(abi.encode(
+                                  OFFER_TYPEHASH,
+                                  maker, // maker
+                                  _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) + 1], // make.offerAssetId
+                                  dataB & ~(~uint256(0) << 128), // make.offerAmount
+                                  _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) + 1], // make.wantAssetId
+                                  dataB >> 128, // make.wantAmount
+                                  _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) + 1], // make.feeAssetId
+                                  dataA >> 128, // make.feeAmount
+                                  (dataA & ~(~uint256(0) << 128)) >> 48 // make.nonce
+                              ));
+            emit Log(
+                maker, // maker
+                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) + 1], // make.offerAssetId
+                dataB & ~(~uint256(0) << 128), // make.offerAmount
+                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) + 1], // make.wantAssetId
+                dataB >> 128, // make.wantAmount
+                _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) + 1], // make.feeAssetId
+                dataA >> 128, // make.feeAmount
+                (dataA & ~(~uint256(0) << 128)) >> 48 // make.nonce
+            );
+            /* _validateSignature(
+                maker,
+                uint8((dataA & ~(~uint256(0) << 48)) >> 40),
+                _hashes[i * 2],
+                _hashes[i * 2 + 1],
+                hashKey
+            ); */
+        }
+    }
+
     function _deductMakerBalances(
         uint256[] memory _values,
         address[] memory _addresses
@@ -644,7 +626,7 @@ contract BrokerV2 is Ownable {
 
         // loop makes
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 40;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
@@ -961,15 +943,6 @@ contract BrokerV2 is Ownable {
             _feeAmount,
             _nonce
         );
-
-        emit Withdraw(
-            _withdrawer,
-            _assetId,
-            _amount,
-            _feeAssetId,
-            _feeAmount,
-            _nonce
-        );
     }
 
     function adminWithdraw(
@@ -982,7 +955,6 @@ contract BrokerV2 is Ownable {
         onlyEscalatedAdminState
     {
         _withdraw(_withdrawer, _assetId, _amount, address(0), 0, 0);
-        emit AdminWithdraw(_withdrawer, _assetId, _amount);
     }
 
     function announceWithdraw(
@@ -1127,18 +1099,7 @@ contract BrokerV2 is Ownable {
             0
         );
 
-        emit ExecuteSwap(
-            _addresses[0], // maker
-            _addresses[1], // taker
-            _addresses[2], // assetId
-            _values[0], // amount
-            _hashedSecret, // hashedSecret
-            _values[1], // expiryTime
-            _addresses[3], // feeAssetId
-            _values[2], // feeAmount
-            _values[3], // nonce
-            _preimage
-        );
+        emit ExecuteSwap(_hashedSecret);
     }
 
     // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
@@ -1200,18 +1161,7 @@ contract BrokerV2 is Ownable {
             );
         }
 
-        emit CancelSwap(
-            _addresses[0], // maker
-            _addresses[1], // taker
-            _addresses[2], // assetId
-            _values[0], // amount
-            _hashedSecret, // hashedSecret
-            _values[1], // expiryTime
-            _addresses[3], // feeAssetId
-            _values[2], // feeAmount
-            _values[3], // nonce
-            cancelFeeAmount // cancelFeeAmount
-        );
+        emit CancelSwap(_hashedSecret);
     }
 
     function _hashSwap(
