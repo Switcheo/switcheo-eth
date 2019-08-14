@@ -42,7 +42,7 @@ async function batchTrade(batchSize, accounts) {
                 wantAmount: 50,
                 feeAssetId: swc.address,
                 feeAmount: 0,
-                nonce: batchSize * 2 + i
+                nonce: 10 + batchSize * 2 + i
             }
         )
         fills.push({
@@ -53,7 +53,7 @@ async function batchTrade(batchSize, accounts) {
             wantAmount: 100,
             feeAssetId: jrc.address,
             feeAmount: 7,
-            nonce: batchSize * 4 + i
+            nonce: 10 + batchSize * 4 + i
         })
         matches.push({
             makeIndex: i,

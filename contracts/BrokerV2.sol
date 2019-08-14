@@ -532,6 +532,9 @@ contract BrokerV2 is Ownable {
         // VALIDATE MATCHES (loop matches)
         _validateMatches(_values, _addresses);
 
+        // VALIDATE THAT FILLS ARE COMPLETE FILLED (loop matches)
+        _validateFills(_values);
+
         // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
         _validateTradeSignatures(
             _values,
@@ -573,12 +576,77 @@ contract BrokerV2 is Ownable {
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
         _updateOffers(_values, _hashes);
 
-        // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
-        // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
-        // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
+        // STORE MAKE NONCES (loop makes)
+        _storeMakeNonces(_values);
 
-        // VALIDATE THAT FILLS ARE COMPLETE FILLED (loop matches)
-        // STORE NONCES (loop makes + fills)
+        // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
+        // STORE FILL NONCES (loop fills)
+        _storeFillNonces(_values);
+    }
+
+    function _validateFills(uint256[] memory _values) private pure {
+        uint256[] memory filledAmounts = new uint256[](_values.length);
+
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 takeAmount = _values[i] >> 16;
+
+            uint256 wantAmount = filledAmounts[2 + fillIndex * 2] >> 128;
+            wantAmount = wantAmount.add(takeAmount);
+
+            uint256 offerAmount = filledAmounts[2 + fillIndex * 2] & ~(~uint256(0) << 128);
+            // giveAmount = takeAmount * wantAmount / offerAmount
+            uint256 giveAmount = takeAmount.mul(_values[2 + makeIndex * 2] >> 128)
+                                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
+            offerAmount = offerAmount.add(giveAmount);
+
+            filledAmounts[2 + fillIndex * 2] = (wantAmount << 128) | offerAmount;
+        }
+
+        // 1 + numMakes * 2
+        i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            require(_values[i + 1] == filledAmounts[i + 1], "Invalid fills");
+        }
+    }
+
+    function _storeFillNonces(uint256[] memory _values) private {
+        // 1 + numMakes * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            _markNonce(nonce);
+        }
+    }
+
+    function _storeMakeNonces(uint256[] memory _values) private {
+        uint256 i = 1;
+        // i + numMakes * 2
+        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+
+        // loop makes
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            _softMarkNonce(nonce);
+        }
     }
 
     function _updateOffers(
@@ -610,10 +678,14 @@ contract BrokerV2 is Ownable {
 
         // loop makes
         for (i; i < end; i++) {
-            bool existingOffer = _nonceTaken((_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48);
+            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
+            bool existingOffer = _nonceTaken(nonce);
             bytes32 hashKey = _hashes[i * 2];
+
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
-            uint256 remainingAmount = availableAmount - deductions[i];
+            require(availableAmount > 0, "Invalid availableAmount");
+
+            uint256 remainingAmount = availableAmount.sub(deductions[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
         }
@@ -1352,6 +1424,17 @@ contract BrokerV2 is Ownable {
 
         require(bits & shiftedBit == 0, "Nonce already used");
 
+        usedNonces[slotData] = bits | shiftedBit;
+    }
+
+    function _softMarkNonce(uint256 _nonce) private {
+        require(_nonce != 0, "Invalid nonce");
+
+        uint256 slotData = _nonce.div(256);
+        uint256 shiftedBit = 1 << _nonce.mod(256);
+        uint256 bits = usedNonces[slotData];
+
+        if (bits & shiftedBit != 0) { return; }
         usedNonces[slotData] = bits | shiftedBit;
     }
 
