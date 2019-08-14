@@ -552,10 +552,6 @@ contract BrokerV2 is Ownable {
             (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numMakes + numFills
         );
 
-        // CACHE OFFERS (loop makes)
-        // CACHE BALANCES (loop makes + fills)
-        // VALIDATE BALANCE MAP UNIQUENESS (loop makes + fills)
-
         // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
         // INCREASE BALANCE OF OPERATOR FOR FILL.FEE_AMOUNT (loop fills)
         _creditFillBalances(_values, _addresses);
@@ -574,13 +570,53 @@ contract BrokerV2 is Ownable {
         // DECREASE BALANCE OF MAKERS FOR MAKE.FEE_AMOUNT (loop makes)
         _deductMakerBalances(_values, _addresses);
 
-        // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
+        _updateOffers(_values, _hashes);
+
+        // UPDATE CACHED NONCES WITH MAKE NONCES (loop makes)
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // UPDATE CACHED NONCES WITH FILL NONCES (loop fills)
+
         // VALIDATE THAT FILLS ARE COMPLETE FILLED (loop matches)
         // STORE NONCES (loop makes + fills)
-        // STORE OFFERS (loop makes)
+    }
+
+    function _updateOffers(
+        uint256[] memory _values,
+        bytes32[] memory _hashes
+    )
+        private
+    {
+        // deductions with size numMakes
+        uint256[] memory deductions = new uint256[](_values[0] & ~(~uint256(0) << 8));
+
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 takeAmount = _values[i] >> 16;
+            deductions[makeIndex] = deductions[makeIndex].add(takeAmount);
+        }
+
+        i = 0;
+        end = _values[0] & ~(~uint256(0) << 8); // numMakes
+
+        // loop makes
+        for (i; i < end; i++) {
+            bool existingOffer = _nonceTaken((_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48);
+            bytes32 hashKey = _hashes[i * 2];
+            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
+            uint256 remainingAmount = availableAmount - deductions[i];
+            if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
+            if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
+        }
     }
 
     function _validateMatches(
@@ -623,6 +659,8 @@ contract BrokerV2 is Ownable {
             );
 
             uint256 takeAmount = _values[i] >> 16;
+            require(takeAmount > 0, "Invalid takeAmount");
+
             uint256 makeDataB = _values[2 + makeIndex * 2];
             // (make.wantAmount * takeAmount) % make.offerAmount == 0
             require(
@@ -631,7 +669,6 @@ contract BrokerV2 is Ownable {
             );
         }
     }
-
 
     function _validateTradeSignatures(
         uint256[] memory _values,
@@ -673,6 +710,8 @@ contract BrokerV2 is Ownable {
                 _hashes[i * 2 + 1],
                 hashKey
             );
+
+            _hashes[i * 2] = hashKey;
         }
     }
 
