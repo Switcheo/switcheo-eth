@@ -33,6 +33,36 @@ async function getZeus(account) {
 function bn(value) { return new BN(value) }
 function shl(value, n) { return bn(value).shln(n) }
 
+function printLogs(result, events) {
+    const { logs } = result.receipt
+
+    for (let i = 0; i < logs.length; i++) {
+        const log = logs[i]
+        let print = false
+        for (let j = 0; j < events.length; j++) {
+            if (log.event === events[j]) {
+                print = true
+                break
+            }
+        }
+
+        if (print) {
+            const values = {}
+            for (const key in log.args) {
+                if (key === '__length__') { continue }
+                if (key === '0') { continue }
+                if (!isNaN(parseInt(key))) { continue }
+
+                values[key] = log.args[key]
+                if (values[key].toString !== undefined) {
+                    values[key] = values[key].toString()
+                }
+            }
+            console.log('log', log.event, values)
+        }
+    }
+}
+
 function encodeParameters(types, values) {
     for (let i = 0; i < values.length; i++) {
         const valueLabel = `values[${i}]`
@@ -48,16 +78,31 @@ function ensureAddress(assetId) {
     return assetId
 }
 
+function assertEqual(valueA, valueB) {
+    if (valueA.toString !== undefined) { valueA = valueA.toString() }
+    if (valueB.toString !== undefined) { valueB = valueB.toString() }
+    assert.equal(valueA, valueB)
+}
+
+function assertValidation() {
+
+}
+
+async function assertAsync(promise, value) {
+    const result = await promise
+    assertEqual(result, value)
+}
+
 async function validateBalance(user, assetId, amount) {
     assetId = ensureAddress(assetId)
     const broker = await getBroker()
     const balance = await broker.balances(user, assetId)
-    assert.equal(balance.toString(), amount)
+    assertEqual(balance, amount)
 }
 
 async function validateExternalBalance(user, token, amount) {
     user = ensureAddress(user)
-    assert.equal((await token.balanceOf(user)).toString(), amount.toString())
+    await assertAsync(token.balanceOf(user), amount)
 }
 
 async function getEvmTime() {
@@ -82,8 +127,11 @@ async function assertReversion(promise) {
     assert.fail('Expected an EVM revert but no error was encountered');
 }
 
-async function assertAsync(promise, value) {
-    return await assert.equal(await promise, value)
+async function testValidation(method, params, fail, pass) {
+    if (!Array.isArray(fail)) { fail = [fail] }
+    if (!Array.isArray(pass)) { pass = [pass] }
+    await assertReversion(method(...[...params, ...fail]))
+    await method(...[...params, ...pass])
 }
 
 function hashSecret(secret) {
@@ -192,7 +240,7 @@ function constructTradeData(data) {
     return { dataA, dataB }
 }
 
-async function trade({ makes, fills, matches, operator }, { privateKeys }) {
+async function trade({ makes, fills, matches, operator }, { privateKeys }, transform) {
     const broker = await getBroker()
     const lengths = bn(makes.length).or(shl(fills.length, 8))
                                     .or(shl(matches.length, 16))
@@ -280,6 +328,8 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }) {
 
     addresses.push(ZERO_ADDR)
 
+    if (transform !== undefined) { transform({ values, hashes, addresses }) }
+
     return await broker.trade(values, hashes, addresses)
 }
 
@@ -289,6 +339,16 @@ function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, fee
     return keccak256(encodeParameters(
         ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
         [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce]
+    ))
+}
+
+function hashMake({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }) {
+    offerAssetId = ensureAddress(offerAssetId)
+    wantAssetId = ensureAddress(wantAssetId)
+    feeAssetId = ensureAddress(feeAssetId)
+    return keccak256(encodeParameters(
+        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce]
     ))
 }
 
@@ -338,20 +398,25 @@ const exchange = {
 
 module.exports = {
     web3,
+    bn,
+    shl,
     getBroker,
     getJrc,
     getSwc,
     getDgtx,
     getZeus,
     getScratchpad,
+    printLogs,
     hashSecret,
     validateBalance,
     validateExternalBalance,
-    assertReversion,
     assertAsync,
+    assertReversion,
+    testValidation,
     getEvmTime,
     increaseEvmTime,
     decodeReceiptLogs,
     hashSwap,
+    hashMake,
     exchange,
 }

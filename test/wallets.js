@@ -12,5 +12,6 @@ function getPrivateKey(account) {
 }
 
 module.exports = {
+    PRIVATE_KEYS,
     getPrivateKey,
 }
