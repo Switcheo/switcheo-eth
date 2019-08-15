@@ -707,10 +707,24 @@ contract BrokerV2 is Ownable {
 
         uint256 end = _values.length;
 
+        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+
         // loop matches
         for (i; i < end; i++) {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+
+            // check that makeIndex >= 0 && makeIndex < numMakes
+            require(
+                makeIndex < numMakes,
+                "Invalid makeIndex"
+            );
+
+            require(
+                fillIndex >= numMakes && fillIndex < numMakes + numFills,
+                "Invalid fillIndex"
+            );
 
             uint256 makerOfferAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8;
             uint256 makerWantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
@@ -951,6 +965,8 @@ contract BrokerV2 is Ownable {
         // loop matches
         for(i; i < end; i++) {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 nonce = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 128)) >> 48;
+
             uint256 wantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
             uint256 feeAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 32)) >> 24;
 
@@ -960,7 +976,7 @@ contract BrokerV2 is Ownable {
             amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
                            .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
 
-            if (_addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1]) {
+            if (!_nonceTaken(nonce) && _addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1]) {
                 amount = amount.sub(_values[1 + makeIndex * 2] >> 128);
             }
 
