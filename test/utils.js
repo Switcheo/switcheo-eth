@@ -33,6 +33,8 @@ async function getZeus(account) {
 function bn(value) { return new BN(value) }
 function shl(value, n) { return bn(value).shln(n) }
 
+function clone(obj) { return JSON.parse(JSON.stringify(obj)) }
+
 function printLogs(result, events) {
     const { logs } = result.receipt
 
@@ -400,6 +402,7 @@ module.exports = {
     web3,
     bn,
     shl,
+    clone,
     getBroker,
     getJrc,
     getSwc,

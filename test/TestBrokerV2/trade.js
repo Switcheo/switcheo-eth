@@ -1,4 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, validateBalance, hashMake,
+const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashMake,
         exchange, assertAsync, testValidation } = require('../utils')
 const { PRIVATE_KEYS } = require('../wallets')
 const { ZERO_ADDR } = require('../constants')
@@ -151,12 +151,47 @@ contract('Test trade', async (accounts) => {
 
         contract('when make nonces are not unique', async () => {
             it('raises an error', async () => {
-                const editedMakes = [...makes]
-                editedMakes[0] = { ...makes[0] }
-                editedMakes[0].nonce = 4
+                const editedTradeParams = clone(tradeParams)
+                editedTradeParams.makes[0].nonce = 4
 
                 await testValidation(exchange.trade, [],
-                    [{ operator, makes: editedMakes, fills, matches }, { privateKeys }],
+                    [editedTradeParams, { privateKeys }],
+                    [tradeParams, { privateKeys }]
+                )
+            })
+        })
+
+        contract('when make nonces are not sorted in ascending order', async () => {
+            it('raises an error', async () => {
+                const editedTradeParams = clone(tradeParams)
+                editedTradeParams.makes[0].nonce = 20
+
+                await testValidation(exchange.trade, [],
+                    [editedTradeParams, { privateKeys }],
+                    [tradeParams, { privateKeys }]
+                )
+            })
+        })
+
+        contract('when fill nonces are not unique', async () => {
+            it('raises an error', async () => {
+                const editedTradeParams = clone(tradeParams)
+                editedTradeParams.fills[0].nonce = 6
+
+                await testValidation(exchange.trade, [],
+                    [editedTradeParams, { privateKeys }],
+                    [tradeParams, { privateKeys }]
+                )
+            })
+        })
+
+        contract('when fill nonces are not sorted in ascending order', async () => {
+            it('raises an error', async () => {
+                const editedTradeParams = clone(tradeParams)
+                editedTradeParams.fills[0].nonce = 30
+
+                await testValidation(exchange.trade, [],
+                    [editedTradeParams, { privateKeys }],
                     [tradeParams, { privateKeys }]
                 )
             })
