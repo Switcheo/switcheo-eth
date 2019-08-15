@@ -524,7 +524,7 @@ contract BrokerV2 is Ownable {
     {
         _addresses[_addresses.length - 1] = operator;
 
-        _validateTradeInputs(_values, _hashes, _addresses);
+        _validateTradeInputLengths(_values, _hashes, _addresses);
         // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
         // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
         _validateNonceUniqueness(_values);
@@ -536,7 +536,7 @@ contract BrokerV2 is Ownable {
         _validateFills(_values);
 
         // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
-        _validateTradeSignatures(
+        _validateTradeSignaturesAndAmounts(
             _values,
             _hashes,
             _addresses,
@@ -546,7 +546,7 @@ contract BrokerV2 is Ownable {
         );
 
         // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
-        _validateTradeSignatures(
+        _validateTradeSignaturesAndAmounts(
             _values,
             _hashes,
             _addresses,
@@ -574,7 +574,7 @@ contract BrokerV2 is Ownable {
         _deductMakerBalances(_values, _addresses);
 
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
-        _updateOffers(_values, _hashes);
+        _storeOffers(_values, _hashes);
 
         // STORE MAKE NONCES (loop makes)
         _storeMakeNonces(_values);
@@ -649,7 +649,7 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _updateOffers(
+    function _storeOffers(
         uint256[] memory _values,
         bytes32[] memory _hashes
     )
@@ -712,23 +712,35 @@ contract BrokerV2 is Ownable {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
 
-            uint256 assetIndexA = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8; // maker.offerAssetIndex
-            uint256 assetIndexB = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16; // filler.wantAssetIndex
+            uint256 makerOfferAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8;
+            uint256 makerWantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
+            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+
+            require(
+                // make.offerAssetId != make.wantAssetId
+                _addresses[makerOfferAssetIndex * 2 + 1] != _addresses[makerWantAssetIndex * 2 + 1],
+                "Invalid make"
+            );
+
+            require(
+                // fill.offerAssetId != fill.wantAssetId
+                _addresses[fillerOfferAssetIndex * 2 + 1] != _addresses[fillerWantAssetIndex * 2 + 1],
+                "Invalid fill"
+            );
 
             require(
                 // make.offerAssetId == fill.wantAssetId
-                _addresses[assetIndexA * 2 + 1] == _addresses[assetIndexB * 2 + 1],
+                _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
                 "Invalid match"
             );
-
-            assetIndexA = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16; // maker.wantAssetIndex
-            assetIndexB = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8; // filler.offerAssetIndex
 
             require(
                 // make.wantAssetId == fill.offerAssetId
-                _addresses[assetIndexA * 2 + 1] == _addresses[assetIndexB * 2 + 1],
+                _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
                 "Invalid match"
             );
+
 
             uint256 takeAmount = _values[i] >> 16;
             require(takeAmount > 0, "Invalid takeAmount");
@@ -742,7 +754,7 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _validateTradeSignatures(
+    function _validateTradeSignaturesAndAmounts(
         uint256[] memory _values,
         bytes32[] memory _hashes,
         address[] memory _addresses,
@@ -1014,7 +1026,7 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _validateTradeInputs(
+    function _validateTradeInputLengths(
         uint256[] memory _values,
         bytes32[] memory _hashes,
         address[] memory _addresses
