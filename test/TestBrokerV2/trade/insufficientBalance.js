@@ -4,7 +4,7 @@ const { getTradeParams } = require('../../utils/getTradeParams')
 
 const { PRIVATE_KEYS } = require('../../wallets')
 
-contract('Test insufficient trade balance', async (accounts) => {
+contract('Test trade: insufficient balance', async (accounts) => {
     let jrc, swc
     const maker = accounts[1]
     const filler = accounts[2]

@@ -524,7 +524,7 @@ contract BrokerV2 is Ownable {
     {
         _addresses[_addresses.length - 1] = operator;
 
-        _validateTradeInputLengths(_values, _hashes, _addresses);
+        _validateTradeInputLengths(_values, _hashes);
         // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
         // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
         _validateNonceUniqueness(_values);
@@ -582,513 +582,6 @@ contract BrokerV2 is Ownable {
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // STORE FILL NONCES (loop fills)
         _storeFillNonces(_values);
-    }
-
-    function _validateFills(uint256[] memory _values) private pure {
-        uint256[] memory filledAmounts = new uint256[](_values.length);
-
-        uint256 i = 1;
-        // i += numMakes * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 takeAmount = _values[i] >> 16;
-
-            uint256 wantAmount = filledAmounts[2 + fillIndex * 2] >> 128;
-            wantAmount = wantAmount.add(takeAmount);
-
-            uint256 offerAmount = filledAmounts[2 + fillIndex * 2] & ~(~uint256(0) << 128);
-            // giveAmount = takeAmount * wantAmount / offerAmount
-            uint256 giveAmount = takeAmount.mul(_values[2 + makeIndex * 2] >> 128)
-                                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
-            offerAmount = offerAmount.add(giveAmount);
-
-            filledAmounts[2 + fillIndex * 2] = (wantAmount << 128) | offerAmount;
-        }
-
-        // 1 + numMakes * 2
-        i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            require(_values[i + 1] == filledAmounts[i + 1], "Invalid fills");
-        }
-    }
-
-    function _storeFillNonces(uint256[] memory _values) private {
-        // 1 + numMakes * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
-            _markNonce(nonce);
-        }
-    }
-
-    function _storeMakeNonces(uint256[] memory _values) private {
-        uint256 i = 1;
-        // i + numMakes * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
-
-        // loop makes
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
-            _softMarkNonce(nonce);
-        }
-    }
-
-    function _storeOffers(
-        uint256[] memory _values,
-        bytes32[] memory _hashes
-    )
-        private
-    {
-        // deductions with size numMakes
-        uint256[] memory deductions = new uint256[](_values[0] & ~(~uint256(0) << 8));
-
-        uint256 i = 1;
-        // i += numMakes * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 takeAmount = _values[i] >> 16;
-            deductions[makeIndex] = deductions[makeIndex].add(takeAmount);
-        }
-
-        i = 0;
-        end = _values[0] & ~(~uint256(0) << 8); // numMakes
-
-        // loop makes
-        for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
-            bool existingOffer = _nonceTaken(nonce);
-            bytes32 hashKey = _hashes[i * 2];
-
-            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
-            require(availableAmount > 0, "Invalid availableAmount");
-
-            uint256 remainingAmount = availableAmount.sub(deductions[i]);
-            if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
-            if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
-        }
-    }
-
-    function _validateMatches(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-        pure
-    {
-
-        uint256 i = 1;
-        // i += numMakes * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
-
-        // loop matches
-        for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-
-            // check that makeIndex >= 0 && makeIndex < numMakes
-            require(
-                makeIndex < numMakes,
-                "Invalid makeIndex"
-            );
-
-            require(
-                fillIndex >= numMakes && fillIndex < numMakes + numFills,
-                "Invalid fillIndex"
-            );
-
-            uint256 makerOfferAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 makerWantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-
-            require(
-                // make.offerAssetId != make.wantAssetId
-                _addresses[makerOfferAssetIndex * 2 + 1] != _addresses[makerWantAssetIndex * 2 + 1],
-                "Invalid make"
-            );
-
-            require(
-                // fill.offerAssetId != fill.wantAssetId
-                _addresses[fillerOfferAssetIndex * 2 + 1] != _addresses[fillerWantAssetIndex * 2 + 1],
-                "Invalid fill"
-            );
-
-            require(
-                // make.offerAssetId == fill.wantAssetId
-                _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
-                "Invalid match"
-            );
-
-            require(
-                // make.wantAssetId == fill.offerAssetId
-                _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
-                "Invalid match"
-            );
-
-
-            uint256 takeAmount = _values[i] >> 16;
-            require(takeAmount > 0, "Invalid takeAmount");
-
-            uint256 makeDataB = _values[2 + makeIndex * 2];
-            // (make.wantAmount * takeAmount) % make.offerAmount == 0
-            require(
-                (makeDataB >> 128).mul(takeAmount).mod(makeDataB & ~(~uint256(0) << 128)) == 0,
-                "Invalid amounts"
-            );
-        }
-    }
-
-    function _validateTradeSignaturesAndAmounts(
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        address[] memory _addresses,
-        bytes32 typeHash,
-        uint256 i,
-        uint256 end
-    )
-        private
-        pure
-    {
-        for (i; i < end; i++) {
-            uint256 dataA = _values[i * 2 + 1];
-            uint256 dataB = _values[i * 2 + 2];
-            address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
-            uint256 offerAmount = dataB & ~(~uint256(0) << 128);
-            uint256 wantAmount = dataB >> 128;
-
-            require(offerAmount > 0 && wantAmount > 0, "Invalid amounts");
-            require(_addresses[_addresses.length - 1] == _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2], "Invalid operator");
-
-            bytes32 hashKey = keccak256(abi.encode(
-                                  typeHash,
-                                  user,
-                                  _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
-                                  offerAmount,
-                                  _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
-                                  wantAmount,
-                                  _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
-                                  dataA >> 128, // feeAmount
-                                  (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
-                              ));
-
-            _validateSignature(
-                user,
-                uint8((dataA & ~(~uint256(0) << 48)) >> 40),
-                _hashes[i * 2],
-                _hashes[i * 2 + 1],
-                hashKey
-            );
-
-            _hashes[i * 2] = hashKey;
-        }
-    }
-
-    function _deductMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory deductions = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i + numMakes * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
-
-        // loop makes
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
-            if (_nonceTaken(nonce)) { continue; }
-
-            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
-
-            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        for(i = min; i <= max; i++) {
-            uint256 deduction = deductions[i];
-            if (deduction > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
-            }
-        }
-    }
-
-    function _deductFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory deductions = new uint256[](_addresses.length / 2);
-
-        // 1 + numMakes * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
-
-            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        for(i = min; i <= max; i++) {
-            uint256 deduction = deductions[i];
-            if (deduction > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
-            }
-        }
-    }
-
-    function _creditMakerFeeBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i + numMakes * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
-
-        // loop makes
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
-            if (_nonceTaken(nonce)) { continue; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 40)) >> 32;
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-            }
-        }
-    }
-
-    function _creditMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i += numMakes * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for(i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 wantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-
-            // takeAmount
-            uint256 amount = _values[i] >> 16;
-            // receiveAmount = takeAmount * wantAmount / offerAmount
-            amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
-                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
-
-            increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
-
-            if (min > wantAssetIndex) { min = wantAssetIndex; }
-            if (max < wantAssetIndex) { max = wantAssetIndex; }
-        }
-
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-            }
-        }
-    }
-
-    function _creditFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        // 1 + numMakes * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 wantAssetIndex = ((_values[i] & ~(~uint256(0) << 24)) >> 16);
-            uint256 wantAmount = _values[i + 1] >> 128;
-
-            increments[wantAssetIndex] = increments[wantAssetIndex].add(wantAmount);
-            if (min > wantAssetIndex) { min = wantAssetIndex; }
-            if (max < wantAssetIndex) { max = wantAssetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-            }
-        }
-    }
-
-    function _validateTradeInputLengths(
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        address[] memory _addresses
-    )
-        private
-        pure
-    {
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
-        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
-
-        // sanity check on input length so that we will not need safe math methods
-        // for array index calculations
-        require(
-            numMakes + numFills + numMatches + _addresses.length < 10000,
-            "Input too large"
-        );
-
-        require(
-            numMakes > 0 && numFills > 0 && numMatches > 0,
-            "Invalid input"
-        );
-
-        require(
-            _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches,
-            "Invalid _values.length"
-        );
-
-        require(
-            _hashes.length == (numMakes + numFills) * 2,
-            "Invalid _hashes.length"
-        );
-    }
-
-    function _validateNonceUniqueness(uint256[] memory _values) private pure {
-        uint256 lengths = _values[0];
-        uint256 numMakes = lengths & ~(~uint256(0) << 8);
-        uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
-        _validateNonceUniquenessInSet(_values, 0, numMakes);
-        _validateNonceUniquenessInSet(_values, numMakes, numFills);
-    }
-
-    function _validateNonceUniquenessInSet(
-        uint256[] memory _values,
-        uint256 start,
-        uint256 length
-    )
-        private
-        pure
-    {
-        uint256 prevNonce = 0;
-        uint256 mask = ~(~uint256(0) << 128);
-
-        start = start * 2 + 1;
-        uint256 end = start + length * 2;
-
-        for(uint256 i = start; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask) >> 48;
-
-            if (i == start) {
-                prevNonce = nonce;
-            } else {
-                require(nonce > prevNonce, "Invalid nonces");
-                prevNonce = nonce;
-            }
-        }
     }
 
     function withdraw(
@@ -1349,27 +842,509 @@ contract BrokerV2 is Ownable {
         emit CancelSwap(_hashedSecret);
     }
 
-    function _hashSwap(
-        address[4] memory _addresses,
-        uint256[4] memory _values,
-        bytes32 _hashedSecret
+    function _validateTradeInputLengths(
+        uint256[] memory _values,
+        bytes32[] memory _hashes
     )
         private
         pure
-        returns (bytes32)
     {
-        return keccak256(abi.encode(
-                            SWAP_TYPEHASH,
-                            _addresses[0], // maker
-                            _addresses[1], // taker
-                            _addresses[2], // assetId
-                            _values[0], // amount
-                            _hashedSecret, // hashedSecret
-                            _values[1], // expiryTime
-                            _addresses[3], // feeAssetId
-                            _values[2], // feeAmount
-                            _values[3] // nonce
-                        ));
+        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
+
+        // ensure that all other bits are zero
+        require(
+            _values[0] >> 24 == 0,
+            "Invalid lengths input"
+        );
+
+        require(
+            numMakes > 0 && numFills > 0 && numMatches > 0,
+            "Invalid trade inputs"
+        );
+
+        require(
+            _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches,
+            "Invalid _values.length"
+        );
+
+        require(
+            _hashes.length == (numMakes + numFills) * 2,
+            "Invalid _hashes.length"
+        );
+    }
+
+    function _validateNonceUniqueness(uint256[] memory _values) private pure {
+        uint256 lengths = _values[0];
+        uint256 numMakes = lengths & ~(~uint256(0) << 8);
+        uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
+        _validateNonceUniquenessInSet(_values, 0, numMakes);
+        _validateNonceUniquenessInSet(_values, numMakes, numFills);
+    }
+
+    function _validateNonceUniquenessInSet(
+        uint256[] memory _values,
+        uint256 start,
+        uint256 length
+    )
+        private
+        pure
+    {
+        uint256 prevNonce = 0;
+        uint256 mask = ~(~uint256(0) << 128);
+
+        start = start * 2 + 1;
+        uint256 end = start + length * 2;
+
+        for(uint256 i = start; i < end; i += 2) {
+            uint256 nonce = (_values[i] & mask) >> 48;
+
+            if (i == start) {
+                prevNonce = nonce;
+            } else {
+                require(nonce > prevNonce, "Invalid nonces");
+                prevNonce = nonce;
+            }
+        }
+    }
+
+    function _validateMatches(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+        pure
+    {
+
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+
+            // check that makeIndex >= 0 && makeIndex < numMakes
+            require(
+                makeIndex < numMakes,
+                "Invalid makeIndex"
+            );
+
+            require(
+                fillIndex >= numMakes && fillIndex < numMakes + numFills,
+                "Invalid fillIndex"
+            );
+
+            uint256 makerOfferAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8;
+            uint256 makerWantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
+            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+
+            require(
+                // make.offerAssetId != make.wantAssetId
+                _addresses[makerOfferAssetIndex * 2 + 1] != _addresses[makerWantAssetIndex * 2 + 1],
+                "Invalid make"
+            );
+
+            require(
+                // fill.offerAssetId != fill.wantAssetId
+                _addresses[fillerOfferAssetIndex * 2 + 1] != _addresses[fillerWantAssetIndex * 2 + 1],
+                "Invalid fill"
+            );
+
+            require(
+                // make.offerAssetId == fill.wantAssetId
+                _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
+                "Invalid match"
+            );
+
+            require(
+                // make.wantAssetId == fill.offerAssetId
+                _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
+                "Invalid match"
+            );
+
+
+            uint256 takeAmount = _values[i] >> 16;
+            require(takeAmount > 0, "Invalid takeAmount");
+
+            uint256 makeDataB = _values[2 + makeIndex * 2];
+            // (make.wantAmount * takeAmount) % make.offerAmount == 0
+            require(
+                (makeDataB >> 128).mul(takeAmount).mod(makeDataB & ~(~uint256(0) << 128)) == 0,
+                "Invalid amounts"
+            );
+        }
+    }
+
+    function _validateFills(uint256[] memory _values) private pure {
+        uint256[] memory filledAmounts = new uint256[](_values.length);
+
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 takeAmount = _values[i] >> 16;
+
+            uint256 wantAmount = filledAmounts[2 + fillIndex * 2] >> 128;
+            wantAmount = wantAmount.add(takeAmount);
+
+            uint256 offerAmount = filledAmounts[2 + fillIndex * 2] & ~(~uint256(0) << 128);
+            // giveAmount = takeAmount * wantAmount / offerAmount
+            uint256 giveAmount = takeAmount.mul(_values[2 + makeIndex * 2] >> 128)
+                                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
+            offerAmount = offerAmount.add(giveAmount);
+
+            filledAmounts[2 + fillIndex * 2] = (wantAmount << 128) | offerAmount;
+        }
+
+        // 1 + numMakes * 2
+        i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            require(_values[i + 1] == filledAmounts[i + 1], "Invalid fills");
+        }
+    }
+
+    function _validateTradeSignaturesAndAmounts(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses,
+        bytes32 typeHash,
+        uint256 i,
+        uint256 end
+    )
+        private
+        pure
+    {
+        for (i; i < end; i++) {
+            uint256 dataA = _values[i * 2 + 1];
+            uint256 dataB = _values[i * 2 + 2];
+            address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
+            uint256 offerAmount = dataB & ~(~uint256(0) << 128);
+            uint256 wantAmount = dataB >> 128;
+
+            require(offerAmount > 0 && wantAmount > 0, "Invalid amounts");
+            require(_addresses[_addresses.length - 1] == _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2], "Invalid operator");
+
+            bytes32 hashKey = keccak256(abi.encode(
+                                  typeHash,
+                                  user,
+                                  _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
+                                  offerAmount,
+                                  _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
+                                  wantAmount,
+                                  _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
+                                  dataA >> 128, // feeAmount
+                                  (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
+                              ));
+
+            _validateSignature(
+                user,
+                uint8((dataA & ~(~uint256(0) << 48)) >> 40),
+                _hashes[i * 2],
+                _hashes[i * 2 + 1],
+                hashKey
+            );
+
+            _hashes[i * 2] = hashKey;
+        }
+    }
+
+    function _creditFillBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+
+        // 1 + numMakes * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 wantAssetIndex = ((_values[i] & ~(~uint256(0) << 24)) >> 16);
+            uint256 wantAmount = _values[i + 1] >> 128;
+
+            increments[wantAssetIndex] = increments[wantAssetIndex].add(wantAmount);
+            if (min > wantAssetIndex) { min = wantAssetIndex; }
+            if (max < wantAssetIndex) { max = wantAssetIndex; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
+            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 increment = increments[i];
+            if (increment > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+            }
+        }
+    }
+
+    function _creditMakerBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 wantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+
+            // takeAmount
+            uint256 amount = _values[i] >> 16;
+            // receiveAmount = takeAmount * wantAmount / offerAmount
+            amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
+                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
+
+            increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
+
+            if (min > wantAssetIndex) { min = wantAssetIndex; }
+            if (max < wantAssetIndex) { max = wantAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 increment = increments[i];
+            if (increment > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+            }
+        }
+    }
+
+    function _creditMakerFeeBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+
+        uint256 i = 1;
+        // i + numMakes * 2
+        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+
+        // loop makes
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            if (_nonceTaken(nonce)) { continue; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 40)) >> 32;
+            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 increment = increments[i];
+            if (increment > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+            }
+        }
+    }
+
+    function _deductFillBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory deductions = new uint256[](_addresses.length / 2);
+
+        // 1 + numMakes * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
+
+            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
+            if (min > offerAssetIndex) { min = offerAssetIndex; }
+            if (max < offerAssetIndex) { max = offerAssetIndex; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
+            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 deduction = deductions[i];
+            if (deduction > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
+            }
+        }
+    }
+
+    function _deductMakerBalances(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+    {
+        uint256 min = _addresses.length;
+        uint256 max = 0;
+        uint256[] memory deductions = new uint256[](_addresses.length / 2);
+
+        uint256 i = 1;
+        // i + numMakes * 2
+        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+
+        // loop makes
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            if (_nonceTaken(nonce)) { continue; }
+
+            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
+
+            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
+            if (min > offerAssetIndex) { min = offerAssetIndex; }
+            if (max < offerAssetIndex) { max = offerAssetIndex; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
+            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
+            if (min > feeAssetIndex) { min = feeAssetIndex; }
+            if (max < feeAssetIndex) { max = feeAssetIndex; }
+        }
+
+        for(i = min; i <= max; i++) {
+            uint256 deduction = deductions[i];
+            if (deduction > 0) {
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
+            }
+        }
+    }
+
+    function _storeOffers(
+        uint256[] memory _values,
+        bytes32[] memory _hashes
+    )
+        private
+    {
+        // deductions with size numMakes
+        uint256[] memory deductions = new uint256[](_values[0] & ~(~uint256(0) << 8));
+
+        uint256 i = 1;
+        // i += numMakes * 2
+        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 takeAmount = _values[i] >> 16;
+            deductions[makeIndex] = deductions[makeIndex].add(takeAmount);
+        }
+
+        i = 0;
+        end = _values[0] & ~(~uint256(0) << 8); // numMakes
+
+        // loop makes
+        for (i; i < end; i++) {
+            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
+            bool existingOffer = _nonceTaken(nonce);
+            bytes32 hashKey = _hashes[i * 2];
+
+            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
+            require(availableAmount > 0, "Invalid availableAmount");
+
+            uint256 remainingAmount = availableAmount.sub(deductions[i]);
+            if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
+            if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
+        }
+    }
+
+    function _storeMakeNonces(uint256[] memory _values) private {
+        uint256 i = 1;
+        // i + numMakes * 2
+        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+
+        // loop makes
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            _softMarkNonce(nonce);
+        }
+    }
+
+    function _storeFillNonces(uint256[] memory _values) private {
+        // 1 + numMakes * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            _markNonce(nonce);
+        }
     }
 
     function _withdraw(
@@ -1413,6 +1388,29 @@ contract BrokerV2 is Ownable {
 
         // ensure that asset transfer succeeded
         _validateTransferResult(returnData);
+    }
+
+    function _hashSwap(
+        address[4] memory _addresses,
+        uint256[4] memory _values,
+        bytes32 _hashedSecret
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(
+                            SWAP_TYPEHASH,
+                            _addresses[0], // maker
+                            _addresses[1], // taker
+                            _addresses[2], // assetId
+                            _values[0], // amount
+                            _hashedSecret, // hashedSecret
+                            _values[1], // expiryTime
+                            _addresses[3], // feeAssetId
+                            _values[2], // feeAmount
+                            _values[3] // nonce
+                        ));
     }
 
     function _nonceTaken(uint256 _nonce) private view returns (bool) {

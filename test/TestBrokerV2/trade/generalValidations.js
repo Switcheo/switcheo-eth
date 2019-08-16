@@ -25,12 +25,22 @@ contract('Test trade: general validations', async (accounts) => {
         tradeParams = await getTradeParams(accounts)
     })
 
+    contract('when lengths input does not match expected format', async () => {
+        it('raises an error', async () => {
+            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
+                ({ values, fill }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)).or(shl(1, 27)) },
+                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
+                'Invalid lengths input'
+            )
+        })
+    })
+
     contract('when numMakes is 0', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values, fill }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid input'
+                'Invalid trade inputs'
             )
         })
     })
@@ -40,7 +50,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values, fill }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid input'
+                'Invalid trade inputs'
             )
         })
     })
@@ -50,7 +60,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values, fill }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid input'
+                'Invalid trade inputs'
             )
         })
     })
@@ -127,6 +137,71 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
+    contract('when make.offerAssetId == make.wantAssetId', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.makes[1].wantAssetId = jrc.address
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Invalid make'
+            )
+        })
+    })
+
+    contract('when a match.makeIndex >= numMakes', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.matches[1].makeIndex = 2
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Invalid makeIndex'
+            )
+        })
+    })
+
+    contract('when a match.fillIndex is < numMakes', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.matches[1].fillIndex = 1
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Invalid fillIndex'
+            )
+        })
+    })
+
+    contract('when a match.fillIndex is >= (numMakes + numFills)', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.matches[1].fillIndex = 4
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Invalid fillIndex'
+            )
+        })
+    })
+
+    contract('when fill.offerAssetId == fill.wantAssetId', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.fills[1].offerAssetId = jrc.address
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Invalid fill'
+            )
+        })
+    })
+
     contract('when make.offerAssetId != fill.wantAssetId', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
@@ -149,32 +224,6 @@ contract('Test trade: general validations', async (accounts) => {
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
                 'Invalid match'
-            )
-        })
-    })
-
-    contract('when make.offerAssetId == make.wantAssetId', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[1].wantAssetId = jrc.address
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid make'
-            )
-        })
-    })
-
-    contract('when fill.offerAssetId == fill.wantAssetId', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.fills[1].offerAssetId = jrc.address
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid fill'
             )
         })
     })
