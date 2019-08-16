@@ -115,11 +115,12 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.makes[1].wantAssetId = jrc.address
+            editedTradeParams.fills[1].offerAssetId = jrc.address
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid make'
+                'Invalid trade assets'
             )
         })
     })
@@ -163,19 +164,6 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when fill.offerAssetId == fill.wantAssetId', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.fills[1].offerAssetId = jrc.address
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid fill'
-            )
-        })
-    })
-
     contract('when make.offerAssetId != fill.wantAssetId', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
@@ -198,6 +186,19 @@ contract('Test trade: general validations', async (accounts) => {
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
                 'Invalid match'
+            )
+        })
+    })
+
+    contract('when match.takeAmount is 0', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.matches[1].takeAmount = 0
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Invalid takeAmount'
             )
         })
     })

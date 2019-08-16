@@ -525,17 +525,12 @@ contract BrokerV2 is Ownable {
         _addresses[_addresses.length - 1] = operator;
 
         _validateTradeInputLengths(_values, _hashes);
-
-        // validate that makes in the list are not repeated
         _validateUniqueMakes(_values);
-
         _validateMatches(_values, _addresses);
+        _validateFillAmounts(_values);
 
-        // VALIDATE THAT FILLS ARE COMPLETE FILLED (loop matches)
-        _validateFills(_values);
-
-        // VALIDATE MAKE SIGNATURES AND AMOUNTS (loop makes)
-        _validateTradeSignaturesAndAmounts(
+        // validate data and signatures of all makes
+        _validateTradeDataAndSignatures(
             _values,
             _hashes,
             _addresses,
@@ -544,8 +539,8 @@ contract BrokerV2 is Ownable {
             _values[0] & ~(~uint256(0) << 8) // numMakes
         );
 
-        // VALIDATE FILL SIGNATURES AND AMOUNTS (loop fills)
-        _validateTradeSignaturesAndAmounts(
+        // validate data and signatures of all fills
+        _validateTradeDataAndSignatures(
             _values,
             _hashes,
             _addresses,
@@ -911,33 +906,13 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _validateNonceUniquenessInSet(
-        uint256[] memory _values,
-        uint256 start,
-        uint256 length
-    )
-        private
-        pure
-    {
-        uint256 prevNonce;
-        uint256 mask = ~(~uint256(0) << 128);
-
-        start = start * 2 + 1;
-        uint256 end = start + length * 2;
-
-        for(uint256 i = start; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask) >> 48;
-
-            if (i == start) {
-                prevNonce = nonce;
-                continue;
-            }
-
-            require(nonce > prevNonce, "Invalid nonces");
-            prevNonce = nonce;
-        }
-    }
-
+    // validate that for every match:
+    // 1. makeIndexes fall within the range of makes
+    // 2. fillIndexes falls within the range of fills
+    // 3. make.offerAssetId == fill.wantAssetId
+    // 4. make.wantAssetId == fill.offerAssetId
+    // 5. takeAmount > 0
+    // 6. (make.wantAmount * takeAmount) % make.offerAmount == 0
     function _validateMatches(
         uint256[] memory _values,
         address[] memory _addresses
@@ -961,7 +936,6 @@ contract BrokerV2 is Ownable {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
 
-            // check that makeIndex >= 0 && makeIndex < numMakes
             require(
                 makeIndex < numMakes,
                 "Invalid makeIndex"
@@ -978,18 +952,6 @@ contract BrokerV2 is Ownable {
             uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
 
             require(
-                // make.offerAssetId != make.wantAssetId
-                _addresses[makerOfferAssetIndex * 2 + 1] != _addresses[makerWantAssetIndex * 2 + 1],
-                "Invalid make"
-            );
-
-            require(
-                // fill.offerAssetId != fill.wantAssetId
-                _addresses[fillerOfferAssetIndex * 2 + 1] != _addresses[fillerWantAssetIndex * 2 + 1],
-                "Invalid fill"
-            );
-
-            require(
                 // make.offerAssetId == fill.wantAssetId
                 _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
                 "Invalid match"
@@ -1001,12 +963,13 @@ contract BrokerV2 is Ownable {
                 "Invalid match"
             );
 
-
             uint256 takeAmount = _values[i] >> 16;
             require(takeAmount > 0, "Invalid takeAmount");
 
             uint256 makeDataB = _values[2 + makeIndex * 2];
             // (make.wantAmount * takeAmount) % make.offerAmount == 0
+            // this is to ensure that there would be no unfair trades
+            // caused by rounding issues
             require(
                 (makeDataB >> 128).mul(takeAmount).mod(makeDataB & ~(~uint256(0) << 128)) == 0,
                 "Invalid amounts"
@@ -1014,8 +977,12 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _validateFills(uint256[] memory _values) private pure {
-        uint256[] memory filledAmounts = new uint256[](_values.length);
+    // validate that all fills will be completely filled by the specified matches
+    function _validateFillAmounts(uint256[] memory _values) private pure {
+        // "filled" is used to store the sum of takeAmounts and giveAmounts
+        // each amount is given an individual slot so that there would not be
+        // overflow issues or vulnerabilities
+        uint256[] memory filled = new uint256[](_values.length * 2);
 
         uint256 i = 1;
         // i += numMakes * 2
@@ -1030,17 +997,14 @@ contract BrokerV2 is Ownable {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 takeAmount = _values[i] >> 16;
-
-            uint256 wantAmount = filledAmounts[2 + fillIndex * 2] >> 128;
-            wantAmount = wantAmount.add(takeAmount);
-
-            uint256 offerAmount = filledAmounts[2 + fillIndex * 2] & ~(~uint256(0) << 128);
+            uint256 wantAmount = _values[2 + makeIndex * 2] >> 128;
+            uint256 offerAmount = _values[2 + makeIndex * 2] & ~(~uint256(0) << 128);
+            uint256 mappedFillIndex = (1 + fillIndex * 2) * 2;
             // giveAmount = takeAmount * wantAmount / offerAmount
-            uint256 giveAmount = takeAmount.mul(_values[2 + makeIndex * 2] >> 128)
-                                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
-            offerAmount = offerAmount.add(giveAmount);
+            uint256 giveAmount = takeAmount.mul(wantAmount).div(offerAmount);
 
-            filledAmounts[2 + fillIndex * 2] = (wantAmount << 128) | offerAmount;
+            filled[mappedFillIndex] = filled[mappedFillIndex].add(giveAmount);
+            filled[mappedFillIndex + 1] = filled[mappedFillIndex + 1].add(takeAmount);
         }
 
         // 1 + numMakes * 2
@@ -1050,11 +1014,17 @@ contract BrokerV2 is Ownable {
 
         // loop fills
         for(i; i < end; i += 2) {
-            require(_values[i + 1] == filledAmounts[i + 1], "Invalid fills");
+            require(
+                // fill.offerAmount == (sum of given amounts for fill)
+                _values[i + 1] & ~(~uint256(0) << 128) == filled[i * 2] &&
+                // fill.wantAmount == (sum of taken amounts for fill)
+                _values[i + 1] >> 128 == filled[i * 2 + 1],
+                "Invalid fills"
+            );
         }
     }
 
-    function _validateTradeSignaturesAndAmounts(
+    function _validateTradeDataAndSignatures(
         uint256[] memory _values,
         bytes32[] memory _hashes,
         address[] memory _addresses,
@@ -1069,19 +1039,30 @@ contract BrokerV2 is Ownable {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
             address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
-            uint256 offerAmount = dataB & ~(~uint256(0) << 128);
-            uint256 wantAmount = dataB >> 128;
+            uint256 feeAssetIndex = ((dataA & ~(~uint256(0) << 40)) >> 32);
 
-            require(offerAmount > 0 && wantAmount > 0, "Invalid amounts");
-            require(_addresses[_addresses.length - 1] == _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2], "Invalid operator");
+            // offerAssetId != wantAssetId
+            require(
+                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1] !=
+                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1],
+                "Invalid trade assets"
+            );
+
+            // offerAmount > 0 && wantAmount > 0
+            require(
+                (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
+                "Invalid amounts"
+            );
+
+            require(_addresses[_addresses.length - 1] == _addresses[feeAssetIndex * 2], "Invalid operator");
 
             bytes32 hashKey = keccak256(abi.encode(
                                   typeHash,
                                   user,
                                   _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
-                                  offerAmount,
+                                  dataB & ~(~uint256(0) << 128), // offerAmount
                                   _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
-                                  wantAmount,
+                                  dataB >> 128, // wantAmount
                                   _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
                                   dataA >> 128, // feeAmount
                                   (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
