@@ -85,7 +85,7 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when make nonces are not unique', async () => {
+    contract('when makes are not unique', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.makes[0].nonce = 4
@@ -93,7 +93,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid nonces'
+                'Invalid make nonces'
             )
         })
     })
@@ -106,33 +106,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid nonces'
-            )
-        })
-    })
-
-    contract('when fill nonces are not unique', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.fills[0].nonce = 6
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid nonces'
-            )
-        })
-    })
-
-    contract('when fill nonces are not sorted in ascending order', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.fills[0].nonce = 30
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid nonces'
+                'Invalid make nonces'
             )
         })
     })
@@ -342,6 +316,19 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.makes[1].nonce = editedTradeParams.fills[0].nonce
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                'Nonce already used'
+            )
+        })
+    })
+
+    contract('when fill nonces are not unique', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.fills[0].nonce = 6
+
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],

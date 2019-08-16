@@ -525,11 +525,10 @@ contract BrokerV2 is Ownable {
         _addresses[_addresses.length - 1] = operator;
 
         _validateTradeInputLengths(_values, _hashes);
-        // VALIDATE NONCE UNIQUENESS FOR MAKES (loop makes)
-        // VALIDATE NONCE UNIQUENESS FOR FILLS (loop fills)
-        _validateNonceUniqueness(_values);
 
-        // VALIDATE MATCHES (loop matches)
+        // validate that makes in the list are not repeated
+        _validateUniqueMakes(_values);
+
         _validateMatches(_values, _addresses);
 
         // VALIDATE THAT FILLS ARE COMPLETE FILLED (loop matches)
@@ -574,10 +573,7 @@ contract BrokerV2 is Ownable {
         _deductMakerBalances(_values, _addresses);
 
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
-        _storeOffers(_values, _hashes);
-
-        // STORE MAKE NONCES (loop makes)
-        _storeMakeNonces(_values);
+        _storeOffersAndMakeNonces(_values, _hashes);
 
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // STORE FILL NONCES (loop fills)
@@ -854,33 +850,65 @@ contract BrokerV2 is Ownable {
         uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
 
         // ensure that all other bits are zero
-        require(
-            _values[0] >> 24 == 0,
-            "Invalid lengths input"
-        );
+        require(_values[0] >> 24 == 0, "Invalid lengths input");
 
+        // it is enforced by other checks that if a fill is present
+        // then it must be completely filled so there must be at least one make
+        // and at least one match in this case
+        // it is possible to have one make with no matches and no fills
+        // but that is blocked by this check as there is no foreseeable use case for it
         require(
             numMakes > 0 && numFills > 0 && numMatches > 0,
             "Invalid trade inputs"
         );
 
+        // the format of _values is:
+        // _values[0]: stores the number of makes, fills and matches
+        // followed by "numMakes * 2" slots for make data with each make taking up two slots
+        // followed by "numFills * 2" slots for fill data with each fill taking up two slots
+        // followed by "numMatches" slots for match data with each match taking up one slot
         require(
             _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches,
             "Invalid _values.length"
         );
 
+        // the format of _hashes is:
+        // "numMakes * 2" slots for r and s signature values, with each make having one r and one s value
+        // "numFills * 2" slots for r and s signature values, with each fill having one r and one s value
         require(
             _hashes.length == (numMakes + numFills) * 2,
             "Invalid _hashes.length"
         );
     }
 
-    function _validateNonceUniqueness(uint256[] memory _values) private pure {
-        uint256 lengths = _values[0];
-        uint256 numMakes = lengths & ~(~uint256(0) << 8);
-        uint256 numFills = (lengths & ~(~uint256(0) << 16)) >> 8;
-        _validateNonceUniquenessInSet(_values, 0, numMakes);
-        _validateNonceUniquenessInSet(_values, numMakes, numFills);
+    // make uniqueness must be enforced because it would otherwise be possible
+    // to repeat a make within the makes list and cause repeated deductions
+    //
+    // this is because make deductions will occur if the make's nonce has not
+    // yet been taken, and for new makes, nonces are only marked as taken
+    // at the end of the trade function
+    //
+    // uniqueness of makes are validated in O(N) time by requiring that
+    // make nonces are in a strictly ascending order
+    function _validateUniqueMakes(uint256[] memory _values) private pure {
+        uint256 start = 1;
+        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 end = start + numMakes * 2;
+
+        uint256 prevNonce;
+        uint256 mask = ~(~uint256(0) << 128);
+
+        for(uint256 i = start; i < end; i += 2) {
+            uint256 nonce = (_values[i] & mask) >> 48;
+
+            if (i == start) {
+                prevNonce = nonce;
+                continue;
+            }
+
+            require(nonce > prevNonce, "Invalid make nonces");
+            prevNonce = nonce;
+        }
     }
 
     function _validateNonceUniquenessInSet(
@@ -891,7 +919,7 @@ contract BrokerV2 is Ownable {
         private
         pure
     {
-        uint256 prevNonce = 0;
+        uint256 prevNonce;
         uint256 mask = ~(~uint256(0) << 128);
 
         start = start * 2 + 1;
@@ -902,10 +930,11 @@ contract BrokerV2 is Ownable {
 
             if (i == start) {
                 prevNonce = nonce;
-            } else {
-                require(nonce > prevNonce, "Invalid nonces");
-                prevNonce = nonce;
+                continue;
             }
+
+            require(nonce > prevNonce, "Invalid nonces");
+            prevNonce = nonce;
         }
     }
 
@@ -916,7 +945,6 @@ contract BrokerV2 is Ownable {
         private
         pure
     {
-
         uint256 i = 1;
         // i += numMakes * 2
         i += (_values[0] & ~(~uint256(0) << 8)) * 2;
@@ -1280,7 +1308,7 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _storeOffers(
+    function _storeOffersAndMakeNonces(
         uint256[] memory _values,
         bytes32[] memory _hashes
     )
@@ -1319,6 +1347,8 @@ contract BrokerV2 is Ownable {
             uint256 remainingAmount = availableAmount.sub(deductions[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
+
+            _softMarkNonce(nonce);
         }
     }
 

@@ -15,6 +15,7 @@ $ npm install solc@0.5.10
 ```
 6. Run `truffle migrate` to deploy the contracts to Ganache
 7. Run `truffle test` to run test files
+8. `truffle test test/TestBrokerV2/trade/*.js` can be used to test files in a folder
 
 ALternatively [Ganache-CLI ^6.5.0](https://github.com/trufflesuite/ganache-cli/tree/v6.5.0) can be used:
 ```

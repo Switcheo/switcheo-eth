@@ -18,7 +18,9 @@ contract('Test trade: unmatched make', async (accounts) => {
         swc = await getSwc()
     })
 
-    it('still updates offers with the make\'s available amount', async () => {
+    // this is not a feature test, it is a test to ensure that unmatched makes
+    // will still have their available offer amounts stored
+    it('updates offers with the make\'s available amount', async () => {
         await exchange.mintAndDeposit({ user: maker, token: jrc, amount: 500, nonce: 1 })
         await exchange.mintAndDeposit({ user: filler, token: swc, amount: 300, nonce: 2 })
 
