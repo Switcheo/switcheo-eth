@@ -835,18 +835,14 @@ contract BrokerV2 is Ownable {
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
-            uint256 wantAssetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            uint256 feeAmount = _values[i] >> 128;
-
             deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
             if (min > offerAssetIndex) { min = offerAssetIndex; }
             if (max < offerAssetIndex) { max = offerAssetIndex; }
 
-            if (feeAmount == 0 || _addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1] ) {
-                continue;
-            }
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
 
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
@@ -881,18 +877,14 @@ contract BrokerV2 is Ownable {
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
-            uint256 wantAssetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            uint256 feeAmount = _values[i] >> 128;
-
             deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
             if (min > offerAssetIndex) { min = offerAssetIndex; }
             if (max < offerAssetIndex) { max = offerAssetIndex; }
 
-            if (feeAmount == 0 || _addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1] ) {
-                continue;
-            }
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
 
+            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
@@ -965,20 +957,13 @@ contract BrokerV2 is Ownable {
         // loop matches
         for(i; i < end; i++) {
             uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 nonce = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 128)) >> 48;
-
             uint256 wantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-            uint256 feeAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 32)) >> 24;
 
             // takeAmount
             uint256 amount = _values[i] >> 16;
             // receiveAmount = takeAmount * wantAmount / offerAmount
             amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
                            .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
-
-            if (!_nonceTaken(nonce) && _addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1]) {
-                amount = amount.sub(_values[1 + makeIndex * 2] >> 128);
-            }
 
             increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
 
@@ -1015,19 +1000,14 @@ contract BrokerV2 is Ownable {
             uint256 wantAssetIndex = ((_values[i] & ~(~uint256(0) << 24)) >> 16);
             uint256 wantAmount = _values[i + 1] >> 128;
 
-            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
-            uint256 feeAmount = _values[i] >> 128;
-
-            if (_addresses[wantAssetIndex * 2 + 1] == _addresses[feeAssetIndex * 2 + 1]) {
-                wantAmount = wantAmount.sub(feeAmount);
-            }
-
             increments[wantAssetIndex] = increments[wantAssetIndex].add(wantAmount);
             if (min > wantAssetIndex) { min = wantAssetIndex; }
             if (max < wantAssetIndex) { max = wantAssetIndex; }
 
+            uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
+            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
