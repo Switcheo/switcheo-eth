@@ -57,7 +57,8 @@ contract('Test trade: one fill many makes', async (accounts) => {
             { makeIndex: 0, fillIndex: 2, takeAmount: 19 },
             { makeIndex: 1, fillIndex: 2, takeAmount: 40 }
         ]
-        await exchange.trade({ operator, makes, fills, matches }, { privateKeys })
+        const result = await exchange.trade({ operator, makes, fills, matches }, { privateKeys })
+        console.log('gas used', result.receipt.gasUsed / 2)
 
         await validateBalance(maker, jrc, 381) // 500 jrc - 100 jrc - 19 jrc
         await validateBalance(maker, swc, 23) // 20 swc + 11 swc - 7 swc - 1 swc

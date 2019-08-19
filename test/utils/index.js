@@ -157,11 +157,12 @@ function decodeReceiptLogs(receiptLogs) {
     return decodedLogs
 }
 
-async function depositToken({ user, token, amount, nonce }) {
+async function depositToken({ user, token, amount, expectedAmount, nonce }) {
+    if (expectedAmount === undefined) { expectedAmount = amount }
     user = ensureAddress(user)
     const broker = await getBroker()
     await token.approve(broker.address, amount, { from: user })
-    await broker.depositToken(user, token.address, nonce)
+    await broker.depositToken(user, token.address, amount, expectedAmount, nonce)
 }
 
 async function mintAndDeposit({ user, token, amount, nonce }) {
@@ -211,7 +212,7 @@ async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
         [TYPEHASHES.AUTHORIZE_SPENDER_TYPEHASH, user, spender, nonce],
         privateKey
     )
-    return await broker.authorizeSpender(user, spender, nonce, v, r, s)
+    return await broker.authorizeSpender(user, spender, nonce, v, r, s, false)
 }
 
 async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
@@ -224,7 +225,7 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
         [TYPEHASHES.WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce],
         privateKey
     )
-    return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s)
+    return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s, false)
 }
 
 function constructTradeData(data) {
@@ -332,8 +333,6 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }, trans
         values.push(value)
     }
 
-    addresses.push(ZERO_ADDR)
-
     if (transform !== undefined) { transform({ values, hashes, addresses }) }
 
     return await broker.trade(values, hashes, addresses)
@@ -370,7 +369,7 @@ async function createSwap({ maker, taker, assetId, amount, hashedSecret, expiryT
     const addresses = [maker, taker, assetId, feeAssetId]
     const values = [amount, expiryTime, feeAmount, nonce]
     const hashes = [hashedSecret, r, s]
-    return await broker.createSwap(addresses, values, hashes, v)
+    return await broker.createSwap(addresses, values, hashes, v, false)
 }
 
 async function executeSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, secret }) {

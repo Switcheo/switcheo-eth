@@ -13,7 +13,6 @@ module.exports = {
                 return new PrivateKeyProvider(process.env.controlKey, "https://ropsten.infura.io/")
             },
             network_id: 3,
-            gas: 8000000, // gas limit
             gasPrice: 10 * 1000000000
         },
         mainnet: {
@@ -22,7 +21,6 @@ module.exports = {
                 return new PrivateKeyProvider(process.env.controlKey, "https://mainnet.infura.io/")
             },
             network_id: 1,
-            gas: 8000000, // gas limit
             gasPrice: 20 * 1000000000
         }
     },

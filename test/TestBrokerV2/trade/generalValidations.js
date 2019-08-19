@@ -25,16 +25,6 @@ contract('Test trade: general validations', async (accounts) => {
         tradeParams = await getTradeParams(accounts)
     })
 
-    contract('when lengths input does not match expected format', async () => {
-        it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values, fill }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)).or(shl(1, 27)) },
-                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid lengths input'
-            )
-        })
-    })
-
     contract('when numMakes is 0', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],

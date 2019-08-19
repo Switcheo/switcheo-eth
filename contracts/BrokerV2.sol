@@ -2,11 +2,18 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
-import "./lib/introspection/IERC1820Registry.sol";
 
-contract ERC20Token {
+interface ERC20Token {
     function allowance(address owner, address spender) external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
+}
+
+interface IERC1820Registry {
+    function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
+}
+
+interface BrokerValidator {
+    function validateTrades(uint256[] calldata _values, bytes32[] calldata _hashes, address[] calldata _addresses, address _operator) external;
 }
 
 contract BrokerV2 is Ownable {
@@ -28,6 +35,7 @@ contract BrokerV2 is Ownable {
     address public constant VERIFYING_CONTRACT = address(1);
     bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt"); */
 
+    bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
     /* bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
         "EIP712Domain(",
             "string name,",
@@ -37,8 +45,8 @@ contract BrokerV2 is Ownable {
             "bytes32 salt",
         ")"
     )); */
-    bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
 
+    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
     /* bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
         EIP712_DOMAIN_TYPEHASH,
         CONTRACT_NAME,
@@ -47,8 +55,8 @@ contract BrokerV2 is Ownable {
         VERIFYING_CONTRACT,
         SALT
     )); */
-    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
 
+    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
     /* bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
         "AuthorizeSpender(",
             "address user,",
@@ -56,8 +64,8 @@ contract BrokerV2 is Ownable {
             "uint256 nonce",
         ")"
     )); */
-    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
 
+    bytes32 public constant WITHDRAW_TYPEHASH = 0x022201e899466f5f66e5c18267f163396774140999328264ade6a71fa5be02de;
     /* bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
         "Withdraw(",
             "address withdrawer,",
@@ -68,8 +76,8 @@ contract BrokerV2 is Ownable {
             "uint256 nonce",
         ")"
     )); */
-    bytes32 public constant WITHDRAW_TYPEHASH = 0x022201e899466f5f66e5c18267f163396774140999328264ade6a71fa5be02de;
 
+    bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
     /* bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
         "Offer(",
             "address maker,",
@@ -82,8 +90,8 @@ contract BrokerV2 is Ownable {
             "uint256 nonce",
         ")"
     )); */
-    bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
 
+    bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
     /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
         "Fill(",
             "address filler,",
@@ -96,8 +104,8 @@ contract BrokerV2 is Ownable {
             "uint256 nonce",
         ")"
     )); */
-    bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
 
+    bytes32 public constant SWAP_TYPEHASH = 0x6ba9001457a287c210b728198a424a4222098d7fac48f8c5fb5ab10ef907d3ef;
     /* bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
         "Swap(",
             "address maker,",
@@ -111,7 +119,6 @@ contract BrokerV2 is Ownable {
             "uint256 nonce",
         ")"
     )); */
-    bytes32 public constant SWAP_TYPEHASH = 0x6ba9001457a287c210b728198a424a4222098d7fac48f8c5fb5ab10ef907d3ef;
 
     // Ether token "address" is set as the constant 0x00
     address private constant ETHER_ADDR = address(0);
@@ -147,6 +154,8 @@ contract BrokerV2 is Ownable {
 
     uint256 public slowWithdrawDelay; // position 3
     uint256 public slowCancelDelay; // position 4
+
+    BrokerValidator private validator;
 
     mapping(bytes32 => uint256) public offers; // position 5
     mapping(uint256 => uint256) public usedNonces; // position 6
@@ -227,11 +236,13 @@ contract BrokerV2 is Ownable {
     event ExecuteSwap(bytes32 indexed hashedSecret);
     event CancelSwap(bytes32 indexed hashedSecret);
 
-    constructor() public {
+    constructor(address validatorAddress) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
+
+        validator = BrokerValidator(validatorAddress);
 
         IERC1820Registry erc1820 = IERC1820Registry(
             0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24
@@ -314,7 +325,8 @@ contract BrokerV2 is Ownable {
         uint256 _nonce,
         uint8 _v,
         bytes32 _r,
-        bytes32 _s
+        bytes32 _s,
+        bool _prefixedSignature
     )
         external
         onlyAdmin
@@ -328,7 +340,8 @@ contract BrokerV2 is Ownable {
                 _user,
                 _spender,
                 _nonce
-            ))
+            )),
+            _prefixedSignature
         );
         spenderAuthorizations[_user][_spender] = true;
         emit AuthorizeSpender(_user, _spender, _nonce);
@@ -374,6 +387,8 @@ contract BrokerV2 is Ownable {
     function depositToken(
         address _user,
         address _assetId,
+        uint256 _amount,
+        uint256 _expectedAmount,
         uint256 _nonce
     )
         external
@@ -385,41 +400,41 @@ contract BrokerV2 is Ownable {
             "Whitelisted tokens cannot use this method of transfer"
         );
         _markNonce(_nonce);
+
+        _increaseBalance(
+            _user,
+            _assetId,
+            _expectedAmount,
+            REASON_DEPOSIT,
+            _nonce,
+            0
+        );
+
         _validateContractAddress(_assetId);
 
         ERC20Token token = ERC20Token(_assetId);
         uint256 initialBalance = token.balanceOf(address(this));
-        uint256 amount = token.allowance(_user, address(this));
-        uint256 maxAmount = token.balanceOf(_user);
-
-        // ensure that "amount" does not exceed what the user has
-        if (amount > maxAmount) { amount = maxAmount; }
-        if (amount == 0) { return; }
 
         // ERC20Token cannot be used for transferFrom calls because some
         // tokens have a transferFrom which returns a boolean and some do not
         // having two overloaded transferFrom methods does not work
         // as the signatures are the same but the return values are not
         bytes memory payload = abi.encodeWithSignature(
-                                   "transferFrom(address,address,uint256)",
-                                   _user,
-                                   address(this),
-                                   amount
-                               );
+            "transferFrom(address,address,uint256)",
+            _user,
+            address(this),
+            _amount
+        );
         bytes memory returnData = _callContract(_assetId, payload);
         // ensure that asset transfer succeeded
         _validateTransferResult(returnData);
 
         uint256 finalBalance = token.balanceOf(address(this));
-        uint256 transferredAmount = finalBalance - initialBalance;
+        uint256 transferredAmount = finalBalance.sub(initialBalance);
 
-        _increaseBalance(
-            _user,
-            _assetId,
-            transferredAmount,
-            REASON_DEPOSIT,
-            _nonce,
-            0
+        require(
+            transferredAmount == _expectedAmount,
+            "Invalid transferred amount"
         );
     }
 
@@ -514,26 +529,25 @@ contract BrokerV2 is Ownable {
     //    assetId2,
     // ]
     function trade(
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        address[] memory _addresses
+        uint256[] calldata _values,
+        bytes32[] calldata _hashes,
+        address[] calldata _addresses
     )
-        public
+        external
         onlyAdmin
         onlyActiveState
     {
-        _addresses[_addresses.length - 1] = operator;
+        // used to store the hash keys of each make
+        bytes32[] memory hashKeys = new bytes32[](_values[0] & ~(~uint256(0) << 8));
 
-        _validateTradeInputLengths(_values, _hashes);
-        _validateUniqueMakes(_values);
-        _validateMatches(_values, _addresses);
-        _validateFillAmounts(_values);
+        validator.validateTrades(_values, _hashes, _addresses, operator);
 
         // validate data and signatures of all makes
         _validateTradeDataAndSignatures(
             _values,
             _hashes,
             _addresses,
+            hashKeys,
             OFFER_TYPEHASH,
             0,
             _values[0] & ~(~uint256(0) << 8) // numMakes
@@ -544,6 +558,7 @@ contract BrokerV2 is Ownable {
             _values,
             _hashes,
             _addresses,
+            new bytes32[](0),
             FILL_TYPEHASH,
             _values[0] & ~(~uint256(0) << 8), // numMakes
             (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numMakes + numFills
@@ -568,7 +583,7 @@ contract BrokerV2 is Ownable {
         _deductMakerBalances(_values, _addresses);
 
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
-        _storeOffersAndMakeNonces(_values, _hashes);
+        _storeOffersAndMakeNonces(_values, hashKeys);
 
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // STORE FILL NONCES (loop fills)
@@ -584,7 +599,8 @@ contract BrokerV2 is Ownable {
         uint256 _nonce,
         uint8 _v,
         bytes32 _r,
-        bytes32 _s
+        bytes32 _s,
+        bool _prefixedSignature
     )
         external
         onlyAdmin
@@ -601,7 +617,8 @@ contract BrokerV2 is Ownable {
                 _feeAssetId,
                 _feeAmount,
                 _nonce
-            ))
+            )),
+            _prefixedSignature
         );
 
         _withdraw(
@@ -673,7 +690,8 @@ contract BrokerV2 is Ownable {
         address[4] calldata _addresses,
         uint256[4] calldata _values,
         bytes32[3] calldata _hashes,
-        uint8 _v
+        uint8 _v,
+        bool _prefixedSignature
     )
         external
         onlyAdmin
@@ -686,7 +704,7 @@ contract BrokerV2 is Ownable {
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
 
         require(!atomicSwaps[swapHash], "Invalid swap");
-        _validateSignature(_addresses[0], _v, _hashes[1], _hashes[2], swapHash);
+        _validateSignature(_addresses[0], _v, _hashes[1], _hashes[2], swapHash, _prefixedSignature);
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
             require(_values[2] < _values[0], "Invalid fee amount"); // feeAmount < amount
@@ -709,7 +727,6 @@ contract BrokerV2 is Ownable {
             _values[3], // nonce
             0
         );
-
 
         atomicSwaps[swapHash] = true;
 
@@ -833,202 +850,12 @@ contract BrokerV2 is Ownable {
         emit CancelSwap(_hashedSecret);
     }
 
-    function _validateTradeInputLengths(
-        uint256[] memory _values,
-        bytes32[] memory _hashes
-    )
-        private
-        pure
-    {
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
-        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
-
-        // ensure that all other bits are zero
-        require(_values[0] >> 24 == 0, "Invalid lengths input");
-
-        // it is enforced by other checks that if a fill is present
-        // then it must be completely filled so there must be at least one make
-        // and at least one match in this case
-        // it is possible to have one make with no matches and no fills
-        // but that is blocked by this check as there is no foreseeable use case for it
-        require(
-            numMakes > 0 && numFills > 0 && numMatches > 0,
-            "Invalid trade inputs"
-        );
-
-        // the format of _values is:
-        // _values[0]: stores the number of makes, fills and matches
-        // followed by "numMakes * 2" slots for make data with each make taking up two slots
-        // followed by "numFills * 2" slots for fill data with each fill taking up two slots
-        // followed by "numMatches" slots for match data with each match taking up one slot
-        require(
-            _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches,
-            "Invalid _values.length"
-        );
-
-        // the format of _hashes is:
-        // "numMakes * 2" slots for r and s signature values, with each make having one r and one s value
-        // "numFills * 2" slots for r and s signature values, with each fill having one r and one s value
-        require(
-            _hashes.length == (numMakes + numFills) * 2,
-            "Invalid _hashes.length"
-        );
-    }
-
-    // make uniqueness must be enforced because it would otherwise be possible
-    // to repeat a make within the makes list and cause repeated deductions
-    //
-    // this is because make deductions will occur if the make's nonce has not
-    // yet been taken, and for new makes, nonces are only marked as taken
-    // at the end of the trade function
-    //
-    // uniqueness of makes are validated in O(N) time by requiring that
-    // make nonces are in a strictly ascending order
-    function _validateUniqueMakes(uint256[] memory _values) private pure {
-        uint256 start = 1;
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
-        uint256 end = start + numMakes * 2;
-
-        uint256 prevNonce;
-        uint256 mask = ~(~uint256(0) << 128);
-
-        for(uint256 i = start; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask) >> 48;
-
-            if (i == start) {
-                prevNonce = nonce;
-                continue;
-            }
-
-            require(nonce > prevNonce, "Invalid make nonces");
-            prevNonce = nonce;
-        }
-    }
-
-    // validate that for every match:
-    // 1. makeIndexes fall within the range of makes
-    // 2. fillIndexes falls within the range of fills
-    // 3. make.offerAssetId == fill.wantAssetId
-    // 4. make.wantAssetId == fill.offerAssetId
-    // 5. takeAmount > 0
-    // 6. (make.wantAmount * takeAmount) % make.offerAmount == 0
-    function _validateMatches(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-        pure
-    {
-        uint256 i = 1;
-        // i += numMakes * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
-
-        // loop matches
-        for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-
-            require(
-                makeIndex < numMakes,
-                "Invalid makeIndex"
-            );
-
-            require(
-                fillIndex >= numMakes && fillIndex < numMakes + numFills,
-                "Invalid fillIndex"
-            );
-
-            uint256 makerOfferAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 makerWantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-
-            require(
-                // make.offerAssetId == fill.wantAssetId
-                _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
-                "Invalid match"
-            );
-
-            require(
-                // make.wantAssetId == fill.offerAssetId
-                _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
-                "Invalid match"
-            );
-
-            uint256 takeAmount = _values[i] >> 16;
-            require(takeAmount > 0, "Invalid takeAmount");
-
-            uint256 makeDataB = _values[2 + makeIndex * 2];
-            // (make.wantAmount * takeAmount) % make.offerAmount == 0
-            // this is to ensure that there would be no unfair trades
-            // caused by rounding issues
-            require(
-                (makeDataB >> 128).mul(takeAmount).mod(makeDataB & ~(~uint256(0) << 128)) == 0,
-                "Invalid amounts"
-            );
-        }
-    }
-
-    // validate that all fills will be completely filled by the specified matches
-    function _validateFillAmounts(uint256[] memory _values) private pure {
-        // "filled" is used to store the sum of takeAmounts and giveAmounts
-        // each amount is given an individual slot so that there would not be
-        // overflow issues or vulnerabilities
-        uint256[] memory filled = new uint256[](_values.length * 2);
-
-        uint256 i = 1;
-        // i += numMakes * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 takeAmount = _values[i] >> 16;
-            uint256 wantAmount = _values[2 + makeIndex * 2] >> 128;
-            uint256 offerAmount = _values[2 + makeIndex * 2] & ~(~uint256(0) << 128);
-            uint256 mappedFillIndex = (1 + fillIndex * 2) * 2;
-            // giveAmount = takeAmount * wantAmount / offerAmount
-            uint256 giveAmount = takeAmount.mul(wantAmount).div(offerAmount);
-
-            filled[mappedFillIndex] = filled[mappedFillIndex].add(giveAmount);
-            filled[mappedFillIndex + 1] = filled[mappedFillIndex + 1].add(takeAmount);
-        }
-
-        // 1 + numMakes * 2
-        i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            require(
-                // fill.offerAmount == (sum of given amounts for fill)
-                _values[i + 1] & ~(~uint256(0) << 128) == filled[i * 2] &&
-                // fill.wantAmount == (sum of taken amounts for fill)
-                _values[i + 1] >> 128 == filled[i * 2 + 1],
-                "Invalid fills"
-            );
-        }
-    }
-
     function _validateTradeDataAndSignatures(
         uint256[] memory _values,
         bytes32[] memory _hashes,
         address[] memory _addresses,
-        bytes32 typeHash,
+        bytes32[] memory _hashKeys,
+        bytes32 _typehash,
         uint256 i,
         uint256 end
     )
@@ -1039,25 +866,9 @@ contract BrokerV2 is Ownable {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
             address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
-            uint256 feeAssetIndex = ((dataA & ~(~uint256(0) << 40)) >> 32);
-
-            // offerAssetId != wantAssetId
-            require(
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1] !=
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1],
-                "Invalid trade assets"
-            );
-
-            // offerAmount > 0 && wantAmount > 0
-            require(
-                (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
-                "Invalid amounts"
-            );
-
-            require(_addresses[_addresses.length - 1] == _addresses[feeAssetIndex * 2], "Invalid operator");
 
             bytes32 hashKey = keccak256(abi.encode(
-                                  typeHash,
+                                  _typehash,
                                   user,
                                   _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
                                   dataB & ~(~uint256(0) << 128), // offerAmount
@@ -1068,15 +879,20 @@ contract BrokerV2 is Ownable {
                                   (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
                               ));
 
+            bool prefixedSignature = _values[0] & (uint256(1) << (24 + i)) != 0;
+
             _validateSignature(
                 user,
                 uint8((dataA & ~(~uint256(0) << 48)) >> 40),
                 _hashes[i * 2],
                 _hashes[i * 2 + 1],
-                hashKey
+                hashKey,
+                prefixedSignature
             );
 
-            _hashes[i * 2] = hashKey;
+            if (_hashKeys.length > 0) {
+                _hashKeys[i] = hashKey;
+            }
         }
     }
 
@@ -1291,7 +1107,7 @@ contract BrokerV2 is Ownable {
 
     function _storeOffersAndMakeNonces(
         uint256[] memory _values,
-        bytes32[] memory _hashes
+        bytes32[] memory _hashKeys
     )
         private
     {
@@ -1320,7 +1136,7 @@ contract BrokerV2 is Ownable {
         for (i; i < end; i++) {
             uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
             bool existingOffer = _nonceTaken(nonce);
-            bytes32 hashKey = _hashes[i * 2];
+            bytes32 hashKey = _hashKeys[i];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
             require(availableAmount > 0, "Invalid availableAmount");
@@ -1411,17 +1227,17 @@ contract BrokerV2 is Ownable {
         returns (bytes32)
     {
         return keccak256(abi.encode(
-                            SWAP_TYPEHASH,
-                            _addresses[0], // maker
-                            _addresses[1], // taker
-                            _addresses[2], // assetId
-                            _values[0], // amount
-                            _hashedSecret, // hashedSecret
-                            _values[1], // expiryTime
-                            _addresses[3], // feeAssetId
-                            _values[2], // feeAmount
-                            _values[3] // nonce
-                        ));
+            SWAP_TYPEHASH,
+            _addresses[0], // maker
+            _addresses[1], // taker
+            _addresses[2], // assetId
+            _values[0], // amount
+            _hashedSecret, // hashedSecret
+            _values[1], // expiryTime
+            _addresses[3], // feeAssetId
+            _values[2], // feeAmount
+            _values[3] // nonce
+        ));
     }
 
     function _nonceTaken(uint256 _nonce) private view returns (bool) {
@@ -1448,7 +1264,7 @@ contract BrokerV2 is Ownable {
         require(_nonce != 0, "Invalid nonce");
 
         uint256 slotData = _nonce.div(256);
-        uint256 shiftedBit = 1 << _nonce.mod(256);
+        uint256 shiftedBit = uint256(1) << _nonce.mod(256);
         uint256 bits = usedNonces[slotData];
 
         if (bits & shiftedBit != 0) { return; }
@@ -1460,7 +1276,8 @@ contract BrokerV2 is Ownable {
         uint8 _v,
         bytes32 _r,
         bytes32 _s,
-        bytes32 _hash
+        bytes32 _hash,
+        bool _prefixed
     )
         private
         pure
@@ -1470,7 +1287,16 @@ contract BrokerV2 is Ownable {
             DOMAIN_SEPARATOR,
             _hash
         ));
-        require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
+
+        if (_prefixed) {
+            bytes32 prefixedHash = keccak256(abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                eip712Hash
+            ));
+            require(_user == ecrecover(prefixedHash, _v, _r, _s), "Invalid signature");
+        } else {
+            require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
+        }
     }
 
     function _callContract(
