@@ -1,4 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashMake,
+const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
         exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
@@ -24,8 +24,8 @@ contract('Test trade: batch', async (accounts) => {
             await exchange.mintAndDeposit({ user: filler, token: swc, amount: 300, nonce: 2 })
 
             const tradeParams = await getTradeParams(accounts)
-            const makeHash1 = hashMake(tradeParams.makes[0])
-            const makeHash2 = hashMake(tradeParams.makes[1])
+            const offerHash1 = hashOffer(tradeParams.offers[0])
+            const offerHash2 = hashOffer(tradeParams.offers[1])
 
             await validateBalance(maker, jrc, 500)
             await validateBalance(maker, swc, 0)
@@ -54,8 +54,8 @@ contract('Test trade: batch', async (accounts) => {
                          .or(shl(1, 6))
             )
 
-            await assertAsync(broker.offers(makeHash1), 60)
-            await assertAsync(broker.offers(makeHash2), 60)
+            await assertAsync(broker.offers(offerHash1), 60)
+            await assertAsync(broker.offers(offerHash2), 60)
         })
     })
 })

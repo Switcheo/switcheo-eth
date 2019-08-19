@@ -1,4 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashMake,
+const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
         exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
@@ -44,10 +44,10 @@ contract('Test trade: fees', async (accounts) => {
         })
     })
 
-    contract('when make.feeAssetId == make.wantAssetId', async () => {
+    contract('when offer.feeAssetId == offer.wantAssetId', async () => {
         it('deducts the fee amount from the maker\'s received amount', async () => {
             const tradeParams = await getTradeParams(accounts)
-            tradeParams.makes[1].feeAmount = 7
+            tradeParams.offers[1].feeAmount = 7
             await exchange.trade(tradeParams, { privateKeys })
             await validateBalance(maker, jrc, 300) // 500 jrc - 100 jrc - 100 jrc
             await validateBalance(maker, swc, 33) // received 20 swc + 20 swc
@@ -56,11 +56,11 @@ contract('Test trade: fees', async (accounts) => {
         })
     })
 
-    contract('when make.feeAssetId != make.wantAssetId', async () => {
+    contract('when offer.feeAssetId != offer.wantAssetId', async () => {
         it('deducts the fee amount from the maker\'s available balance', async () => {
             const tradeParams = await getTradeParams(accounts)
-            tradeParams.makes[1].feeAssetId = jrc.address
-            tradeParams.makes[1].feeAmount = 7
+            tradeParams.offers[1].feeAssetId = jrc.address
+            tradeParams.offers[1].feeAmount = 7
             await exchange.trade(tradeParams, { privateKeys })
             await validateBalance(maker, jrc, 293) // 500 jrc - 100 jrc - 100 jrc
             await validateBalance(maker, swc, 40) // received 20 swc + 20 swc

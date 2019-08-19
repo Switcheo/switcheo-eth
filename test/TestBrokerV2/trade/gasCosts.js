@@ -1,4 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashMake,
+const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
         exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 const { PRIVATE_KEYS } = require('../../wallets')
@@ -31,12 +31,12 @@ async function batchTrade(batchSize, accounts) {
     await exchange.mintAndDeposit({ user: maker, token: jrc, amount: batchSize * 2 * 100, nonce: 1 })
     await exchange.mintAndDeposit({ user: filler, token: swc, amount: batchSize * 2 * 50, nonce: 2 })
 
-    const makes = []
+    const offers = []
     const fills = []
     const matches = []
 
     for (let i = 0; i < batchSize; i++) {
-        makes.push(
+        offers.push(
             {
                 maker,
                 offerAssetId: jrc.address,
@@ -59,7 +59,7 @@ async function batchTrade(batchSize, accounts) {
             nonce: 10 + batchSize * 4 + i
         })
         matches.push({
-            makeIndex: i,
+            offerIndex: i,
             fillIndex: batchSize + i,
             takeAmount: 100
         })
@@ -67,7 +67,7 @@ async function batchTrade(batchSize, accounts) {
 
     const result = await exchange.trade({
         operator,
-        makes,
+        offers,
         fills,
         matches
     }, { privateKeys })
@@ -95,7 +95,7 @@ contract('Test trade: gas costs', async (accounts) => {
             await exchange.mintAndDeposit({ user: filler, token: swc, amount: 30, nonce: 2 })
             await assertAsync(broker.usedNonces(0), shl(1, 1).or(shl(1, 2)))
 
-            const make = {
+            const offer = {
                 maker,
                 offerAssetId: jrc.address,
                 offerAmount: 100,
@@ -116,17 +116,17 @@ contract('Test trade: gas costs', async (accounts) => {
                 nonce: 4
             }
             const matches = [{
-                makeIndex: 0,
+                offerIndex: 0,
                 fillIndex: 1,
                 takeAmount: 40
             }]
 
-            const makeHash = hashMake(make)
-            await assertAsync(broker.offers(makeHash), 0)
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 0)
 
             const result = await exchange.trade({
                 operator,
-                makes: [make],
+                offers: [offer],
                 fills: [fill],
                 matches
             }, { privateKeys })
@@ -140,7 +140,7 @@ contract('Test trade: gas costs', async (accounts) => {
             await validateBalance(operator, swc, 0) // unchanged
 
             // assert that remaining available offer amount is stored
-            await assertAsync(broker.offers(makeHash), 60) // 60 jrc remaining, 100 jrc - 40 jrc
+            await assertAsync(broker.offers(offerHash), 60) // 60 jrc remaining, 100 jrc - 40 jrc
             // assert that all nonces have been marked as used
             await assertAsync(broker.usedNonces(0), shl(1, 1).or(shl(1, 2)).or(shl(1, 3)).or(shl(1, 4)))
         })

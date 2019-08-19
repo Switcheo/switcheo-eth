@@ -15,7 +15,7 @@ contract BrokerValidator {
         pure
     {
         _validateTradeInputLengths(_values, _hashes);
-        _validateUniqueMakes(_values);
+        _validateUniqueOffers(_values);
         _validateMatches(_values, _addresses);
         _validateFillAmounts(_values);
         _validateTradeData(_values, _addresses, _operator);
@@ -28,52 +28,52 @@ contract BrokerValidator {
         private
         pure
     {
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
         uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
 
         // it is enforced by other checks that if a fill is present
-        // then it must be completely filled so there must be at least one make
+        // then it must be completely filled so there must be at least one offer
         // and at least one match in this case
-        // it is possible to have one make with no matches and no fills
+        // it is possible to have one offer with no matches and no fills
         // but that is blocked by this check as there is no foreseeable use case for it
         require(
-            numMakes > 0 && numFills > 0 && numMatches > 0,
+            numOffers > 0 && numFills > 0 && numMatches > 0,
             "Invalid trade inputs"
         );
 
         // the format of _values is:
-        // _values[0]: stores the number of makes, fills and matches
-        // followed by "numMakes * 2" slots for make data with each make taking up two slots
+        // _values[0]: stores the number of offers, fills and matches
+        // followed by "numOffers * 2" slots for offer data with each offer taking up two slots
         // followed by "numFills * 2" slots for fill data with each fill taking up two slots
         // followed by "numMatches" slots for match data with each match taking up one slot
         require(
-            _values.length == 1 + numMakes * 2 + numFills * 2 + numMatches,
+            _values.length == 1 + numOffers * 2 + numFills * 2 + numMatches,
             "Invalid _values.length"
         );
 
         // the format of _hashes is:
-        // "numMakes * 2" slots for r and s signature values, with each make having one r and one s value
+        // "numOffers * 2" slots for r and s signature values, with each offer having one r and one s value
         // "numFills * 2" slots for r and s signature values, with each fill having one r and one s value
         require(
-            _hashes.length == (numMakes + numFills) * 2,
+            _hashes.length == (numOffers + numFills) * 2,
             "Invalid _hashes.length"
         );
     }
 
-    // make uniqueness must be enforced because it would otherwise be possible
-    // to repeat a make within the makes list and cause repeated deductions
+    // offer uniqueness must be enforced because it would otherwise be possible
+    // to repeat an offer within the offers list and cause repeated deductions
     //
-    // this is because make deductions will occur if the make's nonce has not
-    // yet been taken, and for new makes, nonces are only marked as taken
+    // this is because offer deductions will occur if the offer's nonce has not
+    // yet been taken, and for new offers, nonces are only marked as taken
     // at the end of the trade function
     //
-    // uniqueness of makes are validated in O(N) time by requiring that
-    // make nonces are in a strictly ascending order
-    function _validateUniqueMakes(uint256[] memory _values) private pure {
+    // uniqueness of offers are validated in O(N) time by requiring that
+    // offer nonces are in a strictly ascending order
+    function _validateUniqueOffers(uint256[] memory _values) private pure {
         uint256 start = 1;
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
-        uint256 end = start + numMakes * 2;
+        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
+        uint256 end = start + numOffers * 2;
 
         uint256 prevNonce;
         uint256 mask = ~(~uint256(0) << 128);
@@ -86,18 +86,18 @@ contract BrokerValidator {
                 continue;
             }
 
-            require(nonce > prevNonce, "Invalid make nonces");
+            require(nonce > prevNonce, "Invalid offer nonces");
             prevNonce = nonce;
         }
     }
 
     // validate that for every match:
-    // 1. makeIndexes fall within the range of makes
+    // 1. offerIndexes fall within the range of offers
     // 2. fillIndexes falls within the range of fills
-    // 3. make.offerAssetId == fill.wantAssetId
-    // 4. make.wantAssetId == fill.offerAssetId
+    // 3. offer.offerAssetId == fill.wantAssetId
+    // 4. offer.wantAssetId == fill.offerAssetId
     // 5. takeAmount > 0
-    // 6. (make.wantAmount * takeAmount) % make.offerAmount == 0
+    // 6. (offer.wantAmount * takeAmount) % offer.offerAmount == 0
     function _validateMatches(
         uint256[] memory _values,
         address[] memory _addresses
@@ -106,44 +106,44 @@ contract BrokerValidator {
         pure
     {
         uint256 i = 1;
-        // i += numMakes * 2
+        // i += numOffers * 2
         i += (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i += numFills * 2
         i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
 
         uint256 end = _values.length;
 
-        uint256 numMakes = _values[0] & ~(~uint256(0) << 8);
+        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
 
             require(
-                makeIndex < numMakes,
-                "Invalid makeIndex"
+                offerIndex < numOffers,
+                "Invalid offerIndex"
             );
 
             require(
-                fillIndex >= numMakes && fillIndex < numMakes + numFills,
+                fillIndex >= numOffers && fillIndex < numOffers + numFills,
                 "Invalid fillIndex"
             );
 
-            uint256 makerOfferAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 makerWantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            uint256 makerOfferAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 16)) >> 8;
+            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
             uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
             uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
 
             require(
-                // make.offerAssetId == fill.wantAssetId
+                // offer.offerAssetId == fill.wantAssetId
                 _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
                 "Invalid match"
             );
 
             require(
-                // make.wantAssetId == fill.offerAssetId
+                // offer.wantAssetId == fill.offerAssetId
                 _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
                 "Invalid match"
             );
@@ -151,12 +151,12 @@ contract BrokerValidator {
             uint256 takeAmount = _values[i] >> 16;
             require(takeAmount > 0, "Invalid takeAmount");
 
-            uint256 makeDataB = _values[2 + makeIndex * 2];
-            // (make.wantAmount * takeAmount) % make.offerAmount == 0
+            uint256 offerDataB = _values[2 + offerIndex * 2];
+            // (offer.wantAmount * takeAmount) % offer.offerAmount == 0
             // this is to ensure that there would be no unfair trades
             // caused by rounding issues
             require(
-                (makeDataB >> 128).mul(takeAmount).mod(makeDataB & ~(~uint256(0) << 128)) == 0,
+                (offerDataB >> 128).mul(takeAmount).mod(offerDataB & ~(~uint256(0) << 128)) == 0,
                 "Invalid amounts"
             );
         }
@@ -170,7 +170,7 @@ contract BrokerValidator {
         uint256[] memory filled = new uint256[](_values.length * 2);
 
         uint256 i = 1;
-        // i += numMakes * 2
+        // i += numOffers * 2
         i += (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i += numFills * 2
         i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -179,11 +179,11 @@ contract BrokerValidator {
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 takeAmount = _values[i] >> 16;
-            uint256 wantAmount = _values[2 + makeIndex * 2] >> 128;
-            uint256 offerAmount = _values[2 + makeIndex * 2] & ~(~uint256(0) << 128);
+            uint256 wantAmount = _values[2 + offerIndex * 2] >> 128;
+            uint256 offerAmount = _values[2 + offerIndex * 2] & ~(~uint256(0) << 128);
             uint256 mappedFillIndex = (1 + fillIndex * 2) * 2;
             // giveAmount = takeAmount * wantAmount / offerAmount
             uint256 giveAmount = takeAmount.mul(wantAmount).div(offerAmount);
@@ -192,7 +192,7 @@ contract BrokerValidator {
             filled[mappedFillIndex + 1] = filled[mappedFillIndex + 1].add(takeAmount);
         }
 
-        // 1 + numMakes * 2
+        // 1 + numOffers * 2
         i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i + numFills * 2
         end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -217,7 +217,7 @@ contract BrokerValidator {
         private
         pure
     {
-        // numMakes + numFills
+        // numOffers + numFills
         uint256 end = (_values[0] & ~(~uint256(0) << 8)) +
                       ((_values[0] & ~(~uint256(0) << 16)) >> 8);
 

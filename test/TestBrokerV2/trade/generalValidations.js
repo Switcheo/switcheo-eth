@@ -1,4 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashMake,
+const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
         exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
@@ -25,7 +25,7 @@ contract('Test trade: general validations', async (accounts) => {
         tradeParams = await getTradeParams(accounts)
     })
 
-    contract('when numMakes is 0', async () => {
+    contract('when numOffers is 0', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values, fill }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
@@ -55,7 +55,7 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when _values.length does not match number of makes and fills', async () => {
+    contract('when _values.length does not match number of offers and fills', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values.push(1) },
@@ -65,7 +65,7 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when _hashes.length does not match number of makes and fills', async () => {
+    contract('when _hashes.length does not match number of offers and fills', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes.push(ZERO_ADDR) },
@@ -75,36 +75,36 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when makes are not unique', async () => {
+    contract('when offers are not unique', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[0].nonce = 4
+            editedTradeParams.offers[0].nonce = 4
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid make nonces'
+                'Invalid offer nonces'
             )
         })
     })
 
-    contract('when make nonces are not sorted in ascending order', async () => {
+    contract('when offer nonces are not sorted in ascending order', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[0].nonce = 20
+            editedTradeParams.offers[0].nonce = 20
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid make nonces'
+                'Invalid offer nonces'
             )
         })
     })
 
-    contract('when make.offerAssetId == make.wantAssetId', async () => {
+    contract('when offer.offerAssetId == offer.wantAssetId', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[1].wantAssetId = jrc.address
+            editedTradeParams.offers[1].wantAssetId = jrc.address
             editedTradeParams.fills[1].offerAssetId = jrc.address
 
             await testValidation(exchange.trade, [],
@@ -115,20 +115,20 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when a match.makeIndex >= numMakes', async () => {
+    contract('when a match.offerIndex >= numOffers', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.matches[1].makeIndex = 2
+            editedTradeParams.matches[1].offerIndex = 2
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid makeIndex'
+                'Invalid offerIndex'
             )
         })
     })
 
-    contract('when a match.fillIndex is < numMakes', async () => {
+    contract('when a match.fillIndex is < numOffers', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].fillIndex = 1
@@ -141,7 +141,7 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when a match.fillIndex is >= (numMakes + numFills)', async () => {
+    contract('when a match.fillIndex is >= (numOffers + numFills)', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].fillIndex = 4
@@ -154,10 +154,10 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when make.offerAssetId != fill.wantAssetId', async () => {
+    contract('when offer.offerAssetId != fill.wantAssetId', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[1].offerAssetId = ETHER_ADDR
+            editedTradeParams.offers[1].offerAssetId = ETHER_ADDR
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
@@ -167,10 +167,10 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when make.wantAssetId != fill.wantAssetId', async () => {
+    contract('when offer.wantAssetId != fill.wantAssetId', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[1].wantAssetId = ETHER_ADDR
+            editedTradeParams.offers[1].wantAssetId = ETHER_ADDR
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
@@ -193,10 +193,10 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when (make.wantAmount * takeAmount) % make.offerAmount != 0', async () => {
+    contract('when (offer.wantAmount * takeAmount) % offer.offerAmount != 0', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[1].wantAmount = 33
+            editedTradeParams.offers[1].wantAmount = 33
 
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
@@ -219,7 +219,7 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when make signatures are not valid', async () => {
+    contract('when offer signatures are not valid', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes[3] = ZERO_ADDR }, [],
@@ -237,14 +237,14 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when a make.offerAmount is 0', async () => {
+    contract('when a offer.offerAmount is 0', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            const make = clone(editedTradeParams.makes[0])
-            editedTradeParams.makes.push({ ...make, offerAmount: 0, nonce: 20 })
+            const offer = clone(editedTradeParams.offers[0])
+            editedTradeParams.offers.push({ ...offer, offerAmount: 0, nonce: 20 })
             editedTradeParams.matches = [
-                { makeIndex: 0, fillIndex: 3, takeAmount: 40 },
-                { makeIndex: 1, fillIndex: 4, takeAmount: 40 }
+                { offerIndex: 0, fillIndex: 3, takeAmount: 40 },
+                { offerIndex: 1, fillIndex: 4, takeAmount: 40 }
             ]
 
             await testValidation(exchange.trade, [],
@@ -255,14 +255,14 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when a make.wantAmount is 0', async () => {
+    contract('when a offer.wantAmount is 0', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            const make = clone(editedTradeParams.makes[0])
-            editedTradeParams.makes.push({ ...make, wantAmount: 0, nonce: 20 })
+            const offer = clone(editedTradeParams.offers[0])
+            editedTradeParams.offers.push({ ...offer, wantAmount: 0, nonce: 20 })
             editedTradeParams.matches = [
-                { makeIndex: 0, fillIndex: 3, takeAmount: 40 },
-                { makeIndex: 1, fillIndex: 4, takeAmount: 40 }
+                { offerIndex: 0, fillIndex: 3, takeAmount: 40 },
+                { offerIndex: 1, fillIndex: 4, takeAmount: 40 }
             ]
 
             await testValidation(exchange.trade, [],
@@ -286,14 +286,14 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when a make.nonce is already used', async () => {
+    contract('when an offer.nonce is already used', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[0].nonce = 1
+            editedTradeParams.offers[0].nonce = 1
 
             // nonce 1 has already been used by a deposit transaction
             // so the nonce will be found to be taken and the contract will
-            // use offers[makeHash] as the availableAmount
+            // use offers[offerHash] as the availableAmount
             // this will be 0, causing an error to be thrown
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
@@ -303,10 +303,10 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when a make.nonce is the same as a fill.nonce', async () => {
+    contract('when an offer.nonce is the same as a fill.nonce', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
-            editedTradeParams.makes[1].nonce = editedTradeParams.fills[0].nonce
+            editedTradeParams.offers[1].nonce = editedTradeParams.fills[0].nonce
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],

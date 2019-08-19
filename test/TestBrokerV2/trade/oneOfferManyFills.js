@@ -1,11 +1,11 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashMake,
+const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
         exchange, assertAsync, assertReversion, testValidation, printLogs } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
 const { PRIVATE_KEYS } = require('../../wallets')
 const { ZERO_ADDR, ETHER_ADDR } = require('../../constants')
 
-contract('Test trade: one make many fills', async (accounts) => {
+contract('Test trade: one offer many fills', async (accounts) => {
     let broker, jrc, swc
     const operator = accounts[0]
     const maker = accounts[1]
@@ -22,7 +22,7 @@ contract('Test trade: one make many fills', async (accounts) => {
         await exchange.mintAndDeposit({ user: maker, token: jrc, amount: 500, nonce: 1 })
         await exchange.mintAndDeposit({ user: filler, token: swc, amount: 300, nonce: 2 })
 
-        const makes = [{
+        const offers = [{
             maker,
             offerAssetId: jrc.address,
             offerAmount: 100,
@@ -54,11 +54,11 @@ contract('Test trade: one make many fills', async (accounts) => {
         }]
 
         const matches = [
-            { makeIndex: 0, fillIndex: 1, takeAmount: 40 },
-            { makeIndex: 0, fillIndex: 2, takeAmount: 20 }
+            { offerIndex: 0, fillIndex: 1, takeAmount: 40 },
+            { offerIndex: 0, fillIndex: 2, takeAmount: 20 }
         ]
 
-        const result = await exchange.trade({ operator, makes, fills, matches }, { privateKeys })
+        const result = await exchange.trade({ operator, offers, fills, matches }, { privateKeys })
         console.log('gas used', result.receipt.gasUsed / 2)
 
         await validateBalance(maker, jrc, 400) // 500 jrc - 100 jrc
@@ -68,7 +68,7 @@ contract('Test trade: one make many fills', async (accounts) => {
         await validateBalance(operator, jrc, 5) // received 3 jrc +  2 jrc
         await validateBalance(operator, swc, 7) // received 7 swc
 
-        const makeHash = hashMake(makes[0])
-        await assertAsync(broker.offers(makeHash), 40) // 100 jrc - 40 jrc - 20 jrc
+        const offerHash = hashOffer(offers[0])
+        await assertAsync(broker.offers(offerHash), 40) // 100 jrc - 40 jrc - 20 jrc
     })
 })

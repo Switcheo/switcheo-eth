@@ -91,6 +91,15 @@ contract BrokerV2 is Ownable {
         ")"
     )); */
 
+    bytes32 public constant CANCEL_TYPEHASH = 0x33e285131000216abb7914008798c901ab99e66ba38e0db5e9caa4b6a2dfa438;
+    /* bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
+        "Cancel(",
+            "bytes32 offerHash,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
+        ")"
+    ));     */
+
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
     /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
         "Fill(",
@@ -136,6 +145,9 @@ contract BrokerV2 is Ownable {
     uint256 private constant REASON_WITHDRAW = 0x09;
     uint256 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint256 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
+    uint256 private constant REASON_CANCEL = 0x08;
+    uint256 private constant REASON_CANCEL_FEE_GIVE = 0x12;
+    uint256 private constant REASON_CANCEL_FEE_RECEIVE = 0x13;
     uint256 private constant REASON_SWAP_GIVE = 0x30;
     uint256 private constant REASON_SWAP_RECEIVE = 0x35;
     uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
@@ -319,13 +331,17 @@ contract BrokerV2 is Ownable {
         require(spenderWhitelist[_spender], "Invalid spender");
         _markNonce(_nonce);
 
-        _validateSignature(_user, _v, _r, _s,
+        _validateSignature(
             keccak256(abi.encode(
                 AUTHORIZE_SPENDER_TYPEHASH,
                 _user,
                 _spender,
                 _nonce
             )),
+            _user,
+            _v,
+            _r,
+            _s,
             _prefixedSignature
         );
         spenderAuthorizations[_user][_spender] = true;
@@ -460,26 +476,26 @@ contract BrokerV2 is Ownable {
     // values = [
     //    * at index 0
     //    lengths // [0]
-    //        numMakes, // bits(0..8)
+    //        numOffers, // bits(0..8)
     //        numFills, // bits(8..16)
     //        numMatches, // bits(16..24)
     //
     //    * starting at index 1
     //    * nonces must be sorted in ascending order
-    //    make.dataA // [i]
+    //    offer.dataA // [i]
     //        makerIndex, // bits(0..8)
     //        maker.offerAssetIndex, // bits(8..16)
     //        maker.wantAssetIndex, // bits(16..24)
     //        maker.feeAssetIndex, // bits(24..32)
     //        operator.feeAssetIndex, // bits(32..40)
-    //        make.v // bits(40..48)
-    //        make.nonce // bits(48..128)
-    //        make.feeAmount // bits(128..256)
-    //    make.dataB // [i + 1]
-    //        make.offerAmount, // bits(0..128)
-    //        make.wantAmount, // bits(128..256)
+    //        offer.v // bits(40..48)
+    //        offer.nonce // bits(48..128)
+    //        offer.feeAmount // bits(128..256)
+    //    offer.dataB // [i + 1]
+    //        offer.offerAmount, // bits(0..128)
+    //        offer.wantAmount, // bits(128..256)
     //
-    //    * starting at index 1 + numMakes * 2
+    //    * starting at index 1 + numOffers * 2
     //    * nonces must be sorted in ascending order
     //    fill.dataA // [i]
     //        fillerIndex, // bits(0..8)
@@ -494,9 +510,9 @@ contract BrokerV2 is Ownable {
     //        fill.offerAmount, // bits(0..128)
     //        fill.wantAmount, // bits(128..256)
     //
-    //    * starting at index 3 + numMakes * 5 + numFills * 5
+    //    * starting at index 3 + numOffers * 5 + numFills * 5
     //    matchData
-    //        match.makeIndex, // bits(0..8)
+    //        match.offerIndex, // bits(0..8)
     //        match.fillIndex, // bits(6..16)
     //        match.takeAmount // bits(16..256)
     // ]
@@ -522,31 +538,31 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        // used to store the hash keys of each make
+        // used to store the hash keys of each offer
         bytes32[] memory hashKeys = new bytes32[](_values[0] & ~(~uint256(0) << 8));
 
         validator.validateTrades(_values, _hashes, _addresses, operator);
 
-        // validate data and signatures of all makes
-        _validateTradeDataAndSignatures(
+        // validate data and signatures of all offer
+        _validateTradeSignatures(
             _values,
             _hashes,
             _addresses,
             hashKeys,
             OFFER_TYPEHASH,
             0,
-            _values[0] & ~(~uint256(0) << 8) // numMakes
+            _values[0] & ~(~uint256(0) << 8) // numOffers
         );
 
         // validate data and signatures of all fills
-        _validateTradeDataAndSignatures(
+        _validateTradeSignatures(
             _values,
             _hashes,
             _addresses,
             new bytes32[](0),
             FILL_TYPEHASH,
-            _values[0] & ~(~uint256(0) << 8), // numMakes
-            (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numMakes + numFills
+            _values[0] & ~(~uint256(0) << 8), // numOffers
+            (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numOffers + numFills
         );
 
         // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
@@ -556,23 +572,95 @@ contract BrokerV2 is Ownable {
         // INCREASE BALANCE OF MAKERS FOR RECEIVE_AMOUNT (loop matches)
         _creditMakerBalances(_values, _addresses);
 
-        // INCREASE BALANCE OF OPERATOR FOR MAKE.FEE_AMOUNT (loop makes)
+        // INCREASE BALANCE OF OPERATOR FOR OFFER.FEE_AMOUNT (loop offers)
         _creditMakerFeeBalances(_values, _addresses);
 
         // DECREASE BALANCE OF FILLERS FOR FILL.OFFER_AMOUNT (loop fills)
         // DECREASE BALANCE OF FILLERS FOR FILL.FEE_AMOUNT (loop fills)
         _deductFillBalances(_values, _addresses);
 
-        // DECREASE BALANCE OF MAKERS FOR MAKE.OFFER_AMOUNT (loop makes)
-        // DECREASE BALANCE OF MAKERS FOR MAKE.FEE_AMOUNT (loop makes)
+        // DECREASE BALANCE OF MAKERS FOR OFFER.OFFER_AMOUNT (loop offers)
+        // DECREASE BALANCE OF MAKERS FOR OFFER.FEE_AMOUNT (loop offers)
         _deductMakerBalances(_values, _addresses);
 
         // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
-        _storeOffersAndMakeNonces(_values, hashKeys);
+        _storeOfferData(_values, hashKeys);
 
         // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
         // STORE FILL NONCES (loop fills)
         _storeFillNonces(_values);
+    }
+
+    // _values = [
+    //     item0
+    //         offerAmount // bits(0..128)
+    //         wantAmount // bits(128..256)
+    //     item1
+    //         feeAmount // bits(0..128)
+    //         cancelFeeAmount // bits(128..256)
+    //     item2
+    //         expectedAvailableAmount // bits(0..128)
+    //         prefixedSignature // bits(128..136)
+    //         v // bits(136..144)
+    //         offerNonce // bits(144..256)
+    //
+    // _hashes = [
+    //     r // 0
+    //     s // 1
+    // ]
+    //
+    // _addresses = [
+    //     maker // 0
+    //     offerAssetId // 1
+    //     wantAssetId // 2
+    //     feeAssetId // 3
+    //     cancelFeeAssetId // 4
+    // ]
+    function cancel(
+        uint256[] calldata _values,
+        bytes32[] calldata _hashes,
+        address[] calldata _addresses
+    )
+        external
+        onlyAdmin
+    {
+        bytes32 offerHash = keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _addresses[0], // maker
+            _addresses[1], // offerAssetId
+            _values[0] & ~(~uint256(0) << 128), // offerAmount
+            _addresses[2], // wantAssetId
+            _values[0] >> 128, // wantAmount
+            _addresses[3], // feeAssetId
+            _values[1] & ~(~uint256(0) << 128), // feeAmount
+            _values[2] >> 144 // offerNonce
+        ));
+
+        bytes32 cancelHash = keccak256(abi.encode(
+            CANCEL_TYPEHASH,
+            offerHash,
+            _addresses[4], // cancelFeeAssetId
+            _values[1] & ~(~uint256(0) << 128) // cancelFeeAmount
+        ));
+
+        _validateSignature(
+            cancelHash,
+            _addresses[0], // maker
+            uint8((_values[0] & ~(~uint256(0) << 144)) >> 136), // v
+            _hashes[0], // r
+            _hashes[1], // s
+            ((_values[0] & ~(~uint256(0) << 136)) >> 128) != 0 // prefixedSignature
+        );
+
+        _cancel(
+            _addresses[0], // maker
+            offerHash,
+            _values[2] & ~(~uint256(0) << 128), // expectedAvailableAmount
+            _addresses[1], // offerAssetId
+            _values[2] >> 144, // offerNonce
+            _addresses[4], // cancelFeeAssetId
+            _values[1] & ~(~uint256(0) << 128) // cancelFeeAmount
+        );
     }
 
     function withdraw(
@@ -589,11 +677,10 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyAdmin
-        onlyActiveState
     {
         _markNonce(_nonce);
 
-        _validateSignature(_withdrawer, _v, _r, _s,
+        _validateSignature(
             keccak256(abi.encode(
                 WITHDRAW_TYPEHASH,
                 _withdrawer,
@@ -603,6 +690,10 @@ contract BrokerV2 is Ownable {
                 _feeAmount,
                 _nonce
             )),
+            _withdrawer,
+            _v,
+            _r,
+            _s,
             _prefixedSignature
         );
 
@@ -689,7 +780,7 @@ contract BrokerV2 is Ownable {
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
 
         require(!atomicSwaps[swapHash], "Invalid swap");
-        _validateSignature(_addresses[0], _v, _hashes[1], _hashes[2], swapHash, _prefixedSignature);
+        _validateSignature(swapHash, _addresses[0], _v, _hashes[1], _hashes[2], _prefixedSignature);
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
             require(_values[2] < _values[0], "Invalid fee amount"); // feeAmount < amount
@@ -819,7 +910,7 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _validateTradeDataAndSignatures(
+    function _validateTradeSignatures(
         uint256[] memory _values,
         bytes32[] memory _hashes,
         address[] memory _addresses,
@@ -837,25 +928,25 @@ contract BrokerV2 is Ownable {
             address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
 
             bytes32 hashKey = keccak256(abi.encode(
-                                  _typehash,
-                                  user,
-                                  _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
-                                  dataB & ~(~uint256(0) << 128), // offerAmount
-                                  _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
-                                  dataB >> 128, // wantAmount
-                                  _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
-                                  dataA >> 128, // feeAmount
-                                  (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
-                              ));
+                _typehash,
+                user,
+                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
+                dataB & ~(~uint256(0) << 128), // offerAmount
+                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
+                dataB >> 128, // wantAmount
+                _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
+                dataA >> 128, // feeAmount
+                (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
+            ));
 
             bool prefixedSignature = _values[0] & (uint256(1) << (24 + _i)) != 0;
 
             _validateSignature(
+                hashKey,
                 user,
                 uint8((dataA & ~(~uint256(0) << 48)) >> 40),
                 _hashes[_i * 2],
                 _hashes[_i * 2 + 1],
-                hashKey,
                 prefixedSignature
             );
 
@@ -875,7 +966,7 @@ contract BrokerV2 is Ownable {
         uint256 max = 0;
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
-        // 1 + numMakes * 2
+        // 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i + numFills * 2
         uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -918,7 +1009,7 @@ contract BrokerV2 is Ownable {
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
-        // i += numMakes * 2
+        // i += numOffers * 2
         i += (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i += numFills * 2
         i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -927,14 +1018,14 @@ contract BrokerV2 is Ownable {
 
         // loop matches
         for(i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 wantAssetIndex = (_values[1 + makeIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
 
             // takeAmount
             uint256 amount = _values[i] >> 16;
             // receiveAmount = takeAmount * wantAmount / offerAmount
-            amount = amount.mul(_values[2 + makeIndex * 2] >> 128)
-                           .div(_values[2 + makeIndex * 2] & ~(~uint256(0) << 128));
+            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
+                           .div(_values[2 + offerIndex * 2] & ~(~uint256(0) << 128));
 
             increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
 
@@ -962,10 +1053,10 @@ contract BrokerV2 is Ownable {
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
-        // i + numMakes * 2
+        // i + numOffers * 2
         uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
 
-        // loop makes
+        // loop offers
         for(i; i < end; i += 2) {
             uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             if (_nonceTaken(nonce)) { continue; }
@@ -998,7 +1089,7 @@ contract BrokerV2 is Ownable {
         uint256 max = 0;
         uint256[] memory deductions = new uint256[](_addresses.length / 2);
 
-        // 1 + numMakes * 2
+        // 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i + numFills * 2
         uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -1041,10 +1132,10 @@ contract BrokerV2 is Ownable {
         uint256[] memory deductions = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
-        // i + numMakes * 2
+        // i + numOffers * 2
         uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
 
-        // loop makes
+        // loop offers
         for(i; i < end; i += 2) {
             uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             if (_nonceTaken(nonce)) { continue; }
@@ -1074,17 +1165,17 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _storeOffersAndMakeNonces(
+    function _storeOfferData(
         uint256[] memory _values,
         bytes32[] memory _hashKeys
     )
         private
     {
-        // deductions with size numMakes
+        // deductions with size numOffers
         uint256[] memory deductions = new uint256[](_values[0] & ~(~uint256(0) << 8));
 
         uint256 i = 1;
-        // i += numMakes * 2
+        // i += numOffers * 2
         i += (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i += numFills * 2
         i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -1093,15 +1184,15 @@ contract BrokerV2 is Ownable {
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 makeIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 takeAmount = _values[i] >> 16;
-            deductions[makeIndex] = deductions[makeIndex].add(takeAmount);
+            deductions[offerIndex] = deductions[offerIndex].add(takeAmount);
         }
 
         i = 0;
-        end = _values[0] & ~(~uint256(0) << 8); // numMakes
+        end = _values[0] & ~(~uint256(0) << 8); // numOffers
 
-        // loop makes
+        // loop offers
         for (i; i < end; i++) {
             uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
             bool existingOffer = _nonceTaken(nonce);
@@ -1118,20 +1209,8 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _storeMakeNonces(uint256[] memory _values) private {
-        uint256 i = 1;
-        // i + numMakes * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
-
-        // loop makes
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
-            _softMarkNonce(nonce);
-        }
-    }
-
     function _storeFillNonces(uint256[] memory _values) private {
-        // 1 + numMakes * 2
+        // 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
         // i + numFills * 2
         uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
@@ -1141,6 +1220,55 @@ contract BrokerV2 is Ownable {
             uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             _markNonce(nonce);
         }
+    }
+
+    function _cancel(
+        address _maker,
+        bytes32 _offerHash,
+        uint256 _expectedAvailableAmount,
+        address _offerAssetId,
+        uint256 _offerNonce,
+        address _cancelFeeAssetId,
+        uint256 _cancelFeeAmount
+    )
+        private
+    {
+        uint256 refundAmount = offers[_offerHash];
+        require(refundAmount > 0, "Invalid offerHash");
+        require(refundAmount == _expectedAvailableAmount);
+
+        delete offers[_offerHash];
+
+        if (_cancelFeeAssetId == _offerAssetId) {
+            refundAmount = refundAmount.sub(_cancelFeeAmount);
+        } else {
+            _decreaseBalance(
+                _maker,
+                _cancelFeeAssetId,
+                _cancelFeeAmount,
+                REASON_CANCEL_FEE_GIVE,
+                _offerNonce,
+                0
+            );
+        }
+
+        _increaseBalance(
+            _maker, // maker
+            _offerAssetId, // offerAssetId
+            refundAmount,
+            REASON_CANCEL,
+            _offerNonce, // offer nonce
+            0
+        );
+
+        _increaseBalance(
+            operator,
+            _cancelFeeAssetId,
+            _cancelFeeAmount,
+            REASON_CANCEL_FEE_RECEIVE,
+            _offerNonce, // offer nonce
+            0
+        );
     }
 
     function _withdraw(
@@ -1155,18 +1283,39 @@ contract BrokerV2 is Ownable {
     {
         require(_amount > 0, 'Invalid amount');
 
-        uint256 withdrawAmount = _decreaseBalanceWithFees(
+        _decreaseBalance(
             _withdrawer,
             _assetId,
             _amount,
+            REASON_WITHDRAW,
+            _nonce,
+            0
+        );
+
+        _increaseBalance(
+            operator,
             _feeAssetId,
             _feeAmount,
-            REASON_WITHDRAW,
-            REASON_WITHDRAW_FEE_GIVE,
             REASON_WITHDRAW_FEE_RECEIVE,
             _nonce,
             0
         );
+
+        uint256 withdrawAmount;
+
+        if (_feeAssetId == _assetId) {
+            withdrawAmount = _amount.sub(_feeAmount);
+        } else {
+            _decreaseBalance(
+                _withdrawer,
+                _feeAssetId,
+                _feeAmount,
+                REASON_WITHDRAW_FEE_GIVE,
+                _nonce,
+                0
+            );
+            withdrawAmount = _amount;
+        }
 
         if (_assetId == ETHER_ADDR) {
             _withdrawer.transfer(withdrawAmount);
@@ -1241,11 +1390,11 @@ contract BrokerV2 is Ownable {
     }
 
     function _validateSignature(
+        bytes32 _hash,
         address _user,
         uint8 _v,
         bytes32 _r,
         bytes32 _s,
-        bytes32 _hash,
         bool _prefixed
     )
         private
@@ -1282,55 +1431,6 @@ contract BrokerV2 is Ownable {
         require(success, "contract call failed");
 
         return returnData;
-    }
-
-    // returns remaining amount after fees
-    function _decreaseBalanceWithFees(
-        address _user,
-        address _assetId,
-        uint256 _amount,
-        address _feeAssetId,
-        uint256 _feeAmount,
-        uint256 _reasonCode,
-        uint256 _feeGiveReasonCode,
-        uint256 _feeReceiveReasonCode,
-        uint256 _nonceA,
-        uint256 _nonceB
-    )
-        private
-        returns (uint256)
-    {
-        _decreaseBalance(
-            _user,
-            _assetId,
-            _amount,
-            _reasonCode,
-            _nonceA,
-            _nonceB
-        );
-
-        _increaseBalance(
-            operator,
-            _feeAssetId,
-            _feeAmount,
-            _feeReceiveReasonCode,
-            _nonceA,
-            _nonceB
-        );
-
-        if (_feeAssetId != _assetId) {
-            _decreaseBalance(
-                _user,
-                _feeAssetId,
-                _feeAmount,
-                _feeGiveReasonCode,
-                _nonceA,
-                _nonceB
-            );
-            return _amount;
-        }
-
-        return _amount.sub(_feeAmount);
     }
 
     function _increaseBalance(

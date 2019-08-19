@@ -247,9 +247,9 @@ function constructTradeData(data) {
     return { dataA, dataB }
 }
 
-async function trade({ makes, fills, matches, operator }, { privateKeys }, transform) {
+async function trade({ offers, fills, matches, operator }, { privateKeys }, transform) {
     const broker = await getBroker()
-    const lengths = bn(makes.length).or(shl(fills.length, 8))
+    const lengths = bn(offers.length).or(shl(fills.length, 8))
                                     .or(shl(matches.length, 16))
     const values = [lengths]
     const hashes = []
@@ -257,8 +257,8 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }, trans
     const addressPairs = []
     const addressMap = {}
 
-    for (let i = 0; i < makes.length; i++) {
-        const { maker, offerAssetId, wantAssetId, feeAssetId } = makes[i]
+    for (let i = 0; i < offers.length; i++) {
+        const { maker, offerAssetId, wantAssetId, feeAssetId } = offers[i]
         addressPairs.push(
             { user: maker, assetId: offerAssetId },
             { user: maker, assetId: wantAssetId },
@@ -286,10 +286,10 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }, trans
         }
     }
 
-    for (let i = 0; i < makes.length; i++) {
-        const make = makes[i]
+    for (let i = 0; i < offers.length; i++) {
+        const offer = offers[i]
         const { maker, offerAssetId, wantAssetId, feeAssetId,
-                offerAmount, wantAmount, feeAmount, nonce } = make
+                offerAmount, wantAmount, feeAmount, nonce } = offer
         const privateKey = privateKeys[maker]
 
         const { v, r, s } = await signParameters(
@@ -328,7 +328,7 @@ async function trade({ makes, fills, matches, operator }, { privateKeys }, trans
 
     for (let i = 0; i < matches.length; i++) {
         const match = matches[i]
-        const value = bn(match.makeIndex).or(shl(match.fillIndex, 8))
+        const value = bn(match.offerIndex).or(shl(match.fillIndex, 8))
                                          .or(shl(match.takeAmount, 16))
         values.push(value)
     }
@@ -347,7 +347,7 @@ function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, fee
     ))
 }
 
-function hashMake({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }) {
+function hashOffer({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }) {
     offerAssetId = ensureAddress(offerAssetId)
     wantAssetId = ensureAddress(wantAssetId)
     feeAssetId = ensureAddress(feeAssetId)
@@ -423,6 +423,6 @@ module.exports = {
     increaseEvmTime,
     decodeReceiptLogs,
     hashSwap,
-    hashMake,
+    hashOffer,
     exchange,
 }

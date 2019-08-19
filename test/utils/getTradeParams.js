@@ -9,7 +9,7 @@ async function getTradeParams(accounts) {
     const maker = accounts[1]
     const filler = accounts[2]
 
-    makes = [{
+    offers = [{
         maker,
         offerAssetId: jrc.address,
         offerAmount: 100,
@@ -50,16 +50,16 @@ async function getTradeParams(accounts) {
     }]
 
     matches = [{
-        makeIndex: 0,
+        offerIndex: 0,
         fillIndex: 2,
         takeAmount: 40
     }, {
-        makeIndex: 1,
+        offerIndex: 1,
         fillIndex: 3,
         takeAmount: 40
     }]
 
-    return { operator, makes, fills, matches }
+    return { operator, offers, fills, matches }
 }
 
 module.exports = {
