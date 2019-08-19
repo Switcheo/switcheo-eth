@@ -33,6 +33,10 @@ TYPEHASHES = {
         type: 'string',
         value: 'Withdraw(address withdrawer,address assetId,uint256 amount,address feeAssetId,uint256 feeAmount,uint256 nonce)'
     }),
+    CANCEL_TYPEHASH: soliditySha3({
+        type: 'string',
+        value: 'Cancel(bytes32 offerHash,address feeAssetId,uint256 feeAmount)'
+    }),
     OFFER_TYPEHASH: soliditySha3({
         type: 'string',
         value: 'Offer(address maker,address offerAssetId,uint256 offerAmount,address wantAssetId,uint256 wantAmount,address feeAssetId,uint256 feeAmount,uint256 nonce)'

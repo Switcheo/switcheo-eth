@@ -91,14 +91,14 @@ contract BrokerV2 is Ownable {
         ")"
     )); */
 
-    bytes32 public constant CANCEL_TYPEHASH = 0x33e285131000216abb7914008798c901ab99e66ba38e0db5e9caa4b6a2dfa438;
+    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
     /* bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
         "Cancel(",
             "bytes32 offerHash,",
             "address feeAssetId,",
             "uint256 feeAmount,",
         ")"
-    ));     */
+    )); */
 
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
     /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
@@ -616,6 +616,7 @@ contract BrokerV2 is Ownable {
     //     feeAssetId // 3
     //     cancelFeeAssetId // 4
     // ]
+    event Log(bool prefixedSignature, uint256 value, bool prefixedSignature2);
     function cancel(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -639,20 +640,22 @@ contract BrokerV2 is Ownable {
         bytes32 cancelHash = keccak256(abi.encode(
             CANCEL_TYPEHASH,
             offerHash,
-            _addresses[4], // cancelFeeAssetId
-            _values[1] & ~(~uint256(0) << 128) // cancelFeeAmount
+            _addresses[4],
+            _values[1] >> 128
         ));
 
-        _validateSignature(
+        bool prefixedSignature = ((_values[2] & ~(~uint256(1) << 136)) >> 128) != 0;
+        emit Log(((_values[2] & ~(~uint256(1) << 136)) >> 128) != 0, ((_values[2] & ~(~uint256(1) << 136)) >> 128), prefixedSignature);
+        /* _validateSignature(
             cancelHash,
             _addresses[0], // maker
-            uint8((_values[0] & ~(~uint256(0) << 144)) >> 136), // v
+            uint8((_values[2] & ~(~uint256(0) << 144)) >> 136), // v
             _hashes[0], // r
             _hashes[1], // s
-            ((_values[0] & ~(~uint256(0) << 136)) >> 128) != 0 // prefixedSignature
-        );
+            false // prefixedSignature
+        ); */
 
-        _cancel(
+        /* _cancel(
             _addresses[0], // maker
             offerHash,
             _values[2] & ~(~uint256(0) << 128), // expectedAvailableAmount
@@ -660,7 +663,7 @@ contract BrokerV2 is Ownable {
             _values[2] >> 144, // offerNonce
             _addresses[4], // cancelFeeAssetId
             _values[1] & ~(~uint256(0) << 128) // cancelFeeAmount
-        );
+        ); */
     }
 
     function withdraw(

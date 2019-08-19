@@ -228,6 +228,25 @@ async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce },
     return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s, false)
 }
 
+async function cancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, expectedAvailableAmount, cancelFeeAssetId, cancelFeeAmount }, { privateKey }) {
+    const broker = await getBroker()
+    const offerHash = hashOffer({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce })
+    const { v, r, s } = await signParameters(
+        ['bytes32', 'bytes32', 'address', 'uint256'],
+        [TYPEHASHES.CANCEL_TYPEHASH, offerHash, cancelFeeAssetId, cancelFeeAmount],
+        privateKey
+    )
+    const values = [
+        bn(offerAmount).or(shl(wantAmount, 128)),
+        bn(feeAmount).or(shl(cancelFeeAmount, 128)),
+        bn(expectedAvailableAmount).or(shl(v, 136))
+                                   .or(shl(nonce, 144))
+    ]
+    const hashes = [r, s]
+    const addresses = [maker, offerAssetId, wantAssetId, feeAssetId, cancelFeeAssetId]
+    return await broker.cancel(values, hashes, addresses)
+}
+
 function constructTradeData(data) {
     const { addressMap, operator, user, offerAssetId, wantAssetId, feeAssetId,
             v, nonce, feeAmount, offerAmount, wantAmount } = data
@@ -395,6 +414,7 @@ const exchange = {
     mintAndDeposit,
     depositToken,
     trade,
+    cancel,
     withdraw,
     createSwap,
     executeSwap,
