@@ -616,7 +616,6 @@ contract BrokerV2 is Ownable {
     //     feeAssetId // 3
     //     cancelFeeAssetId // 4
     // ]
-    event Log(bool prefixedSignature, uint256 value, bool prefixedSignature2);
     function cancel(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -644,26 +643,24 @@ contract BrokerV2 is Ownable {
             _values[1] >> 128
         ));
 
-        bool prefixedSignature = ((_values[2] & ~(~uint256(1) << 136)) >> 128) != 0;
-        emit Log(((_values[2] & ~(~uint256(1) << 136)) >> 128) != 0, ((_values[2] & ~(~uint256(1) << 136)) >> 128), prefixedSignature);
-        /* _validateSignature(
+        _validateSignature(
             cancelHash,
             _addresses[0], // maker
             uint8((_values[2] & ~(~uint256(0) << 144)) >> 136), // v
             _hashes[0], // r
             _hashes[1], // s
-            false // prefixedSignature
-        ); */
+            ((_values[2] & ~(~uint256(1) << 135)) >> 128) != 0 // prefixedSignature
+        );
 
-        /* _cancel(
+        _cancel(
             _addresses[0], // maker
             offerHash,
             _values[2] & ~(~uint256(0) << 128), // expectedAvailableAmount
             _addresses[1], // offerAssetId
             _values[2] >> 144, // offerNonce
             _addresses[4], // cancelFeeAssetId
-            _values[1] & ~(~uint256(0) << 128) // cancelFeeAmount
-        ); */
+            _values[1] >> 128 // cancelFeeAmount
+        );
     }
 
     function withdraw(

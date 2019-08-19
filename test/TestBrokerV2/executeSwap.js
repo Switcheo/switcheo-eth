@@ -43,7 +43,8 @@ contract('Test executeSwap', async (accounts) => {
             await validateBalance(operator, jrc, 0)
             await assertAsync(broker.atomicSwaps(swapHash), true)
 
-            await exchange.executeSwap({ ...swap, secret })
+            const result = await exchange.executeSwap({ ...swap, secret })
+            console.log('gas used', result.receipt.gasUsed)
 
             await validateBalance(maker, jrc, 32)
             await validateBalance(taker, jrc, 8)

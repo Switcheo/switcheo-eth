@@ -1,4 +1,5 @@
-const { web3, getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange, printLogs } = require('../utils')
+const { web3, getBroker, getJrc, getSwc, validateBalance, hashOffer,
+        exchange, printLogs, assertAsync } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
 
 const { PRIVATE_KEYS, getPrivateKey } = require('../wallets')
@@ -21,14 +22,27 @@ contract('Test cancel', async (accounts) => {
 
         tradeParams = await getTradeParams(accounts)
         await exchange.trade(tradeParams, { privateKeys })
+        await validateBalance(maker, jrc, 300) // 500 jrc - 100 jrc - 100 jrc
+        await validateBalance(operator, jrc, 6) // received 3 jrc + 3 jrc
     })
 
     contract('when parameters are valid', async () => {
         it('cancels the offer', async () => {
             const offer = tradeParams.offers[0]
             const offerHash = hashOffer(offer)
-            const result = await exchange.cancel({ ...offer, cancelFeeAssetId: jrc.address, cancelFeeAmount: 2 }, { privateKey })
-            printLogs(result, ['Log'])
+            await assertAsync(broker.offers(offerHash), 60)
+
+            const result = await exchange.cancel({
+                ...offer,
+                expectedAvailableAmount: 60,
+                cancelFeeAssetId: jrc.address,
+                cancelFeeAmount: 2
+            }, { privateKey })
+            console.log('gas used', result.receipt.gasUsed)
+
+            await validateBalance(maker, jrc, 358) // 300 jrc + 60 jrc - 2 jrc
+            await validateBalance(operator, jrc, 8) // 6 jrc + 2 jrc
+            await assertAsync(broker.offers(offerHash), 0)
         })
     })
 })
