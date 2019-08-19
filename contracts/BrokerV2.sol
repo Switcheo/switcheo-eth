@@ -221,21 +221,6 @@ contract BrokerV2 is Ownable {
         uint256 amount
     );
 
-    event CreateSwap(
-        address indexed maker,
-        address indexed taker,
-        address assetId,
-        uint256 amount,
-        bytes32 indexed hashedSecret,
-        uint256 expiryTime,
-        address feeAssetId,
-        uint256 feeAmount,
-        uint256 nonce
-    );
-
-    event ExecuteSwap(bytes32 indexed hashedSecret);
-    event CancelSwap(bytes32 indexed hashedSecret);
-
     constructor(address validatorAddress) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
@@ -729,18 +714,6 @@ contract BrokerV2 is Ownable {
         );
 
         atomicSwaps[swapHash] = true;
-
-        emit CreateSwap(
-            _addresses[0], // maker
-            _addresses[1], // taker
-            _addresses[2], // assetId
-            _values[0], // amount
-            _hashes[0], // hashedSecret
-            _values[1], // expiryTime
-            _addresses[3], // feeAssetId
-            _values[2], // feeAmount
-            _values[3] // nonce
-        );
     }
 
     // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
@@ -784,8 +757,6 @@ contract BrokerV2 is Ownable {
             _values[3], // nonce
             0
         );
-
-        emit ExecuteSwap(_hashedSecret);
     }
 
     // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
@@ -846,8 +817,6 @@ contract BrokerV2 is Ownable {
                 0
             );
         }
-
-        emit CancelSwap(_hashedSecret);
     }
 
     function _validateTradeDataAndSignatures(
@@ -856,15 +825,15 @@ contract BrokerV2 is Ownable {
         address[] memory _addresses,
         bytes32[] memory _hashKeys,
         bytes32 _typehash,
-        uint256 i,
-        uint256 end
+        uint256 _i,
+        uint256 _end
     )
         private
         pure
     {
-        for (i; i < end; i++) {
-            uint256 dataA = _values[i * 2 + 1];
-            uint256 dataB = _values[i * 2 + 2];
+        for (_i; _i < _end; _i++) {
+            uint256 dataA = _values[_i * 2 + 1];
+            uint256 dataB = _values[_i * 2 + 2];
             address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
 
             bytes32 hashKey = keccak256(abi.encode(
@@ -879,19 +848,19 @@ contract BrokerV2 is Ownable {
                                   (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
                               ));
 
-            bool prefixedSignature = _values[0] & (uint256(1) << (24 + i)) != 0;
+            bool prefixedSignature = _values[0] & (uint256(1) << (24 + _i)) != 0;
 
             _validateSignature(
                 user,
                 uint8((dataA & ~(~uint256(0) << 48)) >> 40),
-                _hashes[i * 2],
-                _hashes[i * 2 + 1],
+                _hashes[_i * 2],
+                _hashes[_i * 2 + 1],
                 hashKey,
                 prefixedSignature
             );
 
             if (_hashKeys.length > 0) {
-                _hashKeys[i] = hashKey;
+                _hashKeys[_i] = hashKey;
             }
         }
     }
@@ -1437,23 +1406,23 @@ contract BrokerV2 is Ownable {
     /// See: https://github.com/ethereum/solidity/issues/4116
     /// https://medium.com/loopring-protocol/an-incompatibility-in-smart-contract-threatening-dapp-ecosystem-72b8ca5db4da
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
-    function _validateTransferResult(bytes memory data) private pure {
+    function _validateTransferResult(bytes memory _data) private pure {
         require(
-            data.length == 0 ||
-            (data.length == 32 && _getUint256FromBytes(data) != 0),
+            _data.length == 0 ||
+            (_data.length == 32 && _getUint256FromBytes(_data) != 0),
             "Invalid transfer"
         );
     }
 
     function _getUint256FromBytes(
-        bytes memory data
+        bytes memory _data
     )
         private
         pure
         returns (uint256)
     {
         uint256 parsed;
-        assembly { parsed := mload(add(data, 32)) }
+        assembly { parsed := mload(add(_data, 32)) }
         return parsed;
     }
 }
