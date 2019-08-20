@@ -13,7 +13,7 @@ interface IERC1820Registry {
 }
 
 interface BrokerValidator {
-    function validateTrades(uint256[] calldata _values, bytes32[] calldata _hashes, address[] calldata _addresses, address _operator) external;
+    function validateTrades(uint256[] calldata _values, bytes32[] calldata _hashes, address[] calldata _addresses, address _operator) external returns(bytes32[] memory);
 }
 
 contract BrokerV2 is Ownable {
@@ -91,15 +91,6 @@ contract BrokerV2 is Ownable {
         ")"
     )); */
 
-    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
-    /* bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
-        "Cancel(",
-            "bytes32 offerHash,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-        ")"
-    )); */
-
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
     /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
         "Fill(",
@@ -111,6 +102,15 @@ contract BrokerV2 is Ownable {
             "address feeAssetId,",
             "uint256 feeAmount,",
             "uint256 nonce",
+        ")"
+    )); */
+
+    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
+    /* bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
+        "Cancel(",
+            "bytes32 offerHash,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
         ")"
     )); */
 
@@ -157,7 +157,7 @@ contract BrokerV2 is Ownable {
     uint256 private constant REASON_SWAP_CANCEL_FEE_REFUND = 0x3D;
 
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
-
+    uint256 private constant MAX_SLOW_CANCEL_DELAY = 604800;
 
     State public state; // position 0
     AdminState public adminState; // position 1
@@ -178,6 +178,7 @@ contract BrokerV2 is Ownable {
     mapping(address => bool) public tokenWhitelist;
     mapping(address => bool) public spenderWhitelist;
     mapping(address => mapping(address => bool)) public spenderAuthorizations;
+    mapping(bytes32 => uint256) public cancellationAnnouncements;
     mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
 
     // Emitted on any balance state transition (+ve)
@@ -220,6 +221,16 @@ contract BrokerV2 is Ownable {
         uint256 amount
     );
 
+    event AnnounceCancel(
+        bytes32 indexed offerHash,
+        uint256 cancellableAt
+    );
+
+    event SlowCancel(
+        bytes32 indexed offerHash,
+        uint256 amount
+    );
+
     event AnnounceWithdraw(
         address indexed withdrawer,
         address indexed assetId,
@@ -238,6 +249,7 @@ contract BrokerV2 is Ownable {
         operator = msg.sender;
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
+        slowCancelDelay = MAX_SLOW_CANCEL_DELAY;
 
         validator = BrokerValidator(validatorAddress);
 
@@ -278,6 +290,11 @@ contract BrokerV2 is Ownable {
     function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
         require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "Invalid delay");
         slowWithdrawDelay = _delay;
+    }
+
+    function setSlowCancelDelay(uint256 _delay) external onlyOwner {
+        require(_delay <= MAX_SLOW_CANCEL_DELAY, "Invalid delay");
+        slowCancelDelay = _delay;
     }
 
     function addAdmin(address _admin) external onlyOwner {
@@ -539,30 +556,11 @@ contract BrokerV2 is Ownable {
         onlyActiveState
     {
         // used to store the hash keys of each offer
-        bytes32[] memory hashKeys = new bytes32[](_values[0] & ~(~uint256(0) << 8));
-
-        validator.validateTrades(_values, _hashes, _addresses, operator);
-
-        // validate data and signatures of all offer
-        _validateTradeSignatures(
+        bytes32[] memory hashKeys = validator.validateTrades(
             _values,
             _hashes,
             _addresses,
-            hashKeys,
-            OFFER_TYPEHASH,
-            0,
-            _values[0] & ~(~uint256(0) << 8) // numOffers
-        );
-
-        // validate data and signatures of all fills
-        _validateTradeSignatures(
-            _values,
-            _hashes,
-            _addresses,
-            new bytes32[](0),
-            FILL_TYPEHASH,
-            _values[0] & ~(~uint256(0) << 8), // numOffers
-            (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numOffers + numFills
+            operator
         );
 
         // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
@@ -663,6 +661,123 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    function adminCancel(
+        address _maker,
+        address _offerAssetId,
+        uint256 _offerAmount,
+        address _wantAssetId,
+        uint256 _wantAmount,
+        address _feeAssetId,
+        uint256 _feeAmount,
+        uint256 _offerNonce,
+        uint256 _expectedAvailableAmount
+    )
+        external
+        onlyAdmin
+        onlyEscalatedAdminState
+    {
+        bytes32 offerHash = keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _maker,
+            _offerAssetId,
+            _offerAmount,
+            _wantAssetId,
+            _wantAmount,
+            _feeAssetId,
+            _feeAmount,
+            _offerNonce
+        ));
+
+        _cancel(
+            _maker,
+            offerHash,
+            _expectedAvailableAmount,
+            _offerAssetId,
+            _offerNonce,
+            address(0),
+            0
+        );
+    }
+
+    function announceCancel(
+        address _maker,
+        address _offerAssetId,
+        uint256 _offerAmount,
+        address _wantAssetId,
+        uint256 _wantAmount,
+        address _feeAssetId,
+        uint256 _feeAmount,
+        uint256 _offerNonce
+    )
+        external
+    {
+        require(_maker == msg.sender, "Invalid sender");
+
+        bytes32 offerHash = keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _maker,
+            _offerAssetId,
+            _offerAmount,
+            _wantAssetId,
+            _wantAmount,
+            _feeAssetId,
+            _feeAmount,
+            _offerNonce
+        ));
+
+        require(offers[offerHash] > 0, "Invalid offerHash");
+
+        uint256 cancellableAt = now + slowCancelDelay;
+        cancellationAnnouncements[offerHash] = cancellableAt;
+
+        emit AnnounceCancel(offerHash, cancellableAt);
+    }
+
+    function slowCancel(
+        address _maker,
+        address _offerAssetId,
+        uint256 _offerAmount,
+        address _wantAssetId,
+        uint256 _wantAmount,
+        address _feeAssetId,
+        uint256 _feeAmount,
+        uint256 _offerNonce
+    )
+        external
+    {
+        bytes32 offerHash = keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _maker,
+            _offerAssetId,
+            _offerAmount,
+            _wantAssetId,
+            _wantAmount,
+            _feeAssetId,
+            _feeAmount,
+            _offerNonce
+        ));
+
+        uint256 cancellableAt = cancellationAnnouncements[offerHash];
+        require(cancellableAt != 0, "Invalid announcement");
+        require(now > cancellableAt, "Insufficient delay");
+
+        uint256 availableAmount = offers[offerHash];
+        require(availableAmount > 0, "Offer already cancelled");
+
+        delete cancellationAnnouncements[offerHash];
+        _cancel(
+            _maker,
+            offerHash,
+            availableAmount,
+            _offerAssetId,
+            _offerNonce,
+            address(0),
+            0
+        );
+
+        emit SlowCancel(offerHash, availableAmount);
+    }
+
     function withdraw(
         address payable _withdrawer,
         address _assetId,
@@ -732,11 +847,10 @@ contract BrokerV2 is Ownable {
 
         WithdrawalAnnouncement storage announcement = withdrawlAnnouncements[msg.sender][_assetId];
 
-        uint256 withdrawableAt = now + slowWithdrawDelay;
-        announcement.withdrawableAt = withdrawableAt;
+        announcement.withdrawableAt = now + slowWithdrawDelay;
         announcement.amount = _amount;
 
-        emit AnnounceWithdraw(msg.sender, _assetId, _amount, withdrawableAt);
+        emit AnnounceWithdraw(msg.sender, _assetId, _amount, announcement.withdrawableAt);
     }
 
     function slowWithdraw(
@@ -746,17 +860,13 @@ contract BrokerV2 is Ownable {
         external
     {
         WithdrawalAnnouncement memory announcement = withdrawlAnnouncements[msg.sender][_assetId];
-        uint256 amount = announcement.amount;
 
-        require(amount > 0, "Invalid amount");
-        require(
-            announcement.withdrawableAt != 0 && announcement.withdrawableAt <= now,
-            "Insufficient delay"
-        );
+        require(announcement.withdrawableAt != 0, "Invalid announcement");
+        require(now > announcement.withdrawableAt, "Insufficient delay");
 
         delete withdrawlAnnouncements[_withdrawer][_assetId];
-        _withdraw(_withdrawer, _assetId, amount, address(0), 0, 0);
-        emit SlowWithdraw(_withdrawer, _assetId, amount);
+        _withdraw(_withdrawer, _assetId, announcement.amount, address(0), 0, 0);
+        emit SlowWithdraw(_withdrawer, _assetId, announcement.amount);
     }
 
     // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
@@ -907,52 +1017,6 @@ contract BrokerV2 is Ownable {
                 _values[3],
                 0
             );
-        }
-    }
-
-    function _validateTradeSignatures(
-        uint256[] memory _values,
-        bytes32[] memory _hashes,
-        address[] memory _addresses,
-        bytes32[] memory _hashKeys,
-        bytes32 _typehash,
-        uint256 _i,
-        uint256 _end
-    )
-        private
-        pure
-    {
-        for (_i; _i < _end; _i++) {
-            uint256 dataA = _values[_i * 2 + 1];
-            uint256 dataB = _values[_i * 2 + 2];
-            address user = _addresses[(dataA & ~(~uint256(0) << 8)) * 2];
-
-            bytes32 hashKey = keccak256(abi.encode(
-                _typehash,
-                user,
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
-                dataB & ~(~uint256(0) << 128), // offerAmount
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
-                dataB >> 128, // wantAmount
-                _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
-                dataA >> 128, // feeAmount
-                (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
-            ));
-
-            bool prefixedSignature = _values[0] & (uint256(1) << (24 + _i)) != 0;
-
-            _validateSignature(
-                hashKey,
-                user,
-                uint8((dataA & ~(~uint256(0) << 48)) >> 40),
-                _hashes[_i * 2],
-                _hashes[_i * 2 + 1],
-                prefixedSignature
-            );
-
-            if (_hashKeys.length > 0) {
-                _hashKeys[_i] = hashKey;
-            }
         }
     }
 

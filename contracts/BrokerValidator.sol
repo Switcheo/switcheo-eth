@@ -5,6 +5,44 @@ import "./lib/math/SafeMath.sol";
 contract BrokerValidator {
     using SafeMath for uint256;
 
+    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
+    /* bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
+        EIP712_DOMAIN_TYPEHASH,
+        CONTRACT_NAME,
+        CONTRACT_VERSION,
+        CHAIN_ID,
+        VERIFYING_CONTRACT,
+        SALT
+    )); */
+
+    bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
+    /* bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
+        "Offer(",
+            "address maker,",
+            "address offerAssetId,",
+            "uint256 offerAmount,",
+            "address wantAssetId,",
+            "uint256 wantAmount,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
+            "uint256 nonce",
+        ")"
+    )); */
+
+    bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
+    /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
+        "Fill(",
+            "address filler,",
+            "address offerAssetId,",
+            "uint256 offerAmount,",
+            "address wantAssetId,",
+            "uint256 wantAmount,",
+            "address feeAssetId,",
+            "uint256 feeAmount,",
+            "uint256 nonce",
+        ")"
+    )); */
+
     function validateTrades(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -13,12 +51,33 @@ contract BrokerValidator {
     )
         external
         pure
+        returns (bytes32[] memory)
     {
         _validateTradeInputLengths(_values, _hashes);
         _validateUniqueOffers(_values);
         _validateMatches(_values, _addresses);
         _validateFillAmounts(_values);
         _validateTradeData(_values, _addresses, _operator);
+
+        // validate signatures of all fills
+        _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            FILL_TYPEHASH,
+            _values[0] & ~(~uint256(0) << 8), // numOffers
+            (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numOffers + numFills
+        );
+
+        // validate signatures of all offers
+        return _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            OFFER_TYPEHASH,
+            0,
+            _values[0] & ~(~uint256(0) << 8) // numOffers
+        );
     }
 
     function _validateTradeInputLengths(
@@ -242,6 +301,84 @@ contract BrokerValidator {
                 _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == _operator,
                 "Invalid operator"
             );
+        }
+    }
+
+    function _validateTradeSignatures(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses,
+        bytes32 _typehash,
+        uint256 _i,
+        uint256 _end
+    )
+        private
+        pure
+        returns (bytes32[] memory)
+    {
+        bytes32[] memory hashKeys;
+        if (_i == 0) {
+            hashKeys = new bytes32[](_end - _i);
+        }
+
+        for (_i; _i < _end; _i++) {
+            uint256 dataA = _values[_i * 2 + 1];
+            uint256 dataB = _values[_i * 2 + 2];
+
+            bytes32 hashKey = keccak256(abi.encode(
+                _typehash,
+                _addresses[(dataA & ~(~uint256(0) << 8)) * 2],
+                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
+                dataB & ~(~uint256(0) << 128), // offerAmount
+                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
+                dataB >> 128, // wantAmount
+                _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
+                dataA >> 128, // feeAmount
+                (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
+            ));
+
+            bool prefixedSignature = _values[0] & (uint256(1) << (24 + _i)) != 0;
+
+            _validateSignature(
+                hashKey,
+                _addresses[(dataA & ~(~uint256(0) << 8)) * 2],
+                uint8((dataA & ~(~uint256(0) << 48)) >> 40),
+                _hashes[_i * 2],
+                _hashes[_i * 2 + 1],
+                prefixedSignature
+            );
+
+            if (hashKeys.length > 0) { hashKeys[_i] = hashKey; }
+        }
+
+        return hashKeys;
+    }
+
+    function _validateSignature(
+        bytes32 _hash,
+        address _user,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s,
+        bool _prefixed
+    )
+        private
+        pure
+    {
+        bytes32 eip712Hash = keccak256(abi.encodePacked(
+            "\x19\x01",
+            DOMAIN_SEPARATOR,
+            _hash
+        ));
+
+        if (_prefixed) {
+            bytes32 prefixedHash = keccak256(abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                eip712Hash
+            ));
+            require(_user == ecrecover(prefixedHash, _v, _r, _s), "Invalid signature");
+        } else {
+            require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
         }
     }
 }

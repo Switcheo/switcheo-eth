@@ -247,6 +247,21 @@ async function cancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmoun
     return await broker.cancel(values, hashes, addresses)
 }
 
+async function adminCancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, expectedAvailableAmount }) {
+    const broker = await getBroker()
+    return await broker.adminCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, expectedAvailableAmount)
+}
+
+async function announceCancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }, { from }) {
+    const broker = await getBroker()
+    return await broker.announceCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, { from })
+}
+
+async function slowCancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }) {
+    const broker = await getBroker()
+    return await broker.slowCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce)
+}
+
 function constructTradeData(data) {
     const { addressMap, operator, user, offerAssetId, wantAssetId, feeAssetId,
             v, nonce, feeAmount, offerAmount, wantAmount } = data
@@ -415,6 +430,9 @@ const exchange = {
     depositToken,
     trade,
     cancel,
+    adminCancel,
+    announceCancel,
+    slowCancel,
     withdraw,
     createSwap,
     executeSwap,
