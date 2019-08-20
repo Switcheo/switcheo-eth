@@ -13,6 +13,16 @@ interface IERC1820Registry {
     function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
 }
 
+/// @title The BrokerV2 contract for Switcheo Exchange
+/// @author Switcheo Network
+/// @notice This contract faciliates Ethereum and Ethereum token trades
+/// between users. Users can trade with each other by making
+/// and taking offers without giving up custody of their tokens.
+/// Users should first deposit tokens, then communicate off-chain
+/// with the exchange coordinator, in order to place orders
+/// (make / take offers). This allows trades to be confirmed
+/// immediately by the coordinator, and settled on-chain through
+/// this contract at a later time.
 contract BrokerV2 is Ownable {
     using SafeMath for uint256;
 
@@ -21,160 +31,179 @@ contract BrokerV2 is Ownable {
         uint256 withdrawableAt;
     }
 
+    // Exchange states
     enum State { Active, Inactive }
+    // Exchange admin states
     enum AdminState { Normal, Escalated }
 
-    /* bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
-    bytes32 public constant CONTRACT_VERSION = keccak256("2");
-    // TODO: update this before deployment
-    uint256 public constant CHAIN_ID = 3;
-    // TODO: pre-calculate and update this before deployment
-    address public constant VERIFYING_CONTRACT = address(1);
-    bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt"); */
-
+    // The constants for EIP-712 are precompiled to reduce contract size,
+    // the original values are left here for reference and verification
+    //
+    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
+    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
+    // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
+    // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
+    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
+    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
+    //     "EIP712Domain(",
+    //         "string name,",
+    //         "string version,",
+    //         "uint256 chainId,",
+    //         "address verifyingContract,",
+    //         "bytes32 salt",
+    //     ")"
+    // ));
     bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
-    /* bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
-        "EIP712Domain(",
-            "string name,",
-            "string version,",
-            "uint256 chainId,",
-            "address verifyingContract,",
-            "bytes32 salt",
-        ")"
-    )); */
 
+    // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
+    //     EIP712_DOMAIN_TYPEHASH,
+    //     CONTRACT_NAME,
+    //     CONTRACT_VERSION,
+    //     CHAIN_ID,
+    //     VERIFYING_CONTRACT,
+    //     SALT
+    // ));
     bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
-    /* bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
-        EIP712_DOMAIN_TYPEHASH,
-        CONTRACT_NAME,
-        CONTRACT_VERSION,
-        CHAIN_ID,
-        VERIFYING_CONTRACT,
-        SALT
-    )); */
 
+    // bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
+    //     "AuthorizeSpender(",
+    //         "address user,",
+    //         "address spender,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
-    /* bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
-        "AuthorizeSpender(",
-            "address user,",
-            "address spender,",
-            "uint256 nonce",
-        ")"
-    )); */
 
+    // bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Withdraw(",
+    //         "address withdrawer,",
+    //         "address receivingAddress,",
+    //         "address assetId,",
+    //         "uint256 amount,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant WITHDRAW_TYPEHASH = 0xbe2f4292252fbb88b129dc7717b2f3f74a9afb5b13a2283cac5c056117b002eb;
-    /* bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
-        "Withdraw(",
-            "address withdrawer,",
-            "address receivingAddress,",
-            "address assetId,",
-            "uint256 amount,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-            "uint256 nonce",
-        ")"
-    )); */
 
+    // bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Offer(",
+    //         "address maker,",
+    //         "address offerAssetId,",
+    //         "uint256 offerAmount,",
+    //         "address wantAssetId,",
+    //         "uint256 wantAmount,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
-    /* bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
-        "Offer(",
-            "address maker,",
-            "address offerAssetId,",
-            "uint256 offerAmount,",
-            "address wantAssetId,",
-            "uint256 wantAmount,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-            "uint256 nonce",
-        ")"
-    )); */
 
+    // bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Fill(",
+    //         "address filler,",
+    //         "address offerAssetId,",
+    //         "uint256 offerAmount,",
+    //         "address wantAssetId,",
+    //         "uint256 wantAmount,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
-    /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
-        "Fill(",
-            "address filler,",
-            "address offerAssetId,",
-            "uint256 offerAmount,",
-            "address wantAssetId,",
-            "uint256 wantAmount,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-            "uint256 nonce",
-        ")"
-    )); */
 
+    // bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Cancel(",
+    //         "bytes32 offerHash,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //     ")"
+    // ));
     bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
-    /* bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
-        "Cancel(",
-            "bytes32 offerHash,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-        ")"
-    )); */
 
+    // bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Swap(",
+    //         "address maker,",
+    //         "address taker,",
+    //         "address assetId,",
+    //         "uint256 amount,",
+    //         "bytes32 hashedSecret,",
+    //         "uint256 expiryTime,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant SWAP_TYPEHASH = 0x6ba9001457a287c210b728198a424a4222098d7fac48f8c5fb5ab10ef907d3ef;
-    /* bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
-        "Swap(",
-            "address maker,",
-            "address taker,",
-            "address assetId,",
-            "uint256 amount,",
-            "bytes32 hashedSecret,",
-            "uint256 expiryTime,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-            "uint256 nonce",
-        ")"
-    )); */
 
     // Ether token "address" is set as the constant 0x00
     address private constant ETHER_ADDR = address(0);
 
-    // deposits
+    // Reason codes are used by the off-chain coordinator to track balance changes
     uint256 private constant REASON_DEPOSIT = 0x01;
-    uint256 private constant REASON_MAKER_GIVE = 0x02;
-    uint256 private constant REASON_FILLER_GIVE = 0x03;
-    uint256 private constant REASON_FILLER_FEE_GIVE = 0x04;
-    uint256 private constant REASON_FILLER_RECEIVE = 0x05;
-    uint256 private constant REASON_MAKER_RECEIVE = 0x06;
-    uint256 private constant REASON_FILLER_FEE_RECEIVE = 0x07;
-    uint256 private constant REASON_MAKER_FEE_GIVE = 0x10;
-    uint256 private constant REASON_MAKER_FEE_RECEIVE = 0x11;
+
     uint256 private constant REASON_WITHDRAW = 0x09;
     uint256 private constant REASON_WITHDRAW_FEE_GIVE = 0x14;
     uint256 private constant REASON_WITHDRAW_FEE_RECEIVE = 0x15;
+
     uint256 private constant REASON_CANCEL = 0x08;
     uint256 private constant REASON_CANCEL_FEE_GIVE = 0x12;
     uint256 private constant REASON_CANCEL_FEE_RECEIVE = 0x13;
+
     uint256 private constant REASON_SWAP_GIVE = 0x30;
     uint256 private constant REASON_SWAP_RECEIVE = 0x35;
     uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
     uint256 private constant REASON_SWAP_FEE_RECEIVE = 0x37;
+
     uint256 private constant REASON_SWAP_CANCEL_RECEIVE = 0x38;
     uint256 private constant REASON_SWAP_CANCEL_FEE_RECEIVE = 0x3B;
     uint256 private constant REASON_SWAP_CANCEL_FEE_REFUND = 0x3D;
 
+    // 7 days * 24 hours * 60 mins * 60 seconds: 604800
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
     uint256 private constant MAX_SLOW_CANCEL_DELAY = 604800;
 
-    State public state; // position 0
-    AdminState public adminState; // position 1
-    // The operator receives fees
-    address public operator; // position 2
+    State public state;
+    AdminState public adminState;
+    // All fees will be transferred to the operator address
+    address public operator;
 
-    uint256 public slowWithdrawDelay; // position 3
-    uint256 public slowCancelDelay; // position 4
+    // The delay in seconds to complete the respective escape hatch (cancel / withdraw)
+    // This gives the off-chain service time to update the off-chain state
+    // before the state is separately updated by the user
+    uint256 public slowCancelDelay;
+    uint256 public slowWithdrawDelay;
 
-    mapping(bytes32 => uint256) public offers; // position 5
-    mapping(uint256 => uint256) public usedNonces; // position 6
-    mapping(address => mapping(address => uint256)) public balances; // position 7
-
-    mapping(address => bool) adminAddresses;
+    // A mapping of remaining offer amounts: offerHash => availableAmount
+    mapping(bytes32 => uint256) public offers;
+    // A mapping of used nonces: nonceIndex => nonceData
+    // For space efficiency, one nonceData is used to store the state of 256 nonces
+    // See _markNonce and _nonceTaken for more details
+    mapping(uint256 => uint256) public usedNonces;
+    // A mapping of user balances: userAddress => assetId => balance
+    mapping(address => mapping(address => uint256)) public balances;
+    // A mapping of atomic swap states: swapHash => isSwapActive
     mapping(bytes32 => bool) public atomicSwaps;
+
+    // A record of admin addresses: userAddress => isAdmin
+    mapping(address => bool) public adminAddresses;
+    // A record of whitelisted tokens to permit "tokenFallback" and "tokensReceived" callbacks
+    // tokenAddress => isWhitelisted
     mapping(address => bool) public tokenWhitelist;
+    // A record of whitelisted spenders
+    // Spenders are intended to be extension contracts
+    // A user would first manually vet a spender contract then approve it to update "balances"
+    // for their address, using the "authorizeSpender" method
+    // spenderContract => isWhitelisted
     mapping(address => bool) public spenderWhitelist;
+    // A record of spender authorizations: userAddress => spenderAddress => isAuthorized
     mapping(address => mapping(address => bool)) public spenderAuthorizations;
+    // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
+    // A mapping of withdrawal announcements: userAddress => assetId => announcementData
     mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
 
     // Emitted on any balance state transition (+ve)
@@ -195,7 +224,10 @@ contract BrokerV2 is Ownable {
         uint256 nonce
     );
 
+    // A compacted version of "BalanceIncrease" used for the "trade" method
+    // The purpose of compacting the data is to reduce gas costs
     event Increment(uint256 data);
+    // A compacted version of "BalanceDecrease" used for the "trade" method
     event Decrement(uint256 data);
 
     event AuthorizeSpender(
@@ -241,12 +273,20 @@ contract BrokerV2 is Ownable {
         uint256 amount
     );
 
+    /// @notice Initializes the Broker contract
+    /// @dev The coordinator, operator and owner (through Ownable) is initialized
+    /// to be the address of the sender.
+    /// The Broker is immediately put into an active state,
+    /// with maximum exit delays set.
+    /// The Broker is also registered as an implementer of ERC777TokensRecipient
+    /// through the ERC1820 registry
     constructor() public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
         slowCancelDelay = MAX_SLOW_CANCEL_DELAY;
+        state = State.Active;
 
         IERC1820Registry erc1820 = IERC1820Registry(
             0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24

@@ -130,17 +130,15 @@ library BrokerValidations {
     // uniqueness of offers are validated in O(N) time by requiring that
     // offer nonces are in a strictly ascending order
     function _validateUniqueOffers(uint256[] memory _values) private pure {
-        uint256 start = 1;
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
-        uint256 end = start + numOffers * 2;
 
         uint256 prevNonce;
         uint256 mask = ~(~uint256(0) << 128);
 
-        for(uint256 i = start; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask) >> 48;
+        for(uint256 i = 0; i < numOffers; i++) {
+            uint256 nonce = (_values[i * 2 + 1] & mask) >> 48;
 
-            if (i == start) {
+            if (i == 0) {
                 prevNonce = nonce;
                 continue;
             }
