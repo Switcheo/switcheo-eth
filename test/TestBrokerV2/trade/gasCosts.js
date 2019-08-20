@@ -1,6 +1,5 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
-        exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
-const { getTradeParams } = require('../../utils/getTradeParams')
+const { getBroker, getJrc, getSwc, shl, validateBalance, hashOffer,
+        exchange, assertAsync } = require('../../utils')
 const { PRIVATE_KEYS } = require('../../wallets')
 
 async function touchBalances(accounts) {

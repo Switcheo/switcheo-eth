@@ -7,7 +7,6 @@ async function printGasUsed(promise, label) {
 
 contract('Test gas costs', async (accounts) => {
     let lab
-    const user = accounts[0]
 
     beforeEach(async () => {
         lab = await Lab.deployed()

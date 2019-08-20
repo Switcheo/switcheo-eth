@@ -1,5 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
-        exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
+const { getBroker, getJrc, getSwc, bn, shl, clone, exchange, testValidation } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
 const { PRIVATE_KEYS } = require('../../wallets')
@@ -7,7 +6,6 @@ const { ZERO_ADDR, ETHER_ADDR } = require('../../constants')
 
 contract('Test trade: general validations', async (accounts) => {
     let broker, jrc, swc, tradeParams
-    const operator = accounts[0]
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
@@ -28,7 +26,7 @@ contract('Test trade: general validations', async (accounts) => {
     contract('when numOffers is 0', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values, fill }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
+                ({ values }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
                 'Invalid trade inputs'
             )
@@ -38,7 +36,7 @@ contract('Test trade: general validations', async (accounts) => {
     contract('when numFills is 0', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values, fill }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
+                ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
                 'Invalid trade inputs'
             )
@@ -48,7 +46,7 @@ contract('Test trade: general validations', async (accounts) => {
     contract('when numMatches is 0', async () => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values, fill }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
+                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
                 'Invalid trade inputs'
             )

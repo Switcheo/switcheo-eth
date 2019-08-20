@@ -1,7 +1,6 @@
-const { getBroker, getJrc, getSwc } = require('.')
+const { getJrc, getSwc } = require('.')
 
 async function getTradeParams(accounts) {
-    const broker = await getBroker()
     const jrc = await getJrc()
     const swc = await getSwc()
 
@@ -9,7 +8,7 @@ async function getTradeParams(accounts) {
     const maker = accounts[1]
     const filler = accounts[2]
 
-    offers = [{
+    const offers = [{
         maker,
         offerAssetId: jrc.address,
         offerAmount: 100,
@@ -18,7 +17,7 @@ async function getTradeParams(accounts) {
         feeAssetId: swc.address,
         feeAmount: 0,
         nonce: 3
-    },{
+    }, {
         maker,
         offerAssetId: jrc.address,
         offerAmount: 100,
@@ -29,7 +28,7 @@ async function getTradeParams(accounts) {
         nonce: 4
     }]
 
-    fills = [{
+    const fills = [{
         filler,
         offerAssetId: swc.address,
         offerAmount: 20,
@@ -49,7 +48,7 @@ async function getTradeParams(accounts) {
         nonce: 6
     }]
 
-    matches = [{
+    const matches = [{
         offerIndex: 0,
         fillIndex: 2,
         takeAmount: 40

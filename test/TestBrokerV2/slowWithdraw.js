@@ -1,9 +1,8 @@
-const { web3, getBroker, getJrc, validateBalance, validateExternalBalance,
+const { getBroker, getJrc, validateBalance, validateExternalBalance,
         increaseEvmTime, exchange } = require('../utils')
 
 contract('Test slowWithdraw', async (accounts) => {
     let broker, jrc
-    const operator = accounts[0]
     const user = accounts[1]
     const announceDelay = 604800
 
@@ -20,7 +19,7 @@ contract('Test slowWithdraw', async (accounts) => {
             await validateExternalBalance(user, jrc, 0)
 
             await broker.announceWithdraw(jrc.address, 42, { from: user })
-            await increaseEvmTime(announceDelay + 1)
+            await increaseEvmTime(announceDelay)
 
             await broker.slowWithdraw(user, jrc.address, { from: user })
 

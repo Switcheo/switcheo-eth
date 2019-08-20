@@ -1,5 +1,4 @@
-const { web3, getBroker, getJrc, getSwc, validateBalance, hashOffer,
-        exchange, printLogs, assertAsync } = require('../utils')
+const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange, assertAsync } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
 
 const { PRIVATE_KEYS, getPrivateKey } = require('../wallets')

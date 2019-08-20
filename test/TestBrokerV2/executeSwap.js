@@ -1,5 +1,5 @@
-const { web3, getBroker, getJrc, validateBalance, validateExternalBalance,
-        getEvmTime, hashSecret, hashSwap, exchange, assertAsync } = require('../utils')
+const { getBroker, getJrc, validateBalance, getEvmTime, hashSecret, hashSwap,
+        exchange, assertAsync } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test executeSwap', async (accounts) => {

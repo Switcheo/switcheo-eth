@@ -5,9 +5,9 @@ const SWCoin = artifacts.require('SWCoin')
 const DGTXCoin = artifacts.require('DGTX')
 const ZEUSCoin = artifacts.require('ZEUS')
 
-const BN = require('bn.js');
+const BN = require('bn.js')
 const EthCrypto = require('eth-crypto')
-const { singletons } = require('openzeppelin-test-helpers');
+const { singletons } = require('openzeppelin-test-helpers')
 const { sha256 } = require('js-sha256')
 
 const Web3 = require('web3')
@@ -18,7 +18,7 @@ const { soliditySha3, keccak256 } = web3.utils
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR } = require('../constants')
+const { DOMAIN_SEPARATOR, TYPEHASHES } = require('../constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
@@ -26,6 +26,7 @@ async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
 async function getDgtx() { return await DGTXCoin.deployed() }
 async function getZeus(account) {
+    /* eslint-disable new-cap */
     await singletons.ERC1820Registry(account)
     return await ZEUSCoin.new()
 }
@@ -86,10 +87,6 @@ function assertEqual(valueA, valueB) {
     assert.equal(valueA, valueB)
 }
 
-function assertValidation() {
-
-}
-
 async function assertAsync(promise, value) {
     const result = await promise
     assertEqual(result, value)
@@ -120,17 +117,17 @@ async function increaseEvmTime(time) {
 
 async function assertReversion(promise, errorMessage) {
     try {
-        await promise;
+        await promise
     } catch (error) {
-        const revertFound = error.message.search('revert') >= 0;
-        assert(revertFound, `Expected "revert", got ${error} instead`);
+        const revertFound = error.message.search('revert') >= 0
+        assert(revertFound, `Expected "revert", got ${error} instead`)
         if (errorMessage !== undefined) {
-            const messageFound = error.message.search(errorMessage) >= 0;
-            assert(messageFound, `Expected "${errorMessage}", got ${error} instead`);
+            const messageFound = error.message.search(errorMessage) >= 0
+            assert(messageFound, `Expected "${errorMessage}", got ${error} instead`)
         }
-        return;
+        return
     }
-    assert.fail('Expected an EVM revert but no error was encountered');
+    assert.fail('Expected an EVM revert but no error was encountered')
 }
 
 async function testValidation(method, params, fail, pass, errorMessage) {
@@ -171,9 +168,9 @@ async function mintAndDeposit({ user, token, amount, nonce }) {
 }
 
 function parseSignature(signature) {
-  var r = signature.substring(0, 64);
-  var s = signature.substring(64, 128);
-  var v = signature.substring(128, 130);
+  const r = signature.substring(0, 64)
+  const s = signature.substring(64, 128)
+  const v = signature.substring(128, 130)
 
   return {
       v: parseInt(v, 16),
@@ -185,8 +182,8 @@ function parseSignature(signature) {
 function getSignHash(hash) {
   const signHash = soliditySha3(
     { type: 'string', value: '\x19\x01' },
-    { type: 'bytes32',  value: DOMAIN_SEPARATOR },
-    { type: 'bytes32',  value: hash }
+    { type: 'bytes32', value: DOMAIN_SEPARATOR },
+    { type: 'bytes32', value: hash }
   )
   return signHash
 }
@@ -215,22 +212,33 @@ async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
     return await broker.authorizeSpender(user, spender, nonce, v, r, s, false)
 }
 
-async function withdraw({ user, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
+async function withdraw({ user, receivingAddress, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     user = ensureAddress(user)
     const broker = await getBroker()
     const { v, r, s } = await signParameters(
-        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
-        [TYPEHASHES.WITHDRAW_TYPEHASH, user, assetId, amount, feeAssetId, feeAmount, nonce],
+        ['bytes32', 'address', 'address', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [TYPEHASHES.WITHDRAW_TYPEHASH, user, receivingAddress, assetId, amount, feeAssetId, feeAmount, nonce],
         privateKey
     )
-    return await broker.withdraw(user, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s, false)
+    return await broker.withdraw(user, receivingAddress, assetId, amount, feeAssetId, feeAmount, nonce, v, r, s, false)
 }
 
-async function cancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, expectedAvailableAmount, cancelFeeAssetId, cancelFeeAmount }, { privateKey }) {
+async function cancel(
+    {
+        maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount,
+        nonce, expectedAvailableAmount, cancelFeeAssetId, cancelFeeAmount
+    },
+    { privateKey }
+)
+{
     const broker = await getBroker()
-    const offerHash = hashOffer({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce })
+    const offerHash = hashOffer({
+        maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+        feeAssetId, feeAmount, nonce
+    })
+
     const { v, r, s } = await signParameters(
         ['bytes32', 'bytes32', 'address', 'uint256'],
         [TYPEHASHES.CANCEL_TYPEHASH, offerHash, cancelFeeAssetId, cancelFeeAmount],
@@ -247,19 +255,37 @@ async function cancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmoun
     return await broker.cancel(values, hashes, addresses)
 }
 
-async function adminCancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, expectedAvailableAmount }) {
+async function adminCancel(
+    {
+        maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount,
+        nonce, expectedAvailableAmount
+    }
+)
+{
     const broker = await getBroker()
-    return await broker.adminCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, expectedAvailableAmount)
+    return await broker.adminCancel(
+        maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount,
+        nonce, expectedAvailableAmount
+    )
 }
 
-async function announceCancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }, { from }) {
+async function announceCancel(
+    {
+        maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+        feeAssetId, feeAmount, nonce
+    },
+    { from }
+)
+{
     const broker = await getBroker()
-    return await broker.announceCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce, { from })
+    return await broker.announceCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+                                       feeAssetId, feeAmount, nonce, { from })
 }
 
 async function slowCancel({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce }) {
     const broker = await getBroker()
-    return await broker.slowCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce)
+    return await broker.slowCancel(maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+                                   feeAssetId, feeAmount, nonce)
 }
 
 function constructTradeData(data) {
@@ -327,10 +353,12 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, tran
         const privateKey = privateKeys[maker]
 
         const { v, r, s } = await signParameters(
-            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
-            [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce],
+            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
+             'address', 'uint256', 'uint256'],
+            [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+             feeAssetId, feeAmount, nonce],
             privateKey
-        );
+        )
 
         const data = { addressMap, operator, user: maker, offerAssetId, wantAssetId,
                        feeAssetId, v, nonce, feeAmount, offerAmount, wantAmount }
@@ -347,10 +375,12 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, tran
         const privateKey = privateKeys[filler]
 
         const { v, r, s } = await signParameters(
-            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
-            [TYPEHASHES.FILL_TYPEHASH, filler, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce],
+            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
+             'address', 'uint256', 'uint256'],
+            [TYPEHASHES.FILL_TYPEHASH, filler, offerAssetId, offerAmount, wantAssetId, wantAmount,
+             feeAssetId, feeAmount, nonce],
             privateKey
-        );
+        )
 
         const data = { addressMap, operator, user: filler, offerAssetId, wantAssetId,
                        feeAssetId, v, nonce, feeAmount, offerAmount, wantAmount }
@@ -376,8 +406,10 @@ function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, fee
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     return keccak256(encodeParameters(
-        ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
-        [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce]
+        ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256',
+         'address', 'uint256', 'uint256'],
+        [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime,
+         feeAssetId, feeAmount, nonce]
     ))
 }
 
@@ -386,18 +418,28 @@ function hashOffer({ maker, offerAssetId, offerAmount, wantAssetId, wantAmount, 
     wantAssetId = ensureAddress(wantAssetId)
     feeAssetId = ensureAddress(feeAssetId)
     return keccak256(encodeParameters(
-        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
-        [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount, feeAssetId, feeAmount, nonce]
+        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
+         'address', 'uint256', 'uint256'],
+        [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+         feeAssetId, feeAmount, nonce]
     ))
 }
 
-async function createSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }, { privateKey }) {
+async function createSwap(
+    {
+        maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce
+    },
+    { privateKey }
+)
+{
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     const broker = await getBroker()
     const { v, r, s } = await signParameters(
-        ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256', 'address', 'uint256', 'uint256'],
-        [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce],
+        ['bytes32', 'address', 'address', 'address', 'uint256', 'bytes32', 'uint256',
+         'address', 'uint256', 'uint256'],
+        [TYPEHASHES.SWAP_TYPEHASH, maker, taker, assetId, amount, hashedSecret, expiryTime,
+         feeAssetId, feeAmount, nonce],
         privateKey
     )
     const addresses = [maker, taker, assetId, feeAssetId]
@@ -406,7 +448,12 @@ async function createSwap({ maker, taker, assetId, amount, hashedSecret, expiryT
     return await broker.createSwap(addresses, values, hashes, v, false)
 }
 
-async function executeSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, secret }) {
+async function executeSwap(
+    {
+        maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, secret
+    }
+)
+{
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     const broker = await getBroker()
@@ -415,7 +462,12 @@ async function executeSwap({ maker, taker, assetId, amount, hashedSecret, expiry
     return await broker.executeSwap(addresses, values, hashedSecret, web3.utils.utf8ToHex(secret))
 }
 
-async function cancelSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, cancelFeeAmount }) {
+async function cancelSwap(
+    {
+        maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce, cancelFeeAmount
+    }
+)
+{
     assetId = ensureAddress(assetId)
     feeAssetId = ensureAddress(feeAssetId)
     const broker = await getBroker()
@@ -436,7 +488,7 @@ const exchange = {
     withdraw,
     createSwap,
     executeSwap,
-    cancelSwap,
+    cancelSwap
 }
 
 module.exports = {
@@ -462,5 +514,5 @@ module.exports = {
     decodeReceiptLogs,
     hashSwap,
     hashOffer,
-    exchange,
+    exchange
 }

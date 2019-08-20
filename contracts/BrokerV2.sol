@@ -2,6 +2,7 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
+import "./BrokerValidations.sol";
 
 interface ERC20Token {
     function allowance(address owner, address spender) external view returns (uint256);
@@ -10,10 +11,6 @@ interface ERC20Token {
 
 interface IERC1820Registry {
     function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
-}
-
-interface BrokerValidator {
-    function validateTrades(uint256[] calldata _values, bytes32[] calldata _hashes, address[] calldata _addresses, address _operator) external returns(bytes32[] memory);
 }
 
 contract BrokerV2 is Ownable {
@@ -65,10 +62,11 @@ contract BrokerV2 is Ownable {
         ")"
     )); */
 
-    bytes32 public constant WITHDRAW_TYPEHASH = 0x022201e899466f5f66e5c18267f163396774140999328264ade6a71fa5be02de;
+    bytes32 public constant WITHDRAW_TYPEHASH = 0xbe2f4292252fbb88b129dc7717b2f3f74a9afb5b13a2283cac5c056117b002eb;
     /* bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
         "Withdraw(",
             "address withdrawer,",
+            "address receivingAddress,",
             "address assetId,",
             "uint256 amount,",
             "address feeAssetId,",
@@ -167,8 +165,6 @@ contract BrokerV2 is Ownable {
     uint256 public slowWithdrawDelay; // position 3
     uint256 public slowCancelDelay; // position 4
 
-    BrokerValidator private validator;
-
     mapping(bytes32 => uint256) public offers; // position 5
     mapping(uint256 => uint256) public usedNonces; // position 6
     mapping(address => mapping(address => uint256)) public balances; // position 7
@@ -245,14 +241,12 @@ contract BrokerV2 is Ownable {
         uint256 amount
     );
 
-    constructor(address validatorAddress) public {
+    constructor() public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
         slowCancelDelay = MAX_SLOW_CANCEL_DELAY;
-
-        validator = BrokerValidator(validatorAddress);
 
         IERC1820Registry erc1820 = IERC1820Registry(
             0x1820a4B7618BdE71Dce8cdc73aAB6C95905faD24
@@ -556,7 +550,7 @@ contract BrokerV2 is Ownable {
         onlyActiveState
     {
         // used to store the hash keys of each offer
-        bytes32[] memory hashKeys = validator.validateTrades(
+        bytes32[] memory hashKeys = BrokerValidations.validateTrades(
             _values,
             _hashes,
             _addresses,
@@ -759,7 +753,7 @@ contract BrokerV2 is Ownable {
 
         uint256 cancellableAt = cancellationAnnouncements[offerHash];
         require(cancellableAt != 0, "Invalid announcement");
-        require(now > cancellableAt, "Insufficient delay");
+        require(now >= cancellableAt, "Insufficient delay");
 
         uint256 availableAmount = offers[offerHash];
         require(availableAmount > 0, "Offer already cancelled");
@@ -779,7 +773,8 @@ contract BrokerV2 is Ownable {
     }
 
     function withdraw(
-        address payable _withdrawer,
+        address _withdrawer,
+        address payable _receivingAddress,
         address _assetId,
         uint256 _amount,
         address _feeAssetId,
@@ -799,6 +794,7 @@ contract BrokerV2 is Ownable {
             keccak256(abi.encode(
                 WITHDRAW_TYPEHASH,
                 _withdrawer,
+                _receivingAddress,
                 _assetId,
                 _amount,
                 _feeAssetId,
@@ -814,6 +810,7 @@ contract BrokerV2 is Ownable {
 
         _withdraw(
             _withdrawer,
+            _receivingAddress,
             _assetId,
             _amount,
             _feeAssetId,
@@ -825,13 +822,24 @@ contract BrokerV2 is Ownable {
     function adminWithdraw(
         address payable _withdrawer,
         address _assetId,
-        uint256 _amount
+        uint256 _amount,
+        uint256 _nonce
     )
         external
         onlyAdmin
         onlyEscalatedAdminState
     {
-        _withdraw(_withdrawer, _assetId, _amount, address(0), 0, 0);
+        _markNonce(_nonce);
+
+        _withdraw(
+            _withdrawer,
+            _withdrawer,
+            _assetId,
+            _amount,
+            address(0),
+            0,
+            _nonce
+        );
     }
 
     function announceWithdraw(
@@ -862,10 +870,18 @@ contract BrokerV2 is Ownable {
         WithdrawalAnnouncement memory announcement = withdrawlAnnouncements[msg.sender][_assetId];
 
         require(announcement.withdrawableAt != 0, "Invalid announcement");
-        require(now > announcement.withdrawableAt, "Insufficient delay");
+        require(now >= announcement.withdrawableAt, "Insufficient delay");
 
         delete withdrawlAnnouncements[_withdrawer][_assetId];
-        _withdraw(_withdrawer, _assetId, announcement.amount, address(0), 0, 0);
+        _withdraw(
+            _withdrawer,
+            _withdrawer,
+            _assetId,
+            announcement.amount,
+            address(0),
+            0,
+            0
+        );
         emit SlowWithdraw(_withdrawer, _assetId, announcement.amount);
     }
 
@@ -1336,7 +1352,8 @@ contract BrokerV2 is Ownable {
     }
 
     function _withdraw(
-        address payable _withdrawer,
+        address _withdrawer,
+        address payable _receivingAddress,
         address _assetId,
         uint256 _amount,
         address _feeAssetId,
@@ -1379,7 +1396,7 @@ contract BrokerV2 is Ownable {
         }
 
         if (_assetId == ETHER_ADDR) {
-            _withdrawer.transfer(withdrawAmount);
+            _receivingAddress.transfer(withdrawAmount);
             return;
         }
 
@@ -1387,7 +1404,7 @@ contract BrokerV2 is Ownable {
 
         bytes memory payload = abi.encodeWithSignature(
                                    "transfer(address,uint256)",
-                                   _withdrawer,
+                                   _receivingAddress,
                                    withdrawAmount
                                );
         bytes memory returnData = _callContract(_assetId, payload);

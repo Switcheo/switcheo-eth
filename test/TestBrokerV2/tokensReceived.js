@@ -1,9 +1,7 @@
-const { web3, getBroker, getZeus, validateBalance,
-        validateExternalBalance, assertReversion } = require('../utils')
+const { getBroker, getZeus, validateBalance, validateExternalBalance } = require('../utils')
 
 contract('Test tokensReceived', async (accounts) => {
     let broker, zeus
-    const owner = accounts[0]
     const user = accounts[1]
 
     beforeEach(async () => {
@@ -19,7 +17,7 @@ contract('Test tokensReceived', async (accounts) => {
             await validateBalance(user, zeus, 0)
 
             await broker.whitelistToken(zeus.address)
-            await zeus.send(broker.address, 87, "0x0", { from: user })
+            await zeus.send(broker.address, 87, '0x0', { from: user })
 
             await validateExternalBalance(user, zeus, 0)
             await validateBalance(user, zeus, 87)

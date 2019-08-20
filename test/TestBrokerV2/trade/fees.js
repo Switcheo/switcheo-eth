@@ -1,19 +1,16 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
-        exchange, assertAsync, assertReversion, testValidation } = require('../../utils')
+const { getJrc, getSwc, validateBalance, exchange } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
 const { PRIVATE_KEYS } = require('../../wallets')
-const { ZERO_ADDR, ETHER_ADDR } = require('../../constants')
 
 contract('Test trade: fees', async (accounts) => {
-    let broker, jrc, swc, tradeParams
+    let jrc, swc
     const operator = accounts[0]
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
 
     beforeEach(async () => {
-        broker = await getBroker()
         jrc = await getJrc()
         swc = await getSwc()
 

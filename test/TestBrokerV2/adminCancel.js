@@ -1,8 +1,7 @@
-const { web3, getBroker, getJrc, getSwc, validateBalance, hashOffer,
-        exchange, printLogs, assertAsync } = require('../utils')
+const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange, assertAsync } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
 
-const { PRIVATE_KEYS, getPrivateKey } = require('../wallets')
+const { PRIVATE_KEYS } = require('../wallets')
 
 contract('Test adminCancel', async (accounts) => {
     let broker, jrc, swc, tradeParams
@@ -10,7 +9,6 @@ contract('Test adminCancel', async (accounts) => {
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
-    const privateKey = getPrivateKey(maker)
 
     beforeEach(async () => {
         broker = await getBroker()

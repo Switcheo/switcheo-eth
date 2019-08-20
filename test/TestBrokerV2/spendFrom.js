@@ -1,9 +1,8 @@
-const { web3, getBroker, getJrc, exchange, validateBalance } = require('../utils')
+const { getBroker, getJrc, exchange, validateBalance } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test authorizeSpender', async (accounts) => {
     let broker, jrc
-    const operator = accounts[0]
     const user = accounts[1]
     const privateKey = getPrivateKey(user)
     const spender = accounts[2]

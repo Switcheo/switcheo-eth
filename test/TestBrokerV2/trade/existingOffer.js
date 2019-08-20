@@ -1,9 +1,7 @@
-const { web3, getBroker, getJrc, getSwc, bn, shl, clone, validateBalance, hashOffer,
-        exchange, assertAsync, assertReversion, testValidation, printLogs } = require('../../utils')
-const { getTradeParams } = require('../../utils/getTradeParams')
+const { getBroker, getJrc, getSwc, validateBalance, hashOffer,
+        exchange, assertAsync } = require('../../utils')
 
 const { PRIVATE_KEYS } = require('../../wallets')
-const { ZERO_ADDR, ETHER_ADDR } = require('../../constants')
 
 contract('Test trade: existing offer', async (accounts) => {
     let broker, jrc, swc
@@ -59,7 +57,7 @@ contract('Test trade: existing offer', async (accounts) => {
 
         fills[0] = { ...fills[0], nonce: 5, offerAmount: 20, wantAmount: 40 }
         matches[0] = { ...matches[0], takeAmount: 40 }
-        const result = await exchange.trade({ operator, offers, fills, matches }, { privateKeys })
+        await exchange.trade({ operator, offers, fills, matches }, { privateKeys })
 
         await validateBalance(maker, jrc, 400) // unchanged
         await validateBalance(maker, swc, 28) // 8 swc + 20 swc

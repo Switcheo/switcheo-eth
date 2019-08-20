@@ -1,11 +1,10 @@
-const { web3, getBroker, getJrc, validateBalance,
+const { getBroker, getJrc, validateBalance,
         validateExternalBalance, exchange } = require('../utils')
 
 contract('Test emergencyWithdraw', async (accounts) => {
     let broker, jrc
     const operator = accounts[0]
     const user = accounts[1]
-    const privateKey = '220b549fb616e6182061da424b5d906efa17f897fb3962fb2fe7cb0cec33bb59'
 
     beforeEach(async () => {
         broker = await getBroker()
@@ -19,7 +18,7 @@ contract('Test emergencyWithdraw', async (accounts) => {
             await validateBalance(user, jrc, 42)
 
             await broker.setAdminState(1)
-            await broker.adminWithdraw(user, jrc.address, 40, { from: operator })
+            await broker.adminWithdraw(user, jrc.address, 40, 4, { from: operator })
 
             await validateBalance(user, jrc, 2)
             await validateExternalBalance(user, jrc, 40)

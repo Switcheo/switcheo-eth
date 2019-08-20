@@ -2,7 +2,7 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 
-contract BrokerValidator {
+library BrokerValidations {
     using SafeMath for uint256;
 
     bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;

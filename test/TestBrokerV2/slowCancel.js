@@ -1,8 +1,8 @@
-const { web3, getBroker, getJrc, getSwc, validateBalance, hashOffer,
-        exchange, printLogs, assertAsync, increaseEvmTime } = require('../utils')
+const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange,
+        assertAsync, increaseEvmTime } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
 
-const { PRIVATE_KEYS, getPrivateKey } = require('../wallets')
+const { PRIVATE_KEYS } = require('../wallets')
 
 contract('Test slowCancel', async (accounts) => {
     let broker, jrc, swc, tradeParams
@@ -10,7 +10,6 @@ contract('Test slowCancel', async (accounts) => {
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
-    const privateKey = getPrivateKey(maker)
     const announceDelay = 604800
 
     beforeEach(async () => {
@@ -36,7 +35,7 @@ contract('Test slowCancel', async (accounts) => {
             const resultA = await exchange.announceCancel(offer, { from: maker })
             console.log('announceCancel gas used', resultA.receipt.gasUsed)
 
-            await increaseEvmTime(announceDelay + 1)
+            await increaseEvmTime(announceDelay)
 
             const resultB = await exchange.slowCancel(offer)
             console.log('slowCancel gas used', resultB.receipt.gasUsed)

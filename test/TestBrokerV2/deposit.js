@@ -1,4 +1,4 @@
-const { ETHER_ADDR } =  require('../constants')
+const { ETHER_ADDR } = require('../constants')
 const { web3, getBroker, validateBalance } = require('../utils')
 
 contract('Test deposit', async (accounts) => {

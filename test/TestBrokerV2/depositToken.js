@@ -1,5 +1,4 @@
-const { web3, getBroker, getJrc, validateBalance,
-        validateExternalBalance, assertReversion } = require('../utils')
+const { getBroker, getJrc, validateBalance, validateExternalBalance } = require('../utils')
 
 contract('Test depositToken', async (accounts) => {
     let broker, jrc
