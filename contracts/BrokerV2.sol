@@ -199,6 +199,9 @@ contract BrokerV2 is Ownable {
         uint256 nonce
     );
 
+    event Increment(uint256 data);
+    event Decrement(uint256 data);
+
     event AuthorizeSpender(
         address indexed user,
         address indexed spender,
@@ -1045,10 +1048,12 @@ contract BrokerV2 is Ownable {
 
         for(i = min; i <= max; i++) {
             uint256 increment = increments[i];
-            if (increment > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-            }
+            if (increment == 0) { continue; }
+
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+
+            emit Increment(i << 248 | increment);
         }
     }
 
@@ -1089,10 +1094,12 @@ contract BrokerV2 is Ownable {
 
         for(i = min; i <= max; i++) {
             uint256 increment = increments[i];
-            if (increment > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-            }
+            if (increment == 0) { continue; }
+
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+
+            emit Increment(i << 248 | increment);
         }
     }
 
@@ -1126,10 +1133,12 @@ contract BrokerV2 is Ownable {
 
         for(i = min; i <= max; i++) {
             uint256 increment = increments[i];
-            if (increment > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-            }
+            if (increment == 0) { continue; }
+
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
+
+            emit Increment(i << 248 | increment);
         }
     }
 
@@ -1141,7 +1150,7 @@ contract BrokerV2 is Ownable {
     {
         uint256 min = _addresses.length;
         uint256 max = 0;
-        uint256[] memory deductions = new uint256[](_addresses.length / 2);
+        uint256[] memory decrements = new uint256[](_addresses.length / 2);
 
         // 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
@@ -1153,7 +1162,7 @@ contract BrokerV2 is Ownable {
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
-            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
+            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
             if (min > offerAssetIndex) { min = offerAssetIndex; }
             if (max < offerAssetIndex) { max = offerAssetIndex; }
 
@@ -1161,17 +1170,19 @@ contract BrokerV2 is Ownable {
             if (feeAmount == 0) { continue; }
 
             uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
+            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
         for(i = min; i <= max; i++) {
-            uint256 deduction = deductions[i];
-            if (deduction > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
-            }
+            uint256 decrement = decrements[i];
+            if (decrement == 0) { continue; }
+
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
+
+            emit Decrement(i << 248 | decrement);
         }
     }
 
@@ -1183,7 +1194,7 @@ contract BrokerV2 is Ownable {
     {
         uint256 min = _addresses.length;
         uint256 max = 0;
-        uint256[] memory deductions = new uint256[](_addresses.length / 2);
+        uint256[] memory decrements = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
         // i + numOffers * 2
@@ -1197,7 +1208,7 @@ contract BrokerV2 is Ownable {
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
-            deductions[offerAssetIndex] = deductions[offerAssetIndex].add(offerAmount);
+            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
             if (min > offerAssetIndex) { min = offerAssetIndex; }
             if (max < offerAssetIndex) { max = offerAssetIndex; }
 
@@ -1205,17 +1216,19 @@ contract BrokerV2 is Ownable {
             if (feeAmount == 0) { continue; }
 
             uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            deductions[feeAssetIndex] = deductions[feeAssetIndex].add(feeAmount);
+            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
         for(i = min; i <= max; i++) {
-            uint256 deduction = deductions[i];
-            if (deduction > 0) {
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-                balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(deduction);
-            }
+            uint256 decrement = decrements[i];
+            if (decrement == 0) { continue; }
+
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
+
+            emit Decrement(i << 248 | decrement);
         }
     }
 
@@ -1225,8 +1238,8 @@ contract BrokerV2 is Ownable {
     )
         private
     {
-        // deductions with size numOffers
-        uint256[] memory deductions = new uint256[](_values[0] & ~(~uint256(0) << 8));
+        // decrements with size numOffers
+        uint256[] memory decrements = new uint256[](_values[0] & ~(~uint256(0) << 8));
 
         uint256 i = 1;
         // i += numOffers * 2
@@ -1240,7 +1253,7 @@ contract BrokerV2 is Ownable {
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 takeAmount = _values[i] >> 16;
-            deductions[offerIndex] = deductions[offerIndex].add(takeAmount);
+            decrements[offerIndex] = decrements[offerIndex].add(takeAmount);
         }
 
         i = 0;
@@ -1255,7 +1268,7 @@ contract BrokerV2 is Ownable {
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
             require(availableAmount > 0, "Invalid availableAmount");
 
-            uint256 remainingAmount = availableAmount.sub(deductions[i]);
+            uint256 remainingAmount = availableAmount.sub(decrements[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
 

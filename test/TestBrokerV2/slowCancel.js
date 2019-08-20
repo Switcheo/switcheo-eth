@@ -11,6 +11,7 @@ contract('Test slowCancel', async (accounts) => {
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
     const privateKey = getPrivateKey(maker)
+    const announceDelay = 604800
 
     beforeEach(async () => {
         broker = await getBroker()
@@ -35,7 +36,7 @@ contract('Test slowCancel', async (accounts) => {
             const resultA = await exchange.announceCancel(offer, { from: maker })
             console.log('announceCancel gas used', resultA.receipt.gasUsed)
 
-            await increaseEvmTime(604801)
+            await increaseEvmTime(announceDelay + 1)
 
             const resultB = await exchange.slowCancel(offer)
             console.log('slowCancel gas used', resultB.receipt.gasUsed)
