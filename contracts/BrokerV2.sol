@@ -641,7 +641,7 @@ contract BrokerV2 is Ownable {
             uint8((_values[2] & ~(~uint256(0) << 144)) >> 136), // v
             _hashes[0], // r
             _hashes[1], // s
-            ((_values[2] & ~(~uint256(1) << 135)) >> 128) != 0 // prefixedSignature
+            ((_values[2] & ~(~uint256(0) << 136)) >> 128) != 0 // prefixedSignature
         );
 
         _cancel(
