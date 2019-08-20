@@ -187,8 +187,7 @@ contract BrokerV2 is Ownable {
         address indexed assetId,
         uint256 amount,
         uint256 indexed reason,
-        uint256 nonceA,
-        uint256 nonceB
+        uint256 nonce
     );
 
     // Emitted on any balance state transition (-ve)
@@ -197,8 +196,7 @@ contract BrokerV2 is Ownable {
         address indexed assetId,
         uint256 amount,
         uint256 indexed reason,
-        uint256 nonceA,
-        uint256 nonceB
+        uint256 nonce
     );
 
     event AuthorizeSpender(
@@ -399,7 +397,7 @@ contract BrokerV2 is Ownable {
 
     function deposit() external payable onlyActiveState {
         require(msg.value > 0, "Invalid value");
-        _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0, 0);
+        _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
     }
 
     function depositToken(
@@ -424,8 +422,7 @@ contract BrokerV2 is Ownable {
             _assetId,
             _expectedAmount,
             REASON_DEPOSIT,
-            _nonce,
-            0
+            _nonce
         );
 
         _validateContractAddress(_assetId);
@@ -467,7 +464,7 @@ contract BrokerV2 is Ownable {
     {
         address assetId = msg.sender;
         require(tokenWhitelist[assetId] == true, "Token not whitelisted");
-        _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0, 0);
+        _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
         emit TokenFallback(_user, assetId, _amount);
     }
 
@@ -486,7 +483,7 @@ contract BrokerV2 is Ownable {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
         require(tokenWhitelist[assetId] == true, "Token not whitelisted");
-        _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0, 0);
+        _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
         emit TokensReceived(_user, assetId, _amount);
     }
 
@@ -900,8 +897,7 @@ contract BrokerV2 is Ownable {
                 _addresses[3], // feeAssetId
                 _values[2], // feeAmount
                 REASON_SWAP_FEE_GIVE,
-                _values[3], // nonce
-                0
+                _values[3] // nonce
             );
         }
 
@@ -910,8 +906,7 @@ contract BrokerV2 is Ownable {
             _addresses[2], // assetId
             _values[0], // amount
             REASON_SWAP_GIVE,
-            _values[3], // nonce
-            0
+            _values[3] // nonce
         );
 
         atomicSwaps[swapHash] = true;
@@ -946,8 +941,7 @@ contract BrokerV2 is Ownable {
             _addresses[2], // assetId
             takeAmount,
             REASON_SWAP_RECEIVE,
-            _values[3], // nonce
-            0
+            _values[3] // nonce
         );
 
         _increaseBalance(
@@ -955,8 +949,7 @@ contract BrokerV2 is Ownable {
             _addresses[3], // feeAssetId
             _values[2], // feeAmount
             REASON_SWAP_FEE_RECEIVE,
-            _values[3], // nonce
-            0
+            _values[3] // nonce
         );
     }
 
@@ -994,8 +987,7 @@ contract BrokerV2 is Ownable {
             _addresses[2], // assetId
             refundAmount,
             REASON_SWAP_CANCEL_RECEIVE,
-            _values[3], // nonce
-            0
+            _values[3] // nonce
         );
 
         _increaseBalance(
@@ -1003,8 +995,7 @@ contract BrokerV2 is Ownable {
             _addresses[3], // feeAssetId
             cancelFeeAmount,
             REASON_SWAP_CANCEL_FEE_RECEIVE,
-            _values[3],
-            0
+            _values[3]
         );
 
         if (_addresses[3] != _addresses[2]) { // feeAssetId != assetId
@@ -1014,8 +1005,7 @@ contract BrokerV2 is Ownable {
                 _addresses[3], // feeAssetId
                 refundFeeAmount,
                 REASON_SWAP_CANCEL_FEE_REFUND,
-                _values[3],
-                0
+                _values[3]
             );
         }
     }
@@ -1311,8 +1301,7 @@ contract BrokerV2 is Ownable {
                 _cancelFeeAssetId,
                 _cancelFeeAmount,
                 REASON_CANCEL_FEE_GIVE,
-                _offerNonce,
-                0
+                _offerNonce
             );
         }
 
@@ -1321,8 +1310,7 @@ contract BrokerV2 is Ownable {
             _offerAssetId, // offerAssetId
             refundAmount,
             REASON_CANCEL,
-            _offerNonce, // offer nonce
-            0
+            _offerNonce // offer nonce
         );
 
         _increaseBalance(
@@ -1330,8 +1318,7 @@ contract BrokerV2 is Ownable {
             _cancelFeeAssetId,
             _cancelFeeAmount,
             REASON_CANCEL_FEE_RECEIVE,
-            _offerNonce, // offer nonce
-            0
+            _offerNonce // offer nonce
         );
     }
 
@@ -1352,8 +1339,7 @@ contract BrokerV2 is Ownable {
             _assetId,
             _amount,
             REASON_WITHDRAW,
-            _nonce,
-            0
+            _nonce
         );
 
         _increaseBalance(
@@ -1361,8 +1347,7 @@ contract BrokerV2 is Ownable {
             _feeAssetId,
             _feeAmount,
             REASON_WITHDRAW_FEE_RECEIVE,
-            _nonce,
-            0
+            _nonce
         );
 
         uint256 withdrawAmount;
@@ -1375,8 +1360,7 @@ contract BrokerV2 is Ownable {
                 _feeAssetId,
                 _feeAmount,
                 REASON_WITHDRAW_FEE_GIVE,
-                _nonce,
-                0
+                _nonce
             );
             withdrawAmount = _amount;
         }
@@ -1502,20 +1486,19 @@ contract BrokerV2 is Ownable {
         address _assetId,
         uint256 _amount,
         uint256 _reasonCode,
-        uint256 _nonceA,
-        uint256 _nonceB
+        uint256 _nonce
     )
         private
     {
         if (_amount == 0) { return; }
         balances[_user][_assetId] = balances[_user][_assetId].add(_amount);
+
         emit BalanceIncrease(
             _user,
             _assetId,
             _amount,
             _reasonCode,
-            _nonceA,
-            _nonceB
+            _nonce
         );
     }
 
@@ -1524,32 +1507,20 @@ contract BrokerV2 is Ownable {
         address _assetId,
         uint256 _amount,
         uint256 _reasonCode,
-        uint256 _nonceA,
-        uint256 _nonceB
+        uint256 _nonce
     )
         private
     {
-        _decreaseBalance(_user, _assetId, _amount);
+        if (_amount == 0) { return; }
+        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
 
         emit BalanceDecrease(
             _user,
             _assetId,
             _amount,
             _reasonCode,
-            _nonceA,
-            _nonceB
+            _nonce
         );
-    }
-
-    function _decreaseBalance(
-        address _user,
-        address _assetId,
-        uint256 _amount
-    )
-        private
-    {
-        if (_amount == 0) { return; }
-        balances[_user][_assetId] = balances[_user][_assetId].sub(_amount);
     }
 
     function _validateAddress(address _address) private pure {
