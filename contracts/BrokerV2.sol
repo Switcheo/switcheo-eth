@@ -170,7 +170,7 @@ contract BrokerV2 is Ownable {
     // All fees will be transferred to the operator address
     address public operator;
 
-    // The delay in seconds to complete the respective escape hatch (cancel / withdraw).
+    // The delay in seconds to complete the respective escape hatch (`slowCancel` / `slowWithdraw`).
     // This gives the off-chain service time to update the off-chain state
     // before the state is separately updated by the user.
     uint256 public slowCancelDelay;
@@ -225,7 +225,7 @@ contract BrokerV2 is Ownable {
     );
 
     // Compacted versions of the `BalanceIncrease` and `BalanceDecrease` events.
-    // These are compacted versions used to save gas costs for the `trade` method.
+    // These are used in the `trade` method, they are compacted to save gas costs.
     event Increment(uint256 data);
     event Decrement(uint256 data);
 
@@ -317,8 +317,8 @@ contract BrokerV2 is Ownable {
     /// The `Active` state allows for regular exchange activity,
     /// while the `Inactive` state prevents the invokation of deposit
     /// and trading functions.
-    /// The `Inactive` state is intended as a means to cease operation of the
-    /// contract in the case of an upgrade or in an emergency.
+    /// The `Inactive` state is intended as a means to cease contract operation
+    /// in the case of an upgrade or in an emergency.
     /// @param _state The state to transition the contract into
     function setState(State _state) external onlyOwner { state = _state; }
 
@@ -332,8 +332,8 @@ contract BrokerV2 is Ownable {
     /// and withdraw balances to the respective user's wallet on behalf of users.
     /// The escalated state is intended to be used in the case of a contract upgrade or
     /// in an emergency.
-    /// It is set separately from the `Inactive` state to account for cases where
-    /// admin functions are needed, but regular operations do not need to be affected.
+    /// It is set separately from the `Inactive` state so that it is possible
+    /// to use admin functions without affecting regular operations.
     /// @param _state The admin state to transition the contract into
     function setAdminState(AdminState _state) external onlyOwner { adminState = _state; }
 
@@ -345,8 +345,8 @@ contract BrokerV2 is Ownable {
         operator = _operator;
     }
 
-    /// @notice Sets the delay between a manual cancellation announcement,
-    /// and when the cancellation can actually be executed.
+    /// @notice Sets the minimum delay between an `announceCancel` call and
+    /// when the cancellation can actually be executed through `slowCancel`.
     /// @dev This gives the off-chain service time to update the off-chain state
     /// before the state is separately updated by the user.
     /// This differs from the regular `cancel` operation, which does not involve a delay.
@@ -356,8 +356,8 @@ contract BrokerV2 is Ownable {
         slowCancelDelay = _delay;
     }
 
-    /// @notice Sets the delay between a manual withdrawal announcement,
-    /// and when the withdrawal can actually be executed.
+    /// @notice Sets the delay between an `announceWithdraw` call and
+    /// when the withdrawal can actually be executed through `slowWithdraw`.
     /// @dev This gives the off-chain service time to update the off-chain state
     /// before the state is separately updated by the user.
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
@@ -370,6 +370,7 @@ contract BrokerV2 is Ownable {
     /// @notice Gives admin permissons to the specified address.
     /// @dev Admin addresses are intended to coordinate the regular operation
     /// of the Broker contract, and to perform special functions such as
+    /// `adminCancel` and `adminWithdraw`.
     /// @param _admin The address to give admin permissions to
     function addAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
@@ -387,7 +388,7 @@ contract BrokerV2 is Ownable {
 
     /// @notice Whitelists a token contract
     /// @dev This enables the token contract to call `tokensReceived` or `tokenFallback`
-    /// on the Broker contract.
+    /// on this contract.
     /// This layer of management is to prevent misuse of `tokensReceived` and `tokenFallback`
     /// methods by unvetted tokens.
     /// @param _assetId The token address to whitelist
@@ -409,12 +410,10 @@ contract BrokerV2 is Ownable {
     /// @dev Spender contracts are intended to offer additional functionality
     /// to the Broker contract, allowing for new contract features to be added without
     /// having to migrate user funds to a new contract.
-    /// After a spender contract is whitelisted, a user intending to use the
-    /// features offerred must separately authorize the spender contract through
-    /// the `authorizeSpender` method.
-    /// This is required before the whitelisted spender contract can perform balance
-    /// transfers for a user. See `authorizeSpender` and `spendFrom` methods for
-    /// more details.
+    /// After a spender contract is whitelisted, a user intending to use its
+    /// features must separately authorize the spender contract before it can
+    /// perform balance transfers for the user.
+    /// See `authorizeSpender` and `spendFrom` methods for more details.
     /// @param _spender The address of the spender contract to whitelist
     function whitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
@@ -424,9 +423,10 @@ contract BrokerV2 is Ownable {
 
     /// @notice Removes a spender contract from the spender whitelist
     /// @dev Note that removing a spender from the whitelist will not prevent
-    /// a spender contract from transferring balances for users.
-    /// This is to ensure that the owner cannot cause a user's funds to be locked
-    /// in the spender contract.
+    /// a it from transferring balances for users who had previously
+    /// authorized it.
+    /// This is required because the contract owner would otherwise be able to
+    /// cause a user's funds to be locked in the spender contract.
     /// @param _spender The address of the spender contract to remove from the whitelist
     function unwhitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
@@ -434,17 +434,18 @@ contract BrokerV2 is Ownable {
         delete spenderWhitelist[_spender];
     }
 
-    /// @notice For users to authorize a spender contract to transfer their balances
-    /// @dev After a spender is whitelisted, a user must separately authorize
-    /// the spender contract to transfer balances for their address.
+    /// @notice Allows users to authorize a spender contract to perform
+    /// balance transfers for their address
+    /// @dev After a spender contract is authorized, it can call the `spendFrom`
+    /// method for the permitted user's address.
     /// @param _user The address of the user
     /// @param _spender The address of the whitelisted spender contract
     /// @param _nonce An unused nonce to prevent replay attacks
     /// @param _v The `v` component of the `_user`'s signature
     /// @param _r The `r` component of the `_user`'s signature
     /// @param _s The `s` component of the `_user`'s signature
-    /// @param _prefixedSignature Indicates if the Ethereum signed message prefix
-    /// should be prepended during signature verification
+    /// @param _prefixedSignature Indicates whether the Ethereum signed message
+    /// prefix should be prepended during signature verification
     function authorizeSpender(
         address _user,
         address _spender,
@@ -477,11 +478,11 @@ contract BrokerV2 is Ownable {
         emit AuthorizeSpender(_user, _spender, _nonce);
     }
 
-    /// @notice For users to remove authorization for a spender contract to
-    /// transfer their balances
+    /// @notice Allows users to remove authorization for a spender contract to
+    /// perform balance transfers for their address
     /// @dev This method can only be invoked for spender contracts already removed
     /// from the whitelist. This is to prevent users from unexpectedly removing
-    /// authorization for a previously authorized spender, as that could prevent
+    /// authorization for a previously authorized spender, as doing so could prevent
     /// regular operation of the features offerred by the spender contract.
     /// This function does not require admin permission and is invokable directly by users.
     /// @param _spender The address of the spender contract
@@ -498,11 +499,11 @@ contract BrokerV2 is Ownable {
         emit UnauthorizeSpender(user, _spender);
     }
 
-    /// @notice Transfers the specified amount from one address to another
+    /// @notice Performs a balance transfer from one address to another
     /// @dev This method is intended to be invoked by spender contracts.
-    /// The spender contract must have been previously whitelisted and
-    /// separately authorized by the address from which the amount will be
-    /// deducted.
+    /// To invoke this method, a spender contract must have been
+    /// previously whitelisted and also authorized by the address from which
+    /// funds will be deducted.
     /// @param _from The address to deduct from
     /// @param _to The address to credit
     /// @param _assetId The asset to transfer
@@ -528,7 +529,8 @@ contract BrokerV2 is Ownable {
 
     /// @notice Deposits ETH into the sender's contract balance
     /// @dev This operation is only usable in an `Active` state
-    /// to prevent the Broker contract from receiving ETH if has been terminated.
+    /// to prevent this contract from receiving ETH in the case that its
+    /// operation has been terminated.
     function deposit() external payable onlyActiveState {
         require(msg.value > 0, "Invalid value");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
@@ -540,11 +542,12 @@ contract BrokerV2 is Ownable {
     /// The user must have previously authorized the token transfer
     /// through the token's `approve` method.
     /// This method has separate `_amount` and `_expectedAmount` values
-    /// to support unconventional token transfers, e.g. tokens which get burnt on transfer.
+    /// to support unconventional token transfers, e.g. tokens which have a
+    /// proportion burnt on transfer.
     /// @param _user The address of the user depositing the tokens
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with
-    /// @param _expectedAmount The final amount expected to be received by the Broker contract
+    /// @param _expectedAmount The final amount expected to be received by this contract
     /// @param _nonce An unused nonce for balance tracking
     function depositToken(
         address _user,
@@ -576,10 +579,10 @@ contract BrokerV2 is Ownable {
         ERC20Token token = ERC20Token(_assetId);
         uint256 initialBalance = token.balanceOf(address(this));
 
-        // ERC20Token cannot be used for transferFrom calls because some
-        // tokens have a transferFrom which returns a boolean and some do not
-        // having two overloaded transferFrom methods does not work
-        // as the signatures are the same but the return values are not
+        // Some tokens have a `transferFrom` which returns a boolean and some do not.
+        // The ERC20Token interface cannot be used here because it requires specifying
+        // an explicit return value, and an EVM exception would be raised when calling
+        // a token with the mismatched return value.
         bytes memory payload = abi.encodeWithSignature(
             "transferFrom(address,address,uint256)",
             _user,
@@ -819,13 +822,11 @@ contract BrokerV2 is Ownable {
 
 
     /// @notice Cancels an offer without requiring the maker's signature
-    /// @dev Can only be invoked by an admin and only after the admin state
-    /// has been set to `Escalated`.
-    /// This method is intended to be used in the case of a contract upgrade
-    /// or in an emergency.
-    /// The original parameters of the offer need to be passed in as these
-    /// are not stored in the contract storage.
-    /// Offer parameters are not stored so that gas costs can be reduced.
+    /// @dev This method is intended to be used in the case of a contract
+    /// upgrade or in an emergency. It can only be invoked by an admin and only
+    /// after the admin state has been set to `Escalated` by the contract owner.
+    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, so they have to be re-specified here.
     /// The `_expectedAvailableAmount` is required to help prevent accidental
     /// cancellation of an offer ahead of time, for example, if there is
     /// a pending fill in the off-chain state.
@@ -881,9 +882,8 @@ contract BrokerV2 is Ownable {
     /// admin permissions.
     /// An announcement followed by a delay is needed so that the off-chain
     /// service has time to update the off-chain state.
-    /// The original parameters of the offer need to be passed in as these
-    /// are not stored in the contract storage.
-    /// Offer parameters are not stored so that gas costs can be reduced.
+    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, so they have to be re-specified here.
     /// @param _maker The address of the offer's maker
     /// @param _offerAssetId The contract address of the offerred asset
     /// @param _offerAmount The number of tokens offerred
@@ -929,11 +929,10 @@ contract BrokerV2 is Ownable {
     /// @notice Executes an offer cancellation previously announced in `announceCancel`
     /// @dev This method allows a user to cancel their offer without requiring
     /// admin permissions.
-    /// An announcement followed by a delay before execution is needed so that
-    /// the  off-chain service time to update the off-chain state.
-    /// The original parameters of the offer need to be passed in as these
-    /// are not stored in the contract storage.
-    /// Offer parameters are not stored so that gas costs can be reduced.
+    /// An announcement followed by a delay is needed so that the off-chain
+    /// service has time to update the off-chain state.
+    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, so they have to be re-specified here.
     /// @param _maker The address of the offer's maker
     /// @param _offerAssetId The contract address of the offerred asset
     /// @param _offerAmount The number of tokens offerred
@@ -996,12 +995,12 @@ contract BrokerV2 is Ownable {
     /// @param _amount The number of tokens to withdraw
     /// @param _feeAssetId The contract address of the fee asset
     /// @param _feeAmount The number of tokens to pay as fees to the operator
-    /// @param _nonce A unique nonce to prevent replay attacks
+    /// @param _nonce An unused nonce to prevent replay attacks
     /// @param _v The `v` component of the `_user`'s signature
     /// @param _r The `r` component of the `_user`'s signature
     /// @param _s The `s` component of the `_user`'s signature
-    /// @param _prefixedSignature Indicates if the Ethereum signed message prefix
-    /// should be prepended during signature verification
+    /// @param _prefixedSignature Indicates whether the Ethereum signed message
+    /// prefix should be prepended during signature verification
     function withdraw(
         address _withdrawer,
         address payable _receivingAddress,
@@ -1048,17 +1047,26 @@ contract BrokerV2 is Ownable {
             _nonce
         );
     }
+    /// @notice Cancels an offer without requiring the maker's signature
+    /// @dev This method is intended to be used in the case of a contract
+    /// upgrade or in an emergency. It can only be invoked by an admin and only
+    /// after the admin state has been set to `Escalated` by the contract owner.
+    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, so they have to be re-specified here.
+    /// The `_expectedAvailableAmount` is required to help prevent accidental
+    /// cancellation of an offer ahead of time, for example, if there is
+    /// a pending fill in the off-chain state.
 
     /// @notice Withdraws tokens without requiring the withdrawer's signature
-    /// @dev Can only be invoked by an admin and only after the admin state
-    /// has been set to `Escalated`.
-    /// Unlike `withdraw`, tokens can only be withdrawn to the `_withdrawer`'s address.
-    /// This method is intended to be used in the case of a contract upgrade
-    /// or in an emergency.
+    /// @dev This method is intended to be used in the case of a contract
+    /// upgrade or in an emergency. It can only be invoked by an admin and only
+    /// after the admin state has been set to `Escalated` by the contract owner.
+    /// Unlike `withdraw`, tokens can only be withdrawn to the `_withdrawer`'s
+    /// address.
     /// @param _withdrawer The user address whose balance will be reduced
     /// @param _assetId The contract address of the token to withdraw
     /// @param _amount The number of tokens to withdraw
-    /// @param _nonce A unique nonce to prevent replay attacks
+    /// @param _nonce An unused nonce for balance tracking
     function adminWithdraw(
         address payable _withdrawer,
         address _assetId,
@@ -1559,6 +1567,10 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev The actual cancellation logic shared by `cancel`, `adminCancel`,
+    /// `slowCancel`.
+    /// The remaining offer amount is refunded back to the offer's maker, and
+    /// the specified cancellation fee will be deducted from the maker's balances.
     function _cancel(
         address _maker,
         bytes32 _offerHash,
@@ -1589,11 +1601,11 @@ contract BrokerV2 is Ownable {
         }
 
         _increaseBalance(
-            _maker, // maker
-            _offerAssetId, // offerAssetId
+            _maker,
+            _offerAssetId,
             refundAmount,
             REASON_CANCEL,
-            _offerNonce // offer nonce
+            _offerNonce
         );
 
         _increaseBalance(
@@ -1605,6 +1617,11 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    /// @dev The actual withdrawal logic shared by `withdraw`, `adminWithdraw`,
+    /// `slowWithdraw`. The specified amount is deducted from the `_withdrawer`'s
+    /// contract balance and transferred to the external `_receivingAddress`,
+    /// and the specified withdrawal fee will be deducted from the `_withdrawer`'s
+    /// balance.
     function _withdraw(
         address _withdrawer,
         address payable _receivingAddress,
@@ -1667,6 +1684,16 @@ contract BrokerV2 is Ownable {
         _validateTransferResult(returnData);
     }
 
+    /// @dev Creates a hash key for a swap using the swap's parameters
+    /// @param _addresses[0] Address of the user making the swap
+    /// @param _addresses[1] Address of the user taking the swap
+    /// @param _addresses[2] Contract address of the asset to swap
+    /// @param _addresses[3] Contract address of the fee asset
+    /// @param _values[0] The number of tokens to be transferred
+    /// @param _values[1] The epoch time after which the swap will become cancellable
+    /// @param _values[2] The number of tokens to pay as fees to the operator
+    /// @param _values[3] The swap nonce to prevent replay attacks
+    /// @param _hashedSecret The hash of the secret decided by the maker
     function _hashSwap(
         address[4] memory _addresses,
         uint256[4] memory _values,
@@ -1690,14 +1717,34 @@ contract BrokerV2 is Ownable {
         ));
     }
 
+    /// @dev Checks if the `_nonce` had been previously taken.
+    /// To reduce gas costs, a single `usedNonces` value is used to
+    /// store the state of 256 nonces, using the formula:
+    /// nonceTaken = "usedNonces[_nonce / 256] bit (_nonce % 256)" != 0
+    /// For example:
+    /// nonce 0 taken: "usedNonces[0] bit 0" != 0 (0 / 256 = 0, 0 % 256 = 0)
+    /// nonce 1 taken: "usedNonces[0] bit 1" != 0 (1 / 256 = 0, 1 % 256 = 1)
+    /// nonce 2 taken: "usedNonces[0] bit 2" != 0 (2 / 256 = 0, 2 % 256 = 2)
+    /// nonce 255 taken: "usedNonces[0] bit 255" != 0 (255 / 256 = 0, 255 % 256 = 255)
+    /// nonce 256 taken: "usedNonces[1] bit 0" != 0 (256 / 256 = 1, 256 % 256 = 0)
+    /// nonce 257 taken: "usedNonces[1] bit 1" != 0 (257 / 256 = 1, 257 % 256 = 1)
+    /// @param _nonce The nonce to check
     function _nonceTaken(uint256 _nonce) private view returns (bool) {
         uint256 slotData = _nonce.div(256);
-        uint256 shiftedBit = 1 << _nonce.mod(256);
+        uint256 shiftedBit = uint256(1) << _nonce.mod(256);
         uint256 bits = usedNonces[slotData];
 
+        // The check is for "!= 0" instead of "== 1" because the shiftedBit is
+        // not at the zero'th position, so it would require an additional
+        // shift to compare it with "== 1"
         return bits & shiftedBit != 0;
     }
 
+    /// @dev Sets the corresponding `_nonce` bit to 1.
+    /// An error will be raised if the corresponding `_nonce` bit was
+    /// previously set to 1.
+    /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
+    /// @param _nonce The nonce to mark
     function _markNonce(uint256 _nonce) private {
         require(_nonce != 0, "Invalid nonce");
 
@@ -1710,6 +1757,11 @@ contract BrokerV2 is Ownable {
         usedNonces[slotData] = bits | shiftedBit;
     }
 
+    /// @dev Sets the corresponding `_nonce` bit to 1.
+    /// Unlike `_markNonce`, no error is raised if the corresponding `_nonce`
+    /// bit had been previously set to 1.
+    /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
+    /// @param _nonce The nonce to mark
     function _softMarkNonce(uint256 _nonce) private {
         require(_nonce != 0, "Invalid nonce");
 
@@ -1718,9 +1770,21 @@ contract BrokerV2 is Ownable {
         uint256 bits = usedNonces[slotData];
 
         if (bits & shiftedBit != 0) { return; }
+
         usedNonces[slotData] = bits | shiftedBit;
     }
 
+    /// @dev Validates that the specified `_hash` was signed by the specified `_user`.
+    /// This method supports the EIP712 specification, the older Ethereum
+    /// signed message specification is also supported for backwards compatibility.
+    /// @param _hash The original hash that was signed by the user
+    /// @param _user The user who signed the hash
+    /// @param _v The `v` component of the `_user`'s signature
+    /// @param _r The `r` component of the `_user`'s signature
+    /// @param _s The `s` component of the `_user`'s signature
+    /// @param _prefixed If true, the signature will be verified
+    /// against the Ethereum signed message specification instead of the
+    /// EIP712 specification
     function _validateSignature(
         bytes32 _hash,
         address _user,
@@ -1749,6 +1813,12 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev A thin wrapper around the native `call` function, to
+    /// validate that the contract `call` must be successful.
+    /// See https://solidity.readthedocs.io/en/v0.5.1/050-breaking-changes.html
+    /// for details on constructing the `_payload`
+    /// @param _contract Address of the contract to call
+    /// @param _payload The data to call the contract with
     function _callContract(
         address _contract,
         bytes memory _payload
@@ -1760,11 +1830,18 @@ contract BrokerV2 is Ownable {
         bytes memory returnData;
 
         (success, returnData) = _contract.call(_payload);
-        require(success, "contract call failed");
+        require(success, "Contract call failed");
 
         return returnData;
     }
 
+    /// @dev A utility method to increase the balance of a user.
+    /// A corressponding `BalanceIncrease` event will also be emitted.
+    /// @param _user The address to increase balance for
+    /// @param _assetId The asset's contract address
+    /// @param _amount The number of tokens to increase the balance by
+    /// @param _reasonCode The reason code for the `BalanceIncrease` event
+    /// @param _nonce The nonce for the `BalanceIncrease` event
     function _increaseBalance(
         address _user,
         address _assetId,
@@ -1786,6 +1863,13 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    /// @dev A utility method to decrease the balance of a user.
+    /// A corressponding `BalanceDecrease` event will also be emitted.
+    /// @param _user The address to decrease balance for
+    /// @param _assetId The asset's contract address
+    /// @param _amount The number of tokens to decrease the balance by
+    /// @param _reasonCode The reason code for the `BalanceDecrease` event
+    /// @param _nonce The nonce for the `BalanceDecrease` event
     function _decreaseBalance(
         address _user,
         address _assetId,
@@ -1807,6 +1891,8 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    /// @dev Ensures that `_address` is not the zero address
+    /// @param _address The address to check
     function _validateAddress(address _address) private pure {
         require(
             _address != address(0),
@@ -1815,6 +1901,7 @@ contract BrokerV2 is Ownable {
     }
 
     /// @dev Ensure that the address is a deployed contract
+    /// @param _contract The address to check
     function _validateContractAddress(address _contract) private view {
         assembly {
             if iszero(extcodesize(_contract)) { revert(0, 0) }
@@ -1825,6 +1912,7 @@ contract BrokerV2 is Ownable {
     /// See: https://github.com/ethereum/solidity/issues/4116
     /// https://medium.com/loopring-protocol/an-incompatibility-in-smart-contract-threatening-dapp-ecosystem-72b8ca5db4da
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
+    /// @param _data The data returned from a transfer call
     function _validateTransferResult(bytes memory _data) private pure {
         require(
             _data.length == 0 ||
@@ -1833,6 +1921,8 @@ contract BrokerV2 is Ownable {
         );
     }
 
+    /// @dev Converts data of type `bytes` into its corresponding `uint256` value
+    /// @param _data The data in bytes
     function _getUint256FromBytes(
         bytes memory _data
     )
