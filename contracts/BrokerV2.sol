@@ -649,62 +649,118 @@ contract BrokerV2 is Ownable {
         emit TokensReceived(_user, assetId, _amount);
     }
 
-    // values = [
-    //    * at index 0
-    //    lengths // [0]
-    //        numOffers, // bits(0..8)
-    //        numFills, // bits(8..16)
-    //        numMatches, // bits(16..24)
-    //
-    //    * starting at index 1
-    //    * nonces must be sorted in ascending order
-    //    offer.dataA // [i]
-    //        makerIndex, // bits(0..8)
-    //        maker.offerAssetIndex, // bits(8..16)
-    //        maker.wantAssetIndex, // bits(16..24)
-    //        maker.feeAssetIndex, // bits(24..32)
-    //        operator.feeAssetIndex, // bits(32..40)
-    //        offer.v // bits(40..48)
-    //        offer.nonce // bits(48..128)
-    //        offer.feeAmount // bits(128..256)
-    //    offer.dataB // [i + 1]
-    //        offer.offerAmount, // bits(0..128)
-    //        offer.wantAmount, // bits(128..256)
-    //
-    //    * starting at index 1 + numOffers * 2
-    //    * nonces must be sorted in ascending order
-    //    fill.dataA // [i]
-    //        fillerIndex, // bits(0..8)
-    //        filler.offerAssetIndex, // bits(8..16)
-    //        filler.wantAssetIndex, // bits(16..24)
-    //        filler.feeAssetIndex, // bits(24..32)
-    //        operator.feeAssetIndex, // bits(32..40)
-    //        fill.v // bits(40..48)
-    //        fill.nonce // bits(48..128)
-    //        fill.feeAmount // bits(128..256)
-    //    fill.dataB // [i + 1]
-    //        fill.offerAmount, // bits(0..128)
-    //        fill.wantAmount, // bits(128..256)
-    //
-    //    * starting at index 3 + numOffers * 5 + numFills * 5
-    //    matchData
-    //        match.offerIndex, // bits(0..8)
-    //        match.fillIndex, // bits(6..16)
-    //        match.takeAmount // bits(16..256)
-    // ]
-    //
-    // hashes = [
-    //     r, // 0
-    //     s // 1
-    // ]
-    //
-    // list of user addresses and assetIds
-    // addresses = [
-    //    account1,
-    //    account2,
-    //    assetId1,
-    //    assetId2,
-    // ]
+    /// @notice Executes an array of offers and fills
+    /// @dev This method accepts an array of "offers" and "fills" together with
+    /// an array of "matches" to specify the matching between the "offers" and "fills".
+    /// The data is bit compacted for ease of index referencing and to reduce gas costs,
+    /// i.e. data representing different types of information is stored within one 256 bit value.
+    ///
+    /// For efficient balance updates, the `_addresses` array is meant to contain a
+    /// unique set of user asset pairs in the form of:
+    /// [
+    ///     user_1_address,
+    ///     asset_1_address,
+    ///     user_1_address,
+    ///     asset_2_address,
+    ///     user_2_address,
+    ///     asset_1_address,
+    ///     ...
+    /// ]
+    /// This allows combining multiple balance updates for a user asset pair
+    /// into a single update by first calculating the total balance update for
+    /// a pair at a specified index, then looping through the sums to perform
+    /// the balance update.
+    ///
+    /// The added benefit is further gas cost reduction because repeated
+    /// user asset pairs do not need to be duplicated for the calldata.
+    ///
+    /// A tradeoff of compacting the bits is that there is a lower maximum value
+    /// for offer and fill data, however the limits remain generally practical.
+    ///
+    /// For `offerAmount`, `wantAmount`, `feeAmount` values, the maximum value
+    /// is 2^128. For a token with 18 decimals, this allows support for tokens
+    /// with a maximum supply of 1000 million billion billion (33 zeros).
+    /// In the case where the maximum value needs to be exceeded, a single
+    /// offer / fill can be split into multiple offers / fills by the off-chain
+    /// service.
+    ///
+    /// For nonces the maximum value is 2^80, or more than a billion billion (24 zeros).
+    ///
+    /// Offers and fills both encompass information about how much (offerAmount)
+    /// of a specified token (offerAssetId) the user wants to offer and
+    /// how much (wantAmount) of another token (wantAssetId) they want
+    /// in return.
+    ///
+    /// Each match specifies how much of the match's `offer.offerAmount` should
+    /// be transferred to the filler, in return, the offer's maker receives:
+    /// `offer.wantAmount * match.takeAmount / offer.offerAmount` of the
+    /// `offer.wantAssetId` from the filler.
+    ///
+    /// A few restirctions are enforced to ensure fairness and security of trades:
+    /// 1. To prevent unfairness due to rounding issues, it is required that:
+    /// `offer.wantAmount * match.takeAmount % offer.offerAmount == 0`.
+    ///
+    /// 2. Fills can be filled by offers which do not individually match
+    /// the `fill.offerAmount` and `fill.wantAmount` ratio. As such, it is
+    /// required that:
+    /// fill.offerAmount == total amount deducted from filler for the fill's
+    /// associated matches (excluding fees)
+    /// fill.wantAmount == total amount credited to filler for the fill's
+    /// associated matches (excluding fees)
+    ///
+    /// 3. The offer array must not consist of repeated offers. For efficient
+    /// balance updates, a loop through each offer in the offer array is used
+    /// to deduct the offer.offerAmount from the respective maker.
+    /// If an offer had not been previously recorded by a previos `trade` call,
+    /// and it the offer is repeated in the offers array, then there would be
+    /// duplicate deductions from the maker.
+    /// To enforce uniqueness, it is required that offer nonces are sorted in a
+    /// strictly ascending order.
+    ///
+    /// 4. To prevent replay attacks, all fill nonces are required to be unused.
+    ///
+    /// @param _values[0] Number of offers, fills, matches, as well as
+    /// data about whether an offer's / fill's signature should have the
+    /// Ethereum signed message prepended for verification
+    /// bits(0..8): number of offers (numOffers)
+    /// bits(8..16): number of fills (numFills)
+    /// bits(16..24): number of matches (numMatches)
+    /// bits(24..256): Whether an offer / fill should have the Ethereum signed
+    /// message prepended for signature verification. See
+    /// `BrokerValidations._validateTradeSignatures` for more details.
+    ///
+    /// @param _values[1 + i * 2] First part of offer data for the i'th offer
+    /// bits(0..8): Index of the maker's address in _addresses
+    /// bits(8..16): Index of the maker offerAssetId pair in _addresses
+    /// bits(16..24): Index of the maker wantAssetId pair in _addresses
+    /// bits(24..32): Index of the maker feeAssetId pair in _addresses
+    /// bits(32..40): Index of the operator feeAssetId pair in _addresses
+    /// bits(40..48): The `v` component of the maker's signature for this offer
+    /// bits(48..128): The offer nonce to prevent replay attacks
+    /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
+    ///
+    /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
+    /// bits(0..128): offer.offerAmount, i.e. the number of tokens to offer
+    /// bits(128..256): offer.wantAmount, i.e. the number of tokens to ask for in return
+    ///
+    /// @param _values[1 + numOffers * 2 + i * 2] First part of fill data for the i'th fill
+    /// bits(0..8): Index of the filler's address in _addresses
+    /// bits(8..16): Index of the filler offerAssetId pair in _addresses
+    /// bits(16..24): Index of the filler wantAssetId pair in _addresses
+    /// bits(24..32): Index of the filler feeAssetId pair in _addresses
+    /// bits(32..40): Index of the operator feeAssetId pair in _addresses
+    /// bits(40..48): The `v` component of the filler's signature for this fill
+    /// bits(48..128): The fill nonce to prevent replay attacks
+    /// bits(128..256): The number of tokens to be paid to the operator as fees for this fill
+    ///
+    /// @param _values[2 + numOffers * 2 + i * 2] Second part of fill data for the i'th fill
+    /// bits(0..128): fill.offerAmount, i.e. the number of tokens to offer
+    /// bits(128..256): fill.wantAmount, i.e. the number of tokens to ask for in return
+    ///
+    /// @params _values[1 + numOffers * 2 + numFills * 2 + i] Data for the i'th match
+    /// bits(0..8): Index of the offerIndex for this match
+    /// bits(8..16): Index of the fillIndex for this match
+    /// bits(16..256): The number of tokens to take from the matched offer's offerAmount
     function trade(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
