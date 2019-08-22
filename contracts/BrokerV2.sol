@@ -22,6 +22,30 @@ interface IERC1820Registry {
 /// with the exchange coordinator, in order to place orders.
 /// This allows trades to be confirmed immediately by the coordinator,
 /// and settled on-chain through this contract at a later time.
+///
+/// @dev Bit compacting is used in the contract to reduce gas costs, when
+/// it is used, params are documented as bits(n..m).
+/// This means that the documented value is represented by bits starting
+/// from and including `n`, up to and excluding `m`.
+/// For example, bits(8..16), indicates that the value is represented by bits:
+/// [8, 9, 10, 11, 12, 13, 14, 15].
+///
+/// Bit manipulation of the form (data & ~(~uint(0) << m)) >> n is frequently
+/// used to recover the value at the specified bits.
+/// For example, to recover bits(2..7) from a uint8 value, we can use
+/// (data & ~(~uint8(0) << 7)) >> 2.
+/// Given a `data` value of `1101,0111`, bits(2..7) should give "10101".
+/// ~uint8(0): "1111,1111" (8 ones)
+/// (~uint8(0) << 7): "1000,0000" (1 followed by 7 zeros)
+/// ~(~uint8(0) << 7): "0111,1111" (0 followed by 7 ones)
+/// (data & ~(~uint8(0) << 7)): "0101,0111" (bits after the 7th bit is zeroed)
+/// (data & ~(~uint8(0) << 7)) >> 2: "0001,0101" (matching the expected "10101")
+///
+/// Additionally, bit manipulation of the form data >> n is used to recover
+/// bits(n..e), where e is equal to the number of bits in the data.
+/// For example, to recover bits(4..8) from a uint8 value, we can use data >> 4.
+/// Given a data value of "1111,1111", bits(4..8) should give "1111".
+/// data >> 4: "0000,1111" (matching the expected "1111")
 contract BrokerV2 is Ownable {
     using SafeMath for uint256;
 
@@ -52,7 +76,7 @@ contract BrokerV2 is Ownable {
     //         "bytes32 salt",
     //     ")"
     // ));
-    bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
+    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
 
     // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
     //     EIP712_DOMAIN_TYPEHASH,
@@ -99,20 +123,6 @@ contract BrokerV2 is Ownable {
     //     ")"
     // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
-
-    // bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
-    //     "Fill(",
-    //         "address filler,",
-    //         "address offerAssetId,",
-    //         "uint256 offerAmount,",
-    //         "address wantAssetId,",
-    //         "uint256 wantAmount,",
-    //         "address feeAssetId,",
-    //         "uint256 feeAmount,",
-    //         "uint256 nonce",
-    //     ")"
-    // ));
-    bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
 
     // bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
     //     "Cancel(",
@@ -590,7 +600,7 @@ contract BrokerV2 is Ownable {
             _amount
         );
         bytes memory returnData = _callContract(_assetId, payload);
-        // ensure that asset transfer succeeded
+        // Ensure that the asset transfer succeeded
         _validateTransferResult(returnData);
 
         uint256 finalBalance = token.balanceOf(address(this));
@@ -711,7 +721,7 @@ contract BrokerV2 is Ownable {
     /// 3. The offer array must not consist of repeated offers. For efficient
     /// balance updates, a loop through each offer in the offer array is used
     /// to deduct the offer.offerAmount from the respective maker.
-    /// If an offer had not been previously recorded by a previos `trade` call,
+    /// If an offer has not been recorded by a previos `trade` call,
     /// and it the offer is repeated in the offers array, then there would be
     /// duplicate deductions from the maker.
     /// To enforce uniqueness, it is required that offer nonces are sorted in a
@@ -757,10 +767,27 @@ contract BrokerV2 is Ownable {
     /// bits(0..128): fill.offerAmount, i.e. the number of tokens to offer
     /// bits(128..256): fill.wantAmount, i.e. the number of tokens to ask for in return
     ///
-    /// @params _values[1 + numOffers * 2 + numFills * 2 + i] Data for the i'th match
+    /// @param _values[1 + numOffers * 2 + numFills * 2 + i] Data for the i'th match
     /// bits(0..8): Index of the offerIndex for this match
     /// bits(8..16): Index of the fillIndex for this match
     /// bits(16..256): The number of tokens to take from the matched offer's offerAmount
+    ///
+    /// @param _hashes[i * 2] The `r` component of the maker's / filler's signature
+    /// for the i'th offer / fill
+    ///
+    /// @param _hashes[i * 2 + 1] The `s` component of the maker's / filler's signature
+    /// for the i'th offer / fill
+    ///
+    /// @param _addresses An array of user asset pairs in the form of:
+    /// [
+    ///     user_1_address,
+    ///     asset_1_address,
+    ///     user_1_address,
+    ///     asset_2_address,
+    ///     user_2_address,
+    ///     asset_1_address,
+    ///     ...
+    /// ]
     function trade(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -770,7 +797,10 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        // used to store the hash keys of each offer
+        // `validateTrades` needs to calculate the hash keys of offers and fills
+        // to verify the signature of the offer / fill.
+        // The calculated hash keys for each offer is return to reduce repeated
+        // computation.
         bytes32[] memory hashKeys = BrokerValidations.validateTrades(
             _values,
             _hashes,
@@ -778,57 +808,65 @@ contract BrokerV2 is Ownable {
             operator
         );
 
-        // INCREASE BALANCE OF FILLERS FOR FILL.WANT_AMOUNT (loop fills)
-        // INCREASE BALANCE OF OPERATOR FOR FILL.FEE_AMOUNT (loop fills)
+        // Credit fillers for each fill.wantAmount, and credit the operator
+        // for each fill.feeAmount.
         _creditFillBalances(_values, _addresses);
 
-        // INCREASE BALANCE OF MAKERS FOR RECEIVE_AMOUNT (loop matches)
+        // Credit makers for each amount received through a matched fill.
         _creditMakerBalances(_values, _addresses);
 
-        // INCREASE BALANCE OF OPERATOR FOR OFFER.FEE_AMOUNT (loop offers)
+        // Credit the operator for each offer.feeAmount if the offer has not
+        // been recorded through a previous `trade` call.
         _creditMakerFeeBalances(_values, _addresses);
 
-        // DECREASE BALANCE OF FILLERS FOR FILL.OFFER_AMOUNT (loop fills)
-        // DECREASE BALANCE OF FILLERS FOR FILL.FEE_AMOUNT (loop fills)
+        // Deduct tokens from fillers for each fill.offerAmount
+        // and each fill.feeAmount.
         _deductFillBalances(_values, _addresses);
 
-        // DECREASE BALANCE OF MAKERS FOR OFFER.OFFER_AMOUNT (loop offers)
-        // DECREASE BALANCE OF MAKERS FOR OFFER.FEE_AMOUNT (loop offers)
+        // Deduct tokens from makers for each offer.offerAmount
+        // and each offer.feeAmount if the offer has not been recorded
+        // through a previous `trade` call.
         _deductMakerBalances(_values, _addresses);
 
-        // DECREASE OFFERS BY MATCH.TAKE_AMOUNT (loop matches)
+        // Reduce available offer amounts of offers and store the remaining
+        // offer amount in the `offers` mapping.
+        // Offer nonces will also be marked as taken.
         _storeOfferData(_values, hashKeys);
 
-        // VALIDATE THAT FILL NONCES ARE NOT YET TAKEN (loop fills)
-        // STORE FILL NONCES (loop fills)
+        // Mark all fill nonces as taken in the `usedNonces` mapping.
         _storeFillNonces(_values);
     }
 
-    // _values = [
-    //     item0
-    //         offerAmount // bits(0..128)
-    //         wantAmount // bits(128..256)
-    //     item1
-    //         feeAmount // bits(0..128)
-    //         cancelFeeAmount // bits(128..256)
-    //     item2
-    //         expectedAvailableAmount // bits(0..128)
-    //         prefixedSignature // bits(128..136)
-    //         v // bits(136..144)
-    //         offerNonce // bits(144..256)
-    //
-    // _hashes = [
-    //     r // 0
-    //     s // 1
-    // ]
-    //
-    // _addresses = [
-    //     maker // 0
-    //     offerAssetId // 1
-    //     wantAssetId // 2
-    //     feeAssetId // 3
-    //     cancelFeeAssetId // 4
-    // ]
+    /// @notice Cancels a perviously made offer and refunds the remaining offer
+    /// amount to the offer maker.
+    /// to reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, so they have to be re-specified here.
+    /// the `_expectedavailableamount` is required to help prevent accidental
+    /// cancellation of an offer ahead of time, for example, if there is
+    /// a pending fill in the off-chain state.
+    ///
+    /// @param _values[0] The offerAmount and wantAmount of the offer
+    /// bits(0..128): offer.offerAmount
+    /// bits(128..256): offer.wantAmount
+    ///
+    /// @param _values[1] The fee amounts
+    /// bits(0..128): offer.feeAmount
+    /// bits(128..256): cancelFeeAmount
+    ///
+    /// @param _values[2] Additional offer and cancellation data
+    /// bits(0..128): expectedAvailableAmount
+    /// bits(128..136): prefixedSignature
+    /// bits(136..144): The `v` component of the maker's signature for the cancellation
+    /// bits(144..256): offer.nonce
+    ///
+    /// @param _hashes[0] The `r` component of the maker's signature for the cancellation
+    /// @param _hashes[1] The `s` component of the maker's signature for the cancellation
+    ///
+    /// @param _addresses[0] offer.maker
+    /// @param _addresses[1] offer.offerAssetId
+    /// @param _addresses[2] offer.wantAssetId
+    /// @param _addresses[3] offer.feeAssetId
+    /// @param _addresses[4] offer.cancelFeeAssetId
     function cancel(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -876,14 +914,13 @@ contract BrokerV2 is Ownable {
         );
     }
 
-
     /// @notice Cancels an offer without requiring the maker's signature
     /// @dev This method is intended to be used in the case of a contract
     /// upgrade or in an emergency. It can only be invoked by an admin and only
     /// after the admin state has been set to `Escalated` by the contract owner.
-    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// to reduce gas costs, the original parameters of the offer are not stored
     /// in the contract's storage, so they have to be re-specified here.
-    /// The `_expectedAvailableAmount` is required to help prevent accidental
+    /// the `_expectedavailableamount` is required to help prevent accidental
     /// cancellation of an offer ahead of time, for example, if there is
     /// a pending fill in the off-chain state.
     /// @param _maker The address of the offer's maker
@@ -1203,9 +1240,23 @@ contract BrokerV2 is Ownable {
         emit SlowWithdraw(_withdrawer, _assetId, announcement.amount);
     }
 
-    // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
-    // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
-    // _hashes => [0]: hashedSecret, [1]: r, [2]: s
+    /// @notice Locks a user's balances for the first part of an atomic swap
+    /// @param _addresses[0] maker: the address of the user to deduct the swap tokens from
+    /// @param _addresses[1] taker: the address of the swap taker who will receive the swap tokens
+    /// if the swap is completed through `executeSwap`
+    /// @param _addresses[2] assetId: the contract address of the token to swap
+    /// @param _addresses[3] feeAssetId: the contract address of the token to use as fees
+    /// @param _values[0] amount: the number of tokens to lock and to transfer if the swap
+    ///  is completed through `executeSwap`
+    /// @param _values[1] expiryTime: the time in epoch seconds after which the swap will become cancellable
+    /// @param _values[2] feeAmount: the number of tokens to be paid to the operator as fees
+    /// @param _values[3] nonce: an unused nonce to prevent replay attacks
+    /// @param _hashes[0] hashedSecret: the hash of the secret decided by the maker
+    /// @param _hashes[1] The `r` component of the user's signature
+    /// @param _hashes[2] The `s` component of the user's signature
+    /// @param _v The `v` component of the user's signature
+    /// @param _prefixedSignature Indicates whether the Ethereum signed message
+    /// prefix should be prepended during signature verification
     function createSwap(
         address[4] calldata _addresses,
         uint256[4] calldata _values,
@@ -1223,8 +1274,17 @@ contract BrokerV2 is Ownable {
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
 
+        // require that the swap is not yet active
         require(!atomicSwaps[swapHash], "Invalid swap");
-        _validateSignature(swapHash, _addresses[0], _v, _hashes[1], _hashes[2], _prefixedSignature);
+
+        _validateSignature(
+            swapHash,
+            _addresses[0], // swap.maker
+            _v,
+            _hashes[1], // r
+            _hashes[2], // s
+            _prefixedSignature
+        );
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
             require(_values[2] < _values[0], "Invalid fee amount"); // feeAmount < amount
@@ -1249,8 +1309,21 @@ contract BrokerV2 is Ownable {
         atomicSwaps[swapHash] = true;
     }
 
-    // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
-    // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
+    /// @notice Executes a swap by transferring the tokens previously locked through
+    /// a `createSwap` call to the swap taker.
+    /// @dev To reduce gas costs, the original parameters of the swap are not stored
+    /// in the contract's storage, so they have to be re-specified here.
+    ///
+    /// @param _addresses[0] maker: the address of the user to deduct the swap tokens from
+    /// @param _addresses[1] taker: the address of the swap taker who will receive the swap tokens
+    /// @param _addresses[2] assetId: the contract address of the token to swap
+    /// @param _addresses[3] feeAssetId: the contract address of the token to use as fees
+    /// @param _values[0] amount: the number of tokens previously locked
+    /// @param _values[1] expiryTime: the time in epoch seconds after which the swap will become cancellable
+    /// @param _values[2] feeAmount: the number of tokens to be paid to the operator as fees
+    /// @param _values[3] nonce: an unused nonce to prevent replay attacks
+    /// @param _hashedSecret The hash of the secret decided by the maker
+    /// @param _preimage The preimage of the `_hashedSecret`
     function executeSwap(
         address[4] calldata _addresses,
         uint256[4] calldata _values,
@@ -1292,6 +1365,22 @@ contract BrokerV2 is Ownable {
 
     // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
     // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
+
+    /// @notice Cancels a swap and refunds the previously locked tokens to
+    /// the swap maker.
+    /// @dev To reduce gas costs, the original parameters of the swap are not stored
+    /// in the contract's storage, so they have to be re-specified here.
+    ///
+    /// @param _addresses[0] maker: the address of the user to deduct the swap tokens from
+    /// @param _addresses[1] taker: the address of the swap taker who will receive the swap tokens
+    /// @param _addresses[2] assetId: the contract address of the token to swap
+    /// @param _addresses[3] feeAssetId: the contract address of the token to use as fees
+    /// @param _values[0] amount: the number of tokens previously locked
+    /// @param _values[1] expiryTime: the time in epoch seconds after which the swap will become cancellable
+    /// @param _values[2] feeAmount: the number of tokens to be paid to the operator as fees
+    /// @param _values[3] nonce: an unused nonce to prevent replay attacks
+    /// @param _hashedSecret The hash of the secret decided by the maker
+    /// @param _cancelFeeAmount The number of tokens to be paid to the operator as the cancellation fee
     function cancelSwap(
         address[4] calldata _addresses,
         uint256[4] calldata _values,
@@ -1332,7 +1421,7 @@ contract BrokerV2 is Ownable {
             _addresses[3], // feeAssetId
             cancelFeeAmount,
             REASON_SWAP_CANCEL_FEE_RECEIVE,
-            _values[3]
+            _values[3] // nonce
         );
 
         if (_addresses[3] != _addresses[2]) { // feeAssetId != assetId
@@ -1342,11 +1431,15 @@ contract BrokerV2 is Ownable {
                 _addresses[3], // feeAssetId
                 refundFeeAmount,
                 REASON_SWAP_CANCEL_FEE_REFUND,
-                _values[3]
+                _values[3] // nonce
             );
         }
     }
 
+    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
+    /// for each fill.feeAmount. See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _creditFillBalances(
         uint256[] memory _values,
         address[] memory _addresses
@@ -1362,7 +1455,7 @@ contract BrokerV2 is Ownable {
         // i + numFills * 2
         uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
 
-        // loop fills
+        // Loop fills
         for(i; i < end; i += 2) {
             uint256 wantAssetIndex = ((_values[i] & ~(~uint256(0) << 24)) >> 16);
             uint256 wantAmount = _values[i + 1] >> 128;
@@ -1391,6 +1484,10 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev Credit makers for each amount received through a matched fill.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _creditMakerBalances(
         uint256[] memory _values,
         address[] memory _addresses
@@ -1409,14 +1506,16 @@ contract BrokerV2 is Ownable {
 
         uint256 end = _values.length;
 
-        // loop matches
+        // Loop matches
         for(i; i < end; i++) {
+            // match.offerIndex
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            // offer.wantAssetIndex
             uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
 
-            // takeAmount
+            // match.takeAmount
             uint256 amount = _values[i] >> 16;
-            // receiveAmount = takeAmount * wantAmount / offerAmount
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
             amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
                            .div(_values[2 + offerIndex * 2] & ~(~uint256(0) << 128));
 
@@ -1437,6 +1536,11 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev Credit the operator for each offer.feeAmount if the offer has not
+    /// been recorded through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _creditMakerFeeBalances(
         uint256[] memory _values,
         address[] memory _addresses
@@ -1451,7 +1555,7 @@ contract BrokerV2 is Ownable {
         // i + numOffers * 2
         uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
 
-        // loop offers
+        // Loop offers
         for(i; i < end; i += 2) {
             uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             if (_nonceTaken(nonce)) { continue; }
@@ -1476,6 +1580,11 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev Deduct tokens from fillers for each fill.offerAmount
+    /// and each fill.feeAmount.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _deductFillBalances(
         uint256[] memory _values,
         address[] memory _addresses
@@ -1520,6 +1629,12 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev Deduct tokens from makers for each offer.offerAmount
+    /// and each offer.feeAmount if the offer has not been recorded
+    /// through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _deductMakerBalances(
         uint256[] memory _values,
         address[] memory _addresses
@@ -1566,13 +1681,19 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev Reduce available offer amounts of offers and store the remaining
+    /// offer amount in the `offers` mapping.
+    /// Offer nonces will also be marked as taken.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _hashKeys An array of offer hash keys
     function _storeOfferData(
         uint256[] memory _values,
         bytes32[] memory _hashKeys
     )
         private
     {
-        // decrements with size numOffers
+        // Decrements with size numOffers
         uint256[] memory decrements = new uint256[](_values[0] & ~(~uint256(0) << 8));
 
         uint256 i = 1;
@@ -1583,7 +1704,7 @@ contract BrokerV2 is Ownable {
 
         uint256 end = _values.length;
 
-        // loop matches
+        // Loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 takeAmount = _values[i] >> 16;
@@ -1593,7 +1714,7 @@ contract BrokerV2 is Ownable {
         i = 0;
         end = _values[0] & ~(~uint256(0) << 8); // numOffers
 
-        // loop offers
+        // Loop offers
         for (i; i < end; i++) {
             uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
             bool existingOffer = _nonceTaken(nonce);
@@ -1610,6 +1731,9 @@ contract BrokerV2 is Ownable {
         }
     }
 
+    /// @dev Mark all fill nonces as taken in the `usedNonces` mapping.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
     function _storeFillNonces(uint256[] memory _values) private {
         // 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
@@ -1736,7 +1860,7 @@ contract BrokerV2 is Ownable {
                                );
         bytes memory returnData = _callContract(_assetId, payload);
 
-        // ensure that asset transfer succeeded
+        // Ensure that the asset transfer succeeded
         _validateTransferResult(returnData);
     }
 
@@ -1746,10 +1870,11 @@ contract BrokerV2 is Ownable {
     /// @param _addresses[2] Contract address of the asset to swap
     /// @param _addresses[3] Contract address of the fee asset
     /// @param _values[0] The number of tokens to be transferred
-    /// @param _values[1] The epoch time after which the swap will become cancellable
+    /// @param _values[1] The time in epoch seconds after which the swap will become cancellable
     /// @param _values[2] The number of tokens to pay as fees to the operator
     /// @param _values[3] The swap nonce to prevent replay attacks
     /// @param _hashedSecret The hash of the secret decided by the maker
+    /// @return The hash key of the swap
     function _hashSwap(
         address[4] memory _addresses,
         uint256[4] memory _values,
@@ -1785,6 +1910,7 @@ contract BrokerV2 is Ownable {
     /// nonce 256 taken: "usedNonces[1] bit 0" != 0 (256 / 256 = 1, 256 % 256 = 0)
     /// nonce 257 taken: "usedNonces[1] bit 1" != 0 (257 / 256 = 1, 257 % 256 = 1)
     /// @param _nonce The nonce to check
+    /// @return Whether the nonce has been taken
     function _nonceTaken(uint256 _nonce) private view returns (bool) {
         uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = uint256(1) << _nonce.mod(256);
@@ -1875,6 +2001,7 @@ contract BrokerV2 is Ownable {
     /// for details on constructing the `_payload`
     /// @param _contract Address of the contract to call
     /// @param _payload The data to call the contract with
+    /// @return The data returned from the contract call
     function _callContract(
         address _contract,
         bytes memory _payload
@@ -1979,6 +2106,7 @@ contract BrokerV2 is Ownable {
 
     /// @dev Converts data of type `bytes` into its corresponding `uint256` value
     /// @param _data The data in bytes
+    /// @return The corresponding `uint256` value
     function _getUint256FromBytes(
         bytes memory _data
     )

@@ -2,47 +2,77 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 
+/// @title Validations for the BrokerV2 contract for Switcheo Exchange
+/// @author Switcheo Network
+/// @notice Validations were moved from the BrokerV2 contract into this library
+/// so that the BrokerV2 contract would not exceed the maximum contract size of
+/// 24 KB.
 library BrokerValidations {
     using SafeMath for uint256;
 
+    // The constants for EIP-712 are precompiled to reduce contract size,
+    // the original values are left here for reference and verification.
+    //
+    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
+    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
+    // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
+    // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
+    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
+    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
+    //     "EIP712Domain(",
+    //         "string name,",
+    //         "string version,",
+    //         "uint256 chainId,",
+    //         "address verifyingContract,",
+    //         "bytes32 salt",
+    //     ")"
+    // ));
+    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
+
+    // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
+    //     EIP712_DOMAIN_TYPEHASH,
+    //     CONTRACT_NAME,
+    //     CONTRACT_VERSION,
+    //     CHAIN_ID,
+    //     VERIFYING_CONTRACT,
+    //     SALT
+    // ));
     bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
-    /* bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
-        EIP712_DOMAIN_TYPEHASH,
-        CONTRACT_NAME,
-        CONTRACT_VERSION,
-        CHAIN_ID,
-        VERIFYING_CONTRACT,
-        SALT
-    )); */
 
+    // bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Offer(",
+    //         "address maker,",
+    //         "address offerAssetId,",
+    //         "uint256 offerAmount,",
+    //         "address wantAssetId,",
+    //         "uint256 wantAmount,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
-    /* bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
-        "Offer(",
-            "address maker,",
-            "address offerAssetId,",
-            "uint256 offerAmount,",
-            "address wantAssetId,",
-            "uint256 wantAmount,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-            "uint256 nonce",
-        ")"
-    )); */
 
+    // bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Fill(",
+    //         "address filler,",
+    //         "address offerAssetId,",
+    //         "uint256 offerAmount,",
+    //         "address wantAssetId,",
+    //         "uint256 wantAmount,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //         "uint256 nonce",
+    //     ")"
+    // ));
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
-    /* bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
-        "Fill(",
-            "address filler,",
-            "address offerAssetId,",
-            "uint256 offerAmount,",
-            "address wantAssetId,",
-            "uint256 wantAmount,",
-            "address feeAssetId,",
-            "uint256 feeAmount,",
-            "uint256 nonce",
-        ")"
-    )); */
 
+    /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
+    /// see `BrokerV2.trade` for param details.
+    /// @param _values Values from `trade`
+    /// @param _hashes Hashes from `trade`
+    /// @param _addresses Addresses from `trade`
+    /// @param _operator The `BrokerV2.operator` address
     function validateTrades(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -80,6 +110,10 @@ library BrokerValidations {
         );
     }
 
+    /// @dev Validates that input lengths based on the expected format
+    /// detailed in the `trade` method.
+    /// @param _values Values from `trade`
+    /// @param _hashes Hashes from `trade`
     function _validateTradeInputLengths(
         uint256[] memory _values,
         bytes32[] memory _hashes
@@ -91,44 +125,32 @@ library BrokerValidations {
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
         uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
 
-        // it is enforced by other checks that if a fill is present
+        // It is enforced by other checks that if a fill is present
         // then it must be completely filled so there must be at least one offer
-        // and at least one match in this case
-        // it is possible to have one offer with no matches and no fills
-        // but that is blocked by this check as there is no foreseeable use case for it
+        // and at least one match in this case.
+        // It is possible to have one offer with no matches and no fills
+        // but that is blocked by this check as there is no foreseeable use
+        // case for it.
         require(
             numOffers > 0 && numFills > 0 && numMatches > 0,
             "Invalid trade inputs"
         );
 
-        // the format of _values is:
-        // _values[0]: stores the number of offers, fills and matches
-        // followed by "numOffers * 2" slots for offer data with each offer taking up two slots
-        // followed by "numFills * 2" slots for fill data with each fill taking up two slots
-        // followed by "numMatches" slots for match data with each match taking up one slot
         require(
             _values.length == 1 + numOffers * 2 + numFills * 2 + numMatches,
             "Invalid _values.length"
         );
 
-        // the format of _hashes is:
-        // "numOffers * 2" slots for r and s signature values, with each offer having one r and one s value
-        // "numFills * 2" slots for r and s signature values, with each fill having one r and one s value
         require(
             _hashes.length == (numOffers + numFills) * 2,
             "Invalid _hashes.length"
         );
     }
 
-    // offer uniqueness must be enforced because it would otherwise be possible
-    // to repeat an offer within the offers list and cause repeated deductions
-    //
-    // this is because offer deductions will occur if the offer's nonce has not
-    // yet been taken, and for new offers, nonces are only marked as taken
-    // at the end of the trade function
-    //
-    // uniqueness of offers are validated in O(N) time by requiring that
-    // offer nonces are in a strictly ascending order
+    /// @dev See the `BrokerV2.trade` method for an explanation of why offer uniquness
+    /// is required. Offer uniqueness is validated in O(N) time by requiring that
+    /// offer nonces are in a strictly ascending order.
+    /// @param _values Values from `trade`
     function _validateUniqueOffers(uint256[] memory _values) private pure {
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
 
@@ -139,6 +161,7 @@ library BrokerValidations {
             uint256 nonce = (_values[i * 2 + 1] & mask) >> 48;
 
             if (i == 0) {
+                // Set the value of the first nonce
                 prevNonce = nonce;
                 continue;
             }
@@ -148,13 +171,15 @@ library BrokerValidations {
         }
     }
 
-    // validate that for every match:
-    // 1. offerIndexes fall within the range of offers
-    // 2. fillIndexes falls within the range of fills
-    // 3. offer.offerAssetId == fill.wantAssetId
-    // 4. offer.wantAssetId == fill.offerAssetId
-    // 5. takeAmount > 0
-    // 6. (offer.wantAmount * takeAmount) % offer.offerAmount == 0
+    /// @dev Validate that for every match:
+    /// 1. offerIndexes fall within the range of offers
+    /// 2. fillIndexes falls within the range of fills
+    /// 3. offer.offerAssetId == fill.wantAssetId
+    /// 4. offer.wantAssetId == fill.offerAssetId
+    /// 5. takeAmount > 0
+    /// 6. (offer.wantAmount * takeAmount) % offer.offerAmount == 0
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _validateMatches(
         uint256[] memory _values,
         address[] memory _addresses
@@ -173,7 +198,7 @@ library BrokerValidations {
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
 
-        // loop matches
+        // Loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
@@ -210,8 +235,6 @@ library BrokerValidations {
 
             uint256 offerDataB = _values[2 + offerIndex * 2];
             // (offer.wantAmount * takeAmount) % offer.offerAmount == 0
-            // this is to ensure that there would be no unfair trades
-            // caused by rounding issues
             require(
                 (offerDataB >> 128).mul(takeAmount).mod(offerDataB & ~(~uint256(0) << 128)) == 0,
                 "Invalid amounts"
@@ -219,12 +242,18 @@ library BrokerValidations {
         }
     }
 
-    // validate that all fills will be completely filled by the specified matches
+    /// @dev Validate that all fills will be completely filled by the specified
+    /// matches. See the `BrokerV2.trade` method for an explanation of why
+    /// fills must be completely filled.
+    /// @param _values Values from `trade`
     function _validateFillAmounts(uint256[] memory _values) private pure {
-        // "filled" is used to store the sum of takeAmounts and giveAmounts
-        // each amount is given an individual slot so that there would not be
-        // overflow issues or vulnerabilities
-        uint256[] memory filled = new uint256[](_values.length * 2);
+        // "filled" is used to store the sum of `takeAmount`s and `giveAmount`s.
+        // While a fill's `offerAmount` and `wantAmount` are combined to share
+        // a single uint256 value, each sum of `takeAmount`s and `giveAmount`s
+        // for a fill is tracked with an individual uint256 value.
+        // This is to prevent the verification from being vulnerable to overflow
+        // issues.
+        uint256[] memory filled = new uint256[](_values.length);
 
         uint256 i = 1;
         // i += numOffers * 2
@@ -234,38 +263,49 @@ library BrokerValidations {
 
         uint256 end = _values.length;
 
-        // loop matches
+        // Loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 takeAmount = _values[i] >> 16;
             uint256 wantAmount = _values[2 + offerIndex * 2] >> 128;
             uint256 offerAmount = _values[2 + offerIndex * 2] & ~(~uint256(0) << 128);
-            uint256 mappedFillIndex = (1 + fillIndex * 2) * 2;
             // giveAmount = takeAmount * wantAmount / offerAmount
             uint256 giveAmount = takeAmount.mul(wantAmount).div(offerAmount);
 
-            filled[mappedFillIndex] = filled[mappedFillIndex].add(giveAmount);
-            filled[mappedFillIndex + 1] = filled[mappedFillIndex + 1].add(takeAmount);
+            // (1 + fillIndex * 2) would give the index of the first part
+            // of the data for the fill at fillIndex within `_values`,
+            // and (2 + fillIndex * 2) would give the index of the second part
+            filled[1 + fillIndex * 2] = filled[1 + fillIndex * 2].add(giveAmount);
+            filled[2 + fillIndex * 2] = filled[2 + fillIndex * 2].add(takeAmount);
         }
 
-        // 1 + numOffers * 2
-        i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        // numOffers
+        i = (_values[0] & ~(~uint256(0) << 8));
+        // i + numFills
+        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8);
 
-        // loop fills
-        for(i; i < end; i += 2) {
+        // Loop fills
+        for(i; i < end; i++) {
             require(
                 // fill.offerAmount == (sum of given amounts for fill)
-                _values[i + 1] & ~(~uint256(0) << 128) == filled[i * 2] &&
+                _values[i * 2 + 2] & ~(~uint256(0) << 128) == filled[i * 2 + 1] &&
                 // fill.wantAmount == (sum of taken amounts for fill)
-                _values[i + 1] >> 128 == filled[i * 2 + 1],
+                _values[i * 2 + 2] >> 128 == filled[i * 2 + 2],
                 "Invalid fills"
             );
         }
     }
 
+    /// @dev Validates that for every offer / fill:
+    /// 1. offerAssetId != wantAssetId
+    /// 2. offerAmount > 0 && wantAmount > 0
+    /// 3. Specified `operator` address matches the expected `operator` address
+    /// (3) is needed because the operator address in `_addresses` is
+    /// externally set.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
+    /// @param _operator The `BrokerV2.operator` address
     function _validateTradeData(
         uint256[] memory _values,
         address[] memory _addresses,
@@ -302,6 +342,15 @@ library BrokerValidations {
         }
     }
 
+    /// @dev Validates signatures for a set of offers or fills
+    /// @param _values Values from `trade`
+    /// @param _hashes Hashes from `trade`
+    /// @param _addresses Addresses from `trade`
+    /// @param _typehash The typehash used to construct the signed hash
+    /// @param _i The starting index to verify
+    /// @param _end The ending index to verify
+    /// @return An array of hash keys if _i started as 0, because only
+    /// the hash keys of offers are needed
     function _validateTradeSignatures(
         uint256[] memory _values,
         bytes32[] memory _hashes,
@@ -325,7 +374,7 @@ library BrokerValidations {
 
             bytes32 hashKey = keccak256(abi.encode(
                 _typehash,
-                _addresses[(dataA & ~(~uint256(0) << 8)) * 2],
+                _addresses[(dataA & ~(~uint256(0) << 8)) * 2], // user
                 _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
                 dataB & ~(~uint256(0) << 128), // offerAmount
                 _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
@@ -335,14 +384,18 @@ library BrokerValidations {
                 (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
             ));
 
+            // To reduce gas costs, each bit of _values[0] after the 24th bit
+            // is used to indicate whether the Ethereum signed message prefix
+            // should be prepended for signature verification of the offer / fill
+            // at that index
             bool prefixedSignature = _values[0] & (uint256(1) << (24 + _i)) != 0;
 
             _validateSignature(
                 hashKey,
-                _addresses[(dataA & ~(~uint256(0) << 8)) * 2],
-                uint8((dataA & ~(~uint256(0) << 48)) >> 40),
-                _hashes[_i * 2],
-                _hashes[_i * 2 + 1],
+                _addresses[(dataA & ~(~uint256(0) << 8)) * 2], // user
+                uint8((dataA & ~(~uint256(0) << 48)) >> 40), // The `v` component of the user's signature
+                _hashes[_i * 2], // The `r` component of the user's signature
+                _hashes[_i * 2 + 1], // The `s` component of the user's signature
                 prefixedSignature
             );
 
@@ -352,6 +405,17 @@ library BrokerValidations {
         return hashKeys;
     }
 
+    /// @dev Validates that the specified `_hash` was signed by the specified `_user`.
+    /// This method supports the EIP712 specification, the older Ethereum
+    /// signed message specification is also supported for backwards compatibility.
+    /// @param _hash The original hash that was signed by the user
+    /// @param _user The user who signed the hash
+    /// @param _v The `v` component of the `_user`'s signature
+    /// @param _r The `r` component of the `_user`'s signature
+    /// @param _s The `s` component of the `_user`'s signature
+    /// @param _prefixed If true, the signature will be verified
+    /// against the Ethereum signed message specification instead of the
+    /// EIP712 specification
     function _validateSignature(
         bytes32 _hash,
         address _user,

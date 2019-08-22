@@ -17,7 +17,7 @@ contract('Test trade: over match', async (accounts) => {
         await exchange.mintAndDeposit({ user: filler, token: swc, amount: 300, nonce: 2 })
     })
 
-    contract('when the amount taken from a make is more than the make.offerAmount', async () => {
+    contract('when the amount taken from an offer is more than the offer.offerAmount', async () => {
         it('raises an error', async () => {
             const tradeParams = await getTradeParams(accounts)
             const editedTradeParams = clone(tradeParams)
