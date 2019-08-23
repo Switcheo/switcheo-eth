@@ -46,6 +46,15 @@ interface IERC1820Registry {
 /// For example, to recover bits(4..8) from a uint8 value, we can use data >> 4.
 /// Given a data value of "1111,1111", bits(4..8) should give "1111".
 /// data >> 4: "0000,1111" (matching the expected "1111")
+///
+/// There is frequent reference and usage of asset IDs, this is a unique
+/// identifier used within the contract to represent individual assets.
+/// For all tokens, the asset ID is identical to the contract address
+/// of the token, this is so that additional mappings are not needed to
+/// identify tokens during deposits and withdrawals.
+/// The only exception is the Ethereum token, which does not have a contract
+/// address, for this reason, the zero address is used to represent the
+/// Ethereum token's ID.
 contract BrokerV2 is Ownable {
     using SafeMath for uint256;
 
