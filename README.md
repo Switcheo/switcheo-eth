@@ -90,7 +90,7 @@ The contract can transfer ownership of assets only through the operations docume
 
 If X amount of Asset A is transferred into the contract, then a total of X amount of Asset A can always be withdrawn from the contract by the eventual owners of the X amount of the asset, regardless of any series of operations invoked on the contract. The only methods which result in a transfer of asset ownership is the filling of offers, Atomic Swaps, and the paying of fees.
 
-A user can only withdraw from the contract an amount corresponding to their entitled balance. Only the owner of the Ethereum address associated with an entitled balance can withdraw the assets represented by that entitled balance, the only exception to this is the contract's specified coordinator, who can perform withdrawals on behalf of users in the case of an emergency.
+A user can only withdraw from the contract an amount corresponding to their entitled balance. Only the owner of the Ethereum address associated with an entitled balance can withdraw the assets represented by that entitled balance, the only exception to this is that admin addresses can perform withdrawals on behalf of users in the case of an emergency.
 
 At any point, the sum of all entitled balances of all users within the contract corresponds exactly to the amount of assets the contract has control over in the Ethereum network. This and the contract's methods guarantee that it is always possible for all users to fully withdraw their entitled balance from the contract, regardless of the action or inaction of any entity.
 

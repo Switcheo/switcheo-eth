@@ -223,7 +223,7 @@ contract BrokerV2 is Ownable {
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
     // A mapping of withdrawal announcements: userAddress => assetId => announcementData
-    mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawlAnnouncements;
+    mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawalAnnouncements;
 
     // Emitted on positive balance state transitions
     event BalanceIncrease(
@@ -1210,7 +1210,7 @@ contract BrokerV2 is Ownable {
             "Invalid amount"
         );
 
-        WithdrawalAnnouncement storage announcement = withdrawlAnnouncements[msg.sender][_assetId];
+        WithdrawalAnnouncement storage announcement = withdrawalAnnouncements[msg.sender][_assetId];
 
         announcement.withdrawableAt = now + slowWithdrawDelay;
         announcement.amount = _amount;
@@ -1227,16 +1227,18 @@ contract BrokerV2 is Ownable {
     /// @param _assetId The contract address of the token to withdraw
     function slowWithdraw(
         address payable _withdrawer,
-        address _assetId
+        address _assetId,
+        uint256 _amount
     )
         external
     {
-        WithdrawalAnnouncement memory announcement = withdrawlAnnouncements[msg.sender][_assetId];
+        WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
         require(announcement.withdrawableAt != 0, "Invalid announcement");
         require(now >= announcement.withdrawableAt, "Insufficient delay");
+        require(announcement.amount == _amount, "Invalid amount");
 
-        delete withdrawlAnnouncements[_withdrawer][_assetId];
+        delete withdrawalAnnouncements[_withdrawer][_assetId];
         _withdraw(
             _withdrawer,
             _withdrawer,
@@ -1279,12 +1281,13 @@ contract BrokerV2 is Ownable {
     {
         require(_values[0] > 0, "Invalid amount");
         require(_values[1] > now, "Invalid expiry time");
-        _markNonce(_values[3]);
+        _validateAddress(_addresses[1]);
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
-
         // require that the swap is not yet active
         require(!atomicSwaps[swapHash], "Invalid swap");
+
+        _markNonce(_values[3]);
 
         _validateSignature(
             swapHash,
@@ -1736,7 +1739,7 @@ contract BrokerV2 is Ownable {
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
 
-            _softMarkNonce(nonce);
+            if (!existingOffer) { _markNonce(nonce); }
         }
     }
 
@@ -1823,6 +1826,8 @@ contract BrokerV2 is Ownable {
         private
     {
         require(_amount > 0, 'Invalid amount');
+
+        _validateAddress(_receivingAddress);
 
         _decreaseBalance(
             _withdrawer,
@@ -1944,23 +1949,6 @@ contract BrokerV2 is Ownable {
         uint256 bits = usedNonces[slotData];
 
         require(bits & shiftedBit == 0, "Nonce already used");
-
-        usedNonces[slotData] = bits | shiftedBit;
-    }
-
-    /// @dev Sets the corresponding `_nonce` bit to 1.
-    /// Unlike `_markNonce`, no error is raised if the corresponding `_nonce`
-    /// bit had been previously set to 1.
-    /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
-    /// @param _nonce The nonce to mark
-    function _softMarkNonce(uint256 _nonce) private {
-        require(_nonce != 0, "Invalid nonce");
-
-        uint256 slotData = _nonce.div(256);
-        uint256 shiftedBit = uint256(1) << _nonce.mod(256);
-        uint256 bits = usedNonces[slotData];
-
-        if (bits & shiftedBit != 0) { return; }
 
         usedNonces[slotData] = bits | shiftedBit;
     }

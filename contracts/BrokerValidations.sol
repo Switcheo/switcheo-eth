@@ -148,8 +148,9 @@ library BrokerValidations {
     }
 
     /// @dev See the `BrokerV2.trade` method for an explanation of why offer uniquness
-    /// is required. Offer uniqueness is validated in O(N) time by requiring that
-    /// offer nonces are in a strictly ascending order.
+    /// is required. Offer uniqueness is validated in O(N) time by requiring that,
+    /// for the set of offers in `_values`, the offers are sorted such that
+    /// nonces are in a strictly ascending order.
     /// @param _values Values from `trade`
     function _validateUniqueOffers(uint256[] memory _values) private pure {
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
