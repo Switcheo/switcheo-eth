@@ -192,6 +192,21 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
+    contract('when a match has non-zero bits in bits(16..128)', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.matches[1].takeAmount = 0
+
+            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
+                ({ values }) => {
+                    values[values.length - 1] = values[values.length - 1].or(shl(1, 16))
+                },
+                [],
+                'Invalid match data'
+            )
+        })
+    })
+
     contract('when (offer.wantAmount * takeAmount) % offer.offerAmount != 0', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)

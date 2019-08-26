@@ -229,7 +229,13 @@ library BrokerValidations {
                 "Invalid match"
             );
 
-            uint256 takeAmount = _values[i] >> 16;
+            // require that bits(16..128) are all zero for every match
+            require(
+                (_values[i] & ~(~uint256(0) << 128)) >> 16 == uint256(0),
+                "Invalid match data"
+            );
+
+            uint256 takeAmount = _values[i] >> 128;
             require(takeAmount > 0, "Invalid takeAmount");
 
             uint256 offerDataB = _values[2 + offerIndex * 2];
@@ -266,7 +272,7 @@ library BrokerValidations {
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 takeAmount = _values[i] >> 16;
+            uint256 takeAmount = _values[i] >> 128;
             uint256 wantAmount = _values[2 + offerIndex * 2] >> 128;
             uint256 offerAmount = _values[2 + offerIndex * 2] & ~(~uint256(0) << 128);
             // giveAmount = takeAmount * wantAmount / offerAmount

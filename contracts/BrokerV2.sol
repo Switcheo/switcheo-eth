@@ -786,7 +786,7 @@ contract BrokerV2 is Ownable {
     /// @param _values[1 + numOffers * 2 + numFills * 2 + i] Data for the i'th match
     /// bits(0..8): Index of the offerIndex for this match
     /// bits(8..16): Index of the fillIndex for this match
-    /// bits(16..256): The number of tokens to take from the matched offer's offerAmount
+    /// bits(128..256): The number of tokens to take from the matched offer's offerAmount
     ///
     /// @param _hashes[i * 2] The `r` component of the maker's / filler's signature
     /// for the i'th offer / fill
@@ -1548,7 +1548,7 @@ contract BrokerV2 is Ownable {
             uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
 
             // match.takeAmount
-            uint256 amount = _values[i] >> 16;
+            uint256 amount = _values[i] >> 128;
             // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
             amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
                            .div(_values[2 + offerIndex * 2] & ~(~uint256(0) << 128));
@@ -1755,7 +1755,7 @@ contract BrokerV2 is Ownable {
         // loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 takeAmount = _values[i] >> 16;
+            uint256 takeAmount = _values[i] >> 128;
             decrements[offerIndex] = decrements[offerIndex].add(takeAmount);
         }
 

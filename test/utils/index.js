@@ -395,7 +395,7 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
     for (let i = 0; i < matches.length; i++) {
         const match = matches[i]
         const value = bn(match.offerIndex).or(shl(match.fillIndex, 8))
-                                         .or(shl(match.takeAmount, 16))
+                                         .or(shl(match.takeAmount, 128))
         values.push(value)
     }
 
