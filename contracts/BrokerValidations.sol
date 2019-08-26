@@ -72,12 +72,10 @@ library BrokerValidations {
     /// @param _values Values from `trade`
     /// @param _hashes Hashes from `trade`
     /// @param _addresses Addresses from `trade`
-    /// @param _operator The `BrokerV2.operator` address
     function validateTrades(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
-        address[] calldata _addresses,
-        address _operator
+        address[] calldata _addresses
     )
         external
         pure
@@ -87,7 +85,7 @@ library BrokerValidations {
         _validateUniqueOffers(_values);
         _validateMatches(_values, _addresses);
         _validateFillAmounts(_values);
-        _validateTradeData(_values, _addresses, _operator);
+        _validateTradeData(_values, _addresses);
 
         // validate signatures of all fills
         _validateTradeSignatures(
@@ -199,7 +197,7 @@ library BrokerValidations {
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
 
-        // Loop matches
+        // loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
@@ -264,7 +262,7 @@ library BrokerValidations {
 
         uint256 end = _values.length;
 
-        // Loop matches
+        // loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
@@ -286,7 +284,7 @@ library BrokerValidations {
         // i + numFills
         end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8);
 
-        // Loop fills
+        // loop fills
         for(i; i < end; i++) {
             require(
                 // fill.offerAmount == (sum of given amounts for fill)
@@ -306,11 +304,9 @@ library BrokerValidations {
     /// externally set.
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
-    /// @param _operator The `BrokerV2.operator` address
     function _validateTradeData(
         uint256[] memory _values,
-        address[] memory _addresses,
-        address _operator
+        address[] memory _addresses
     )
         private
         pure
@@ -337,8 +333,18 @@ library BrokerValidations {
             );
 
             require(
-                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == _operator,
-                "Invalid operator"
+                // _addresses[operator address index] == address(0)
+                // The actual operator address will be read directly from
+                // the contract's storage
+                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == address(0),
+                "Invalid operator address placeholder"
+            );
+
+            require(
+                // _addresses[operator fee asset ID index] == address(0)
+                // The actual fee asset ID will be read from the filler / maker feeAssetId
+                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(0),
+                "Invalid operator fee asset ID"
             );
         }
     }

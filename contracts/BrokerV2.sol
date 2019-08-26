@@ -693,6 +693,13 @@ contract BrokerV2 is Ownable {
     /// The added benefit is further gas cost reduction because repeated
     /// user asset pairs do not need to be duplicated for the calldata.
     ///
+    /// The operator address and operator fee asset ID is enforced to be `address(0)`,
+    /// this is because while a slot is needed, the actual operator address should
+    /// be read directly from contract storage, and the operator fee asset ID is
+    /// identical to the maker's / filler's feeAssetId.
+    /// Enforcing this reduces calldata gas costs as zero bits cost less than
+    /// non-zero bits.
+    ///
     /// A tradeoff of compacting the bits is that there is a lower maximum value
     /// for offer and fill data, however the limits remain generally practical.
     ///
@@ -813,20 +820,22 @@ contract BrokerV2 is Ownable {
         bytes32[] memory hashKeys = BrokerValidations.validateTrades(
             _values,
             _hashes,
-            _addresses,
-            operator
+            _addresses
         );
+
+        // Cache the operator address to reduce gas costs from storage reads
+        address operatorAddress = operator;
 
         // Credit fillers for each fill.wantAmount, and credit the operator
         // for each fill.feeAmount.
-        _creditFillBalances(_values, _addresses);
+        _creditFillBalances(_values, _addresses, operatorAddress);
 
         // Credit makers for each amount received through a matched fill.
         _creditMakerBalances(_values, _addresses);
 
         // Credit the operator for each offer.feeAmount if the offer has not
         // been recorded through a previous `trade` call.
-        _creditMakerFeeBalances(_values, _addresses);
+        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
 
         // Deduct tokens from fillers for each fill.offerAmount
         // and each fill.feeAmount.
@@ -1452,9 +1461,11 @@ contract BrokerV2 is Ownable {
     /// for each fill.feeAmount. See the `trade` method for param details.
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
+    /// @param _operator Address of the operator
     function _creditFillBalances(
         uint256[] memory _values,
-        address[] memory _addresses
+        address[] memory _addresses,
+        address _operator
     )
         private
     {
@@ -1467,19 +1478,30 @@ contract BrokerV2 is Ownable {
         // i + numFills * 2
         uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
 
-        // Loop fills
+        // loop fills
         for(i; i < end; i += 2) {
-            uint256 wantAssetIndex = ((_values[i] & ~(~uint256(0) << 24)) >> 16);
+            // let assetIndex be filler.wantAssetIndex
+            uint256 assetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
             uint256 wantAmount = _values[i + 1] >> 128;
 
-            increments[wantAssetIndex] = increments[wantAssetIndex].add(wantAmount);
-            if (min > wantAssetIndex) { min = wantAssetIndex; }
-            if (max < wantAssetIndex) { max = wantAssetIndex; }
+            // credit fill.wantAmount to filler
+            increments[assetIndex] = increments[assetIndex].add(wantAmount);
+            if (min > assetIndex) { min = assetIndex; }
+            if (max < assetIndex) { max = assetIndex; }
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
+            // let assetIndex be filler.feeAssetIndex
+            assetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
+
+            // override the operator slot with the actual operator address
+            // and set the operator fee asset ID slot to be the fill's feeAssetId
+            _addresses[feeAssetIndex * 2] = _operator;
+            _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+
+            // credit fill.feeAmount to operator
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
@@ -1518,7 +1540,7 @@ contract BrokerV2 is Ownable {
 
         uint256 end = _values.length;
 
-        // Loop matches
+        // loop matches
         for(i; i < end; i++) {
             // match.offerIndex
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
@@ -1531,8 +1553,8 @@ contract BrokerV2 is Ownable {
             amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
                            .div(_values[2 + offerIndex * 2] & ~(~uint256(0) << 128));
 
+            // credit maker for the amount received from the match
             increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
-
             if (min > wantAssetIndex) { min = wantAssetIndex; }
             if (max < wantAssetIndex) { max = wantAssetIndex; }
         }
@@ -1555,7 +1577,8 @@ contract BrokerV2 is Ownable {
     /// @param _addresses Addresses from `trade`
     function _creditMakerFeeBalances(
         uint256[] memory _values,
-        address[] memory _addresses
+        address[] memory _addresses,
+        address _operator
     )
         private
     {
@@ -1567,7 +1590,7 @@ contract BrokerV2 is Ownable {
         // i + numOffers * 2
         uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
 
-        // Loop offers
+        // loop offers
         for(i; i < end; i += 2) {
             uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
             if (_nonceTaken(nonce)) { continue; }
@@ -1575,7 +1598,16 @@ contract BrokerV2 is Ownable {
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
+            // let assetIndex be maker.feeAssetIndex
+            uint256 assetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 40)) >> 32;
+
+            // override the operator slot with the actual operator address
+            // and set the operator fee asset ID slot to be the make's feeAssetId
+            _addresses[feeAssetIndex * 2] = _operator;
+            _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+
+            // credit make.feeAmount to operator
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
@@ -1617,6 +1649,7 @@ contract BrokerV2 is Ownable {
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
+            // deduct fill.offerAmount from filler
             decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
             if (min > offerAssetIndex) { min = offerAssetIndex; }
             if (max < offerAssetIndex) { max = offerAssetIndex; }
@@ -1624,6 +1657,7 @@ contract BrokerV2 is Ownable {
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
+            // deduct fill.feeAmount from filler
             uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
@@ -1669,6 +1703,7 @@ contract BrokerV2 is Ownable {
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
             uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
 
+            // deduct make.offerAmount from maker
             decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
             if (min > offerAssetIndex) { min = offerAssetIndex; }
             if (max < offerAssetIndex) { max = offerAssetIndex; }
@@ -1676,6 +1711,7 @@ contract BrokerV2 is Ownable {
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
+            // deduct make.feeAmount from maker
             uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
             decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
@@ -1716,7 +1752,7 @@ contract BrokerV2 is Ownable {
 
         uint256 end = _values.length;
 
-        // Loop matches
+        // loop matches
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 takeAmount = _values[i] >> 16;
@@ -1726,7 +1762,7 @@ contract BrokerV2 is Ownable {
         i = 0;
         end = _values[0] & ~(~uint256(0) << 8); // numOffers
 
-        // Loop offers
+        // loop offers
         for (i; i < end; i++) {
             uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
             bool existingOffer = _nonceTaken(nonce);

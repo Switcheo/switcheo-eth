@@ -21,7 +21,7 @@ contract('Test slowWithdraw', async (accounts) => {
             await broker.announceWithdraw(jrc.address, 42, { from: user })
             await increaseEvmTime(announceDelay)
 
-            await broker.slowWithdraw(user, jrc.address, { from: user })
+            await broker.slowWithdraw(user, jrc.address, 42, { from: user })
 
             await validateBalance(user, jrc, 0)
             await validateExternalBalance(user, jrc, 42)

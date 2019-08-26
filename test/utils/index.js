@@ -18,7 +18,7 @@ const { soliditySha3, keccak256 } = web3.utils
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const { DOMAIN_SEPARATOR, TYPEHASHES } = require('../constants')
+const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR } = require('../constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getScratchpad() { return await Scratchpad.deployed() }
@@ -307,7 +307,9 @@ function constructTradeData(data) {
     return { dataA, dataB }
 }
 
-async function trade({ offers, fills, matches, operator }, { privateKeys }, transform) {
+// `modify` is a callback to change the values sent to the contract,
+// this helps to test validations
+async function trade({ offers, fills, matches, operator }, { privateKeys }, modify) {
     const broker = await getBroker()
     const lengths = bn(offers.length).or(shl(fills.length, 8))
                                     .or(shl(matches.length, 16))
@@ -397,7 +399,16 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, tran
         values.push(value)
     }
 
-    if (transform !== undefined) { transform({ values, hashes, addresses }) }
+    // zero out operator addresses and asset IDs as these will overwritten by
+    // the contract
+    for (let i = 0; i < addresses.length; i += 2) {
+        if (addresses[i] === operator) {
+            addresses[i] = ZERO_ADDR
+            addresses[i + 1] = ZERO_ADDR
+        }
+    }
+
+    if (modify !== undefined) { modify({ values, hashes, addresses }) }
 
     return await broker.trade(values, hashes, addresses)
 }
