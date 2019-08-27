@@ -198,8 +198,12 @@ contract BrokerV2 is Ownable {
     // A mapping of remaining offer amounts: offerHash => availableAmount
     mapping(bytes32 => uint256) public offers;
     // A mapping of used nonces: nonceIndex => nonceData
+    // The storing of nonces is used to ensure that transactions signed by
+    // the user can only be used once.
     // For space and gas cost efficiency, one nonceData is used to store the
     // state of 256 nonces.
+    // This reduces the average cost of storing a new nonce from 20,000 gas
+    // to 5000 + 20,000 / 256 = 5078.125 gas
     // See _markNonce and _nonceTaken for more details.
     mapping(uint256 => uint256) public usedNonces;
     // A mapping of user balances: userAddress => assetId => balance
@@ -857,9 +861,11 @@ contract BrokerV2 is Ownable {
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
     /// amount to the offer maker.
-    /// to reduce gas costs, the original parameters of the offer are not stored
-    /// in the contract's storage, so they have to be re-specified here.
-    /// the `_expectedavailableamount` is required to help prevent accidental
+    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, only the hash of the parameters is stored for
+    /// verification, so the original parameters need to be re-specified here.
+    ///
+    /// The `_expectedavailableamount` is required to help prevent accidental
     /// cancellation of an offer ahead of time, for example, if there is
     /// a pending fill in the off-chain state.
     ///
@@ -936,9 +942,12 @@ contract BrokerV2 is Ownable {
     /// @dev This method is intended to be used in the case of a contract
     /// upgrade or in an emergency. It can only be invoked by an admin and only
     /// after the admin state has been set to `Escalated` by the contract owner.
-    /// to reduce gas costs, the original parameters of the offer are not stored
-    /// in the contract's storage, so they have to be re-specified here.
-    /// the `_expectedavailableamount` is required to help prevent accidental
+    ///
+    /// To reduce gas costs, the original parameters of the offer are not stored
+    /// in the contract's storage, only the hash of the parameters is stored for
+    /// verification, so the original parameters need to be re-specified here.
+    ///
+    /// The `_expectedavailableamount` is required to help prevent accidental
     /// cancellation of an offer ahead of time, for example, if there is
     /// a pending fill in the off-chain state.
     /// @param _maker The address of the offer's maker
@@ -993,8 +1002,11 @@ contract BrokerV2 is Ownable {
     /// admin permissions.
     /// An announcement followed by a delay is needed so that the off-chain
     /// service has time to update the off-chain state.
+    ///
     /// To reduce gas costs, the original parameters of the offer are not stored
-    /// in the contract's storage, so they have to be re-specified here.
+    /// in the contract's storage, only the hash of the parameters is stored for
+    /// verification, so the original parameters need to be re-specified here.
+    ///
     /// @param _maker The address of the offer's maker
     /// @param _offerAssetId The contract address of the offerred asset
     /// @param _offerAmount The number of tokens offerred
@@ -1042,8 +1054,11 @@ contract BrokerV2 is Ownable {
     /// admin permissions.
     /// An announcement followed by a delay is needed so that the off-chain
     /// service has time to update the off-chain state.
+    ///
     /// To reduce gas costs, the original parameters of the offer are not stored
-    /// in the contract's storage, so they have to be re-specified here.
+    /// in the contract's storage, only the hash of the parameters is stored for
+    /// verification, so the original parameters need to be re-specified here.
+    ///
     /// @param _maker The address of the offer's maker
     /// @param _offerAssetId The contract address of the offerred asset
     /// @param _offerAmount The number of tokens offerred
@@ -1158,16 +1173,6 @@ contract BrokerV2 is Ownable {
             _nonce
         );
     }
-    /// @notice Cancels an offer without requiring the maker's signature
-    /// @dev This method is intended to be used in the case of a contract
-    /// upgrade or in an emergency. It can only be invoked by an admin and only
-    /// after the admin state has been set to `Escalated` by the contract owner.
-    /// To reduce gas costs, the original parameters of the offer are not stored
-    /// in the contract's storage, so they have to be re-specified here.
-    /// The `_expectedAvailableAmount` is required to help prevent accidental
-    /// cancellation of an offer ahead of time, for example, if there is
-    /// a pending fill in the off-chain state.
-
     /// @notice Withdraws tokens without requiring the withdrawer's signature
     /// @dev This method is intended to be used in the case of a contract
     /// upgrade or in an emergency. It can only be invoked by an admin and only
@@ -1332,8 +1337,10 @@ contract BrokerV2 is Ownable {
 
     /// @notice Executes a swap by transferring the tokens previously locked through
     /// a `createSwap` call to the swap taker.
+    ///
     /// @dev To reduce gas costs, the original parameters of the swap are not stored
-    /// in the contract's storage, so they have to be re-specified here.
+    /// in the contract's storage, only the hash of the parameters is stored for
+    /// verification, so the original parameters need to be re-specified here.
     ///
     /// @param _addresses[0] maker: the address of the user to deduct the swap tokens from
     /// @param _addresses[1] taker: the address of the swap taker who will receive the swap tokens
@@ -1384,13 +1391,12 @@ contract BrokerV2 is Ownable {
         );
     }
 
-    // _addresses => [0]: maker, [1]: taker, [2]: assetId, [3]: feeAssetId
-    // _values => [0]: amount, [1]: expiryTime, [2]: feeAmount, [3]: nonce
-
     /// @notice Cancels a swap and refunds the previously locked tokens to
     /// the swap maker.
+    ///
     /// @dev To reduce gas costs, the original parameters of the swap are not stored
-    /// in the contract's storage, so they have to be re-specified here.
+    /// in the contract's storage, only the hash of the parameters is stored for
+    /// verification, so the original parameters need to be re-specified here.
     ///
     /// @param _addresses[0] maker: the address of the user to deduct the swap tokens from
     /// @param _addresses[1] taker: the address of the swap taker who will receive the swap tokens
