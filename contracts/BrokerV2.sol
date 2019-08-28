@@ -747,7 +747,9 @@ contract BrokerV2 is Ownable {
     /// To enforce uniqueness, it is required that offer nonces are sorted in a
     /// strictly ascending order.
     ///
-    /// 4. To prevent replay attacks, all fill nonces are required to be unused.
+    /// 4. The fill array must not consist of repeated fills, for the same
+    /// reason why there cannot be repeated offers. Additionally, to prevent
+    /// replay attacks, all fill nonces are required to be unused.
     ///
     /// @param _values[0] Number of offers, fills, matches, as well as
     /// data about whether an offer's / fill's signature should have the
@@ -1786,6 +1788,9 @@ contract BrokerV2 is Ownable {
     }
 
     /// @dev Mark all fill nonces as taken in the `usedNonces` mapping.
+    /// This also validates fill uniquness within the set of fills in `_values`,
+    /// since fill nonces are marked one at a time with validation that the
+    /// nonce to be marked has not been marked before.
     /// See the `trade` method for param details.
     /// @param _values Values from `trade`
     function _storeFillNonces(uint256[] memory _values) private {
