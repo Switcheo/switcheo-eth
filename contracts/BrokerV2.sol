@@ -2034,44 +2034,6 @@ contract BrokerV2 is Ownable {
         }
     }
 
-    function _incrementBalances(
-        uint256[] memory increments,
-        uint256 _i,
-        uint256 _end,
-        address[] memory _addresses
-    )
-        private
-    {
-        for(_i; _i <= _end; _i++) {
-            uint256 increment = increments[_i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
-
-            emit Increment(_i << 248 | increment);
-        }
-    }
-
-    function _decrementBalances(
-        uint256[] memory decrements,
-        uint256 _i,
-        uint256 _end,
-        address[] memory _addresses
-    )
-        private
-    {
-        for(_i; _i <= _end; _i++) {
-            uint256 decrement = decrements[_i];
-            if (decrement == 0) { continue; }
-
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
-
-            emit Decrement(_i << 248 | decrement);
-        }
-    }
-
     /// @dev A utility method to increase the balance of a user.
     /// A corressponding `BalanceIncrease` event will also be emitted.
     /// @param _user The address to increase balance for
@@ -2135,4 +2097,41 @@ contract BrokerV2 is Ownable {
         require(_address != address(0), "45");
     }
 
+    function _incrementBalances(
+        uint256[] memory increments,
+        uint256 _i,
+        uint256 _end,
+        address[] memory _addresses
+    )
+        private
+    {
+        for(_i; _i <= _end; _i++) {
+            uint256 increment = increments[_i];
+            if (increment == 0) { continue; }
+
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
+
+            emit Increment(_i << 248 | increment);
+        }
+    }
+
+    function _decrementBalances(
+        uint256[] memory decrements,
+        uint256 _i,
+        uint256 _end,
+        address[] memory _addresses
+    )
+        private
+    {
+        for(_i; _i <= _end; _i++) {
+            uint256 decrement = decrements[_i];
+            if (decrement == 0) { continue; }
+
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
+
+            emit Decrement(_i << 248 | decrement);
+        }
+    }
 }
