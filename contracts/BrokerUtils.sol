@@ -142,10 +142,8 @@ library BrokerUtils {
         uint256 finalBalance = token.balanceOf(address(this));
         uint256 transferredAmount = finalBalance.sub(initialBalance);
 
-        require(
-            transferredAmount == _expectedAmount,
-            "Invalid transferred amount"
-        );
+        // Error code 46: transferIn, transferredAmount does not match expectedAmount
+        require(transferredAmount == _expectedAmount, "46");
     }
 
     function transferOut(
@@ -189,20 +187,14 @@ library BrokerUtils {
         // It is possible to have one offer with no matches and no fills
         // but that is blocked by this check as there is no foreseeable use
         // case for it.
-        require(
-            numOffers > 0 && numFills > 0 && numMatches > 0,
-            "Invalid trade inputs"
-        );
+        // Error code 47: _validateTradeInputLengths, invalid trade input lengths
+        require(numOffers > 0 && numFills > 0 && numMatches > 0, "47");
 
-        require(
-            _values.length == 1 + numOffers * 2 + numFills * 2 + numMatches,
-            "Invalid _values.length"
-        );
+        // Error code 48: _validateTradeInputLengths, invalid _values.length
+        require(_values.length == 1 + numOffers * 2 + numFills * 2 + numMatches, "48");
 
-        require(
-            _hashes.length == (numOffers + numFills) * 2,
-            "Invalid _hashes.length"
-        );
+        // Error code 49: _validateTradeInputLengths, invalid _hashes.length
+        require(_hashes.length == (numOffers + numFills) * 2, "49");
     }
 
     /// @dev See the `BrokerV2.trade` method for an explanation of why offer
@@ -227,7 +219,8 @@ library BrokerUtils {
                 continue;
             }
 
-            require(nonce > prevNonce, "Invalid offer nonces");
+            // Error code 50: _validateUniqueOffers, invalid offer nonces
+            require(nonce > prevNonce, "50");
             prevNonce = nonce;
         }
     }
@@ -264,47 +257,43 @@ library BrokerUtils {
             uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
             uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
 
-            require(
-                offerIndex < numOffers,
-                "Invalid offerIndex"
-            );
+            // Error code 51: _validateMatches, invalid match.offerIndex
+            require(offerIndex < numOffers, "51");
 
-            require(
-                fillIndex >= numOffers && fillIndex < numOffers + numFills,
-                "Invalid fillIndex"
-            );
+            // Error code 52: Invalid match.fillIndex
+            require(fillIndex >= numOffers && fillIndex < numOffers + numFills, "52");
 
             uint256 makerOfferAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 16)) >> 8;
             uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
             uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
             uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
 
+            // Error code 53: _validateMatches, offer.offerAssetId does not match fill.wantAssetId
             require(
-                // offer.offerAssetId == fill.wantAssetId
                 _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
-                "Invalid match"
+                "53"
             );
 
             require(
-                // offer.wantAssetId == fill.offerAssetId
+                // Error code 54: _validateMatches, offer.wantAssetId does not match fill.offerAssetId
                 _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
-                "Invalid match"
+                "54"
             );
 
             // require that bits(16..128) are all zero for every match
-            require(
-                (_values[i] & ~(~uint256(0) << 128)) >> 16 == uint256(0),
-                "Invalid match data"
-            );
+            // Error code 55: _validateMatches, invalid match data
+            require((_values[i] & ~(~uint256(0) << 128)) >> 16 == uint256(0), "55");
 
             uint256 takeAmount = _values[i] >> 128;
-            require(takeAmount > 0, "Invalid takeAmount");
+            // Error code 56: _validateMatches, invalid match.takeAmount
+            require(takeAmount > 0, "56");
 
             uint256 offerDataB = _values[2 + offerIndex * 2];
             // (offer.wantAmount * takeAmount) % offer.offerAmount == 0
+            // Error code 57: _validateMatches, invalid amounts
             require(
                 (offerDataB >> 128).mul(takeAmount).mod(offerDataB & ~(~uint256(0) << 128)) == 0,
-                "Invalid amounts"
+                "57"
             );
         }
     }
@@ -354,12 +343,13 @@ library BrokerUtils {
 
         // loop fills
         for(i; i < end; i++) {
+            // Error code 58: _validateFillAmounts, invalid fills
             require(
                 // fill.offerAmount == (sum of given amounts for fill)
                 _values[i * 2 + 2] & ~(~uint256(0) << 128) == filled[i * 2 + 1] &&
                 // fill.wantAmount == (sum of taken amounts for fill)
                 _values[i * 2 + 2] >> 128 == filled[i * 2 + 2],
-                "Invalid fills"
+                "58"
             );
         }
     }
@@ -387,32 +377,36 @@ library BrokerUtils {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
 
-            // offerAssetId != wantAssetId
+            // Error code 59: _validateTradeData, invalid trade assets
             require(
+                // offerAssetId != wantAssetId
                 _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1] !=
                 _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1],
-                "Invalid trade assets"
+                "59"
             );
 
-            // offerAmount > 0 && wantAmount > 0
+            // Error code 60: _validateTradeData, invalid trade amounts
             require(
+                // offerAmount > 0 && wantAmount > 0
                 (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
-                "Invalid amounts"
+                "60"
             );
 
+            // Error code 61: _validateTradeData, invalid operator address placeholder
             require(
                 // _addresses[operator address index] == address(0)
                 // The actual operator address will be read directly from
                 // the contract's storage
                 _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == address(0),
-                "Invalid operator address placeholder"
+                "61"
             );
 
+            // Error code 62: _validateTradeData, Invalid operator fee asset ID
             require(
                 // _addresses[operator fee asset ID index] == address(0)
                 // The actual fee asset ID will be read from the filler / maker feeAssetId
                 _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(0),
-                "Invalid operator fee asset ID"
+                "62"
             );
         }
     }
@@ -513,9 +507,11 @@ library BrokerUtils {
                 "\x19Ethereum Signed Message:\n32",
                 eip712Hash
             ));
-            require(_user == ecrecover(prefixedHash, _v, _r, _s), "Invalid signature");
+            // Error code 43: _validateSignature, invalid prefixed signature
+            require(_user == ecrecover(prefixedHash, _v, _r, _s), "43");
         } else {
-            require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
+            // Error code 44: _validateSignature, invalid non-prefixed signature
+            require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
         }
     }
 
@@ -545,7 +541,8 @@ library BrokerUtils {
         bytes memory returnData;
 
         (success, returnData) = _contract.call(_payload);
-        require(success, "Contract call failed");
+        // Error code 63: _callContract, contract call failed
+        require(success, "63");
 
         return returnData;
     }
@@ -556,10 +553,11 @@ library BrokerUtils {
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
     /// @param _data The data returned from a transfer call
     function _validateTransferResult(bytes memory _data) private pure {
+        // Error code 64: _validateTransferResult, invalid transfer result
         require(
             _data.length == 0 ||
             (_data.length == 32 && _getUint256FromBytes(_data) != 0),
-            "Invalid transfer"
+            "64"
         );
     }
 

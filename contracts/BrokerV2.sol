@@ -319,17 +319,20 @@ contract BrokerV2 is Ownable {
     }
 
     modifier onlyAdmin() {
-        require(adminAddresses[msg.sender]);
+        // Error code 1: onlyAdmin, address is not an admin address
+        require(adminAddresses[msg.sender], "1");
         _;
     }
 
     modifier onlyActiveState() {
-        require(state == State.Active);
+        // Error code 2: onlyActiveState, state is not 'Active'
+        require(state == State.Active, "2");
         _;
     }
 
     modifier onlyEscalatedAdminState() {
-        require(adminState == AdminState.Escalated);
+        // Error code 3: onlyEscalatedAdminState, adminState is not 'Escalated'
+        require(adminState == AdminState.Escalated, "3");
         _;
     }
 
@@ -373,7 +376,8 @@ contract BrokerV2 is Ownable {
     /// This differs from the regular `cancel` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
     function setSlowCancelDelay(uint256 _delay) external onlyOwner {
-        require(_delay <= MAX_SLOW_CANCEL_DELAY);
+        // Error code 4: setSlowCancelDelay, slow cancel delay exceeds max allowable delay
+        require(_delay <= MAX_SLOW_CANCEL_DELAY, "4");
         slowCancelDelay = _delay;
     }
 
@@ -384,7 +388,8 @@ contract BrokerV2 is Ownable {
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
     function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
-        require(_delay <= MAX_SLOW_WITHDRAW_DELAY);
+        // Error code 5: setSlowWithdrawDelay, slow withdraw delay exceeds max allowable delay
+        require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "5");
         slowWithdrawDelay = _delay;
     }
 
@@ -395,7 +400,8 @@ contract BrokerV2 is Ownable {
     /// @param _admin The address to give admin permissions to
     function addAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
-        require(!adminAddresses[_admin]);
+        // Error code 6: addAdmin, address is already an admin address
+        require(!adminAddresses[_admin], "6");
         adminAddresses[_admin] = true;
     }
 
@@ -403,7 +409,8 @@ contract BrokerV2 is Ownable {
     /// @param _admin The admin address to remove admin permissions from
     function removeAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
-        require(adminAddresses[_admin]);
+        // Error code 7: removeAdmin, address is not an admin address
+        require(adminAddresses[_admin], "7");
         delete adminAddresses[_admin];
     }
 
@@ -415,7 +422,8 @@ contract BrokerV2 is Ownable {
     /// @param _assetId The token address to whitelist
     function whitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
-        require(!tokenWhitelist[_assetId]);
+        // Error code 8: whitelistToken, token is already whitelisted
+        require(!tokenWhitelist[_assetId], "8");
         tokenWhitelist[_assetId] = true;
     }
 
@@ -423,7 +431,8 @@ contract BrokerV2 is Ownable {
     /// @param _assetId The token address to remove from the token whitelist
     function unwhitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
-        require(tokenWhitelist[_assetId]);
+         // Error code 9: unwhitelistToken, token is not whitelisted
+        require(tokenWhitelist[_assetId], "9");
         delete tokenWhitelist[_assetId];
     }
 
@@ -438,7 +447,8 @@ contract BrokerV2 is Ownable {
     /// @param _spender The address of the spender contract to whitelist
     function whitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
-        require(!spenderWhitelist[_spender]);
+        // Error code 10: whitelistSpender, spender is already whitelisted
+        require(!spenderWhitelist[_spender], "10");
         spenderWhitelist[_spender] = true;
     }
 
@@ -451,7 +461,8 @@ contract BrokerV2 is Ownable {
     /// @param _spender The address of the spender contract to remove from the whitelist
     function unwhitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
-        require(spenderWhitelist[_spender]);
+         // Error code 11: unwhitelistSpender, spender is not whitelisted
+        require(spenderWhitelist[_spender], "11");
         delete spenderWhitelist[_spender];
     }
 
@@ -479,7 +490,8 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
     {
-        require(spenderWhitelist[_spender]);
+        // Error code 12: authorizeSpender, spender is not whitelisted
+        require(spenderWhitelist[_spender], "12");
         _markNonce(_nonce);
 
         _validateSignature(
@@ -508,7 +520,8 @@ contract BrokerV2 is Ownable {
     /// This function does not require admin permission and is invokable directly by users.
     /// @param _spender The address of the spender contract
     function unauthorizeSpender(address _spender) external {
-        require(!spenderWhitelist[_spender]);
+        // Error code 13: unauthorizeSpender, spender has not been removed from whitelist
+        require(!spenderWhitelist[_spender], "13");
 
         address user = msg.sender;
         require(spenderAuthorizations[user][_spender]);
@@ -534,7 +547,8 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(spenderAuthorizations[_from][msg.sender]);
+        // Error code 14: spendFrom, spender is not authorized
+        require(spenderAuthorizations[_from][msg.sender], "14");
 
         _validateAddress(_to);
 
@@ -547,7 +561,8 @@ contract BrokerV2 is Ownable {
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
     function deposit() external payable onlyActiveState {
-        require(msg.value > 0);
+        // Error code 15: deposit, msg.value is 0
+        require(msg.value > 0, "15");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
     }
 
@@ -559,6 +574,10 @@ contract BrokerV2 is Ownable {
     /// This method has separate `_amount` and `_expectedAmount` values
     /// to support unconventional token transfers, e.g. tokens which have a
     /// proportion burnt on transfer.
+    /// Whitelisted tokens cannot use this method as it may cause a double
+    /// increment for the user's balance. This is because this method does a
+    /// call to the token's `transferFrom` method, and some tokens have a
+    /// `transferFrom` that later on calls `tokenFallback` or `tokensReceived`.
     /// @param _user The address of the user depositing the tokens
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with
@@ -575,7 +594,8 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        require(tokenWhitelist[_assetId] == false);
+        // Error code 16: depositToken, whitelisted tokens cannot use this method
+        require(tokenWhitelist[_assetId] == false, "16");
         _markNonce(_nonce);
 
         _increaseBalance(
@@ -610,7 +630,8 @@ contract BrokerV2 is Ownable {
         onlyActiveState
     {
         address assetId = msg.sender;
-        require(tokenWhitelist[assetId] == true);
+        // Error code 17: tokenFallback, token is not whitelisted
+        require(tokenWhitelist[assetId], "17");
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
         emit TokenFallback(_user, assetId, _amount);
     }
@@ -636,7 +657,8 @@ contract BrokerV2 is Ownable {
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
-        require(tokenWhitelist[assetId] == true);
+        // Error code 18: tokensReceived, token is not whitelisted
+        require(tokenWhitelist[assetId], "18");
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
         emit TokensReceived(_user, assetId, _amount);
     }
@@ -1026,7 +1048,8 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(_maker == msg.sender);
+        // Error code 19: announceCancel, invalid msg.sender
+        require(_maker == msg.sender, "19");
 
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1040,7 +1063,8 @@ contract BrokerV2 is Ownable {
             _offerNonce
         ));
 
-        require(offers[offerHash] > 0);
+        // Error code 20: announceCancel, nothing left to cancel
+        require(offers[offerHash] > 0, "20");
 
         uint256 cancellableAt = now + slowCancelDelay;
         cancellationAnnouncements[offerHash] = cancellableAt;
@@ -1091,11 +1115,14 @@ contract BrokerV2 is Ownable {
         ));
 
         uint256 cancellableAt = cancellationAnnouncements[offerHash];
-        require(cancellableAt != 0);
-        require(now >= cancellableAt);
+        // Error code 21: slowCancel, cancellation was not announced
+        require(cancellableAt != 0, "21");
+        // Error code 22: slowCancel, cancellation delay not yet reached
+        require(now >= cancellableAt, "22");
 
         uint256 availableAmount = offers[offerHash];
-        require(availableAmount > 0);
+        // Error code 23: slowCancel, nothing left to cancel
+        require(availableAmount > 0, "23");
 
         delete cancellationAnnouncements[offerHash];
         _cancel(
@@ -1218,9 +1245,9 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(
-            _amount > 0 && _amount <= balances[msg.sender][_assetId]
-        );
+
+        // Error code 24: announceWithdraw, invalid withdrawal amount
+        require(_amount > 0 && _amount <= balances[msg.sender][_assetId], "24");
 
         WithdrawalAnnouncement storage announcement = withdrawalAnnouncements[msg.sender][_assetId];
 
@@ -1246,9 +1273,12 @@ contract BrokerV2 is Ownable {
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
-        require(announcement.withdrawableAt != 0);
-        require(now >= announcement.withdrawableAt);
-        require(announcement.amount == _amount);
+        // Error code 25: slowWithdraw, withdrawal was not announced
+        require(announcement.withdrawableAt != 0, "25");
+        // Error code 26: slowWithdraw, withdrawal delay not yet reached
+        require(now >= announcement.withdrawableAt, "26");
+        // Error code 27: slowWithdraw, withdrawal amount does not match announced amount
+        require(announcement.amount == _amount, "27");
 
         delete withdrawalAnnouncements[_withdrawer][_assetId];
         _withdraw(
@@ -1291,13 +1321,15 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        require(_values[0] > 0);
-        require(_values[1] > now);
+        // Error code 28: createSwap, invalid swap amount
+        require(_values[0] > 0, "28");
+        // Error code 29: createSwap, expiry time has already passed
+        require(_values[1] > now, "29");
         _validateAddress(_addresses[1]);
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
-        // require that the swap is not yet active
-        require(!atomicSwaps[swapHash]);
+        // Error code 30: createSwap, the swap is already active
+        require(!atomicSwaps[swapHash], "30");
 
         _markNonce(_values[3]);
 
@@ -1311,7 +1343,8 @@ contract BrokerV2 is Ownable {
         );
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
-            require(_values[2] < _values[0]); // feeAmount < amount
+            // Error code 31: createSwap, swap.feeAmount exceeds swap.amount
+            require(_values[2] < _values[0], "31"); // feeAmount < amount
         } else {
             _decreaseBalance(
                 _addresses[0], // maker
@@ -1359,10 +1392,10 @@ contract BrokerV2 is Ownable {
         external
     {
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        require(atomicSwaps[swapHash]);
-        require(
-            sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret
-        );
+        // Error code 32: executeSwap, swap is not active
+        require(atomicSwaps[swapHash], "32");
+        // Error code 32: executeSwap, hash of preimage does not match hashedSecret
+        require(sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret, "33");
 
         uint256 takeAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1413,15 +1446,18 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(_values[1] <= now);
+        // Error code 34: cancelSwap, expiry time has not been reached
+        require(_values[1] <= now, "34");
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        require(atomicSwaps[swapHash]);
+        // Error code 35: cancelSwap, swap is not active
+        require(atomicSwaps[swapHash], "35");
 
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
 
         // cancelFeeAmount < feeAmount
-        require(cancelFeeAmount <= _values[2]);
+        // Error code 36: cancelSwap, cancelFeeAmount exceeds swap.feeAmount
+        require(cancelFeeAmount <= _values[2], "36");
 
         uint256 refundAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1770,7 +1806,8 @@ contract BrokerV2 is Ownable {
             bytes32 hashKey = _hashKeys[i];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
-            require(availableAmount > 0);
+            // Error code 37: offer's available amount is zero
+            require(availableAmount > 0, "37");
 
             uint256 remainingAmount = availableAmount.sub(decrements[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
@@ -1815,8 +1852,11 @@ contract BrokerV2 is Ownable {
         private
     {
         uint256 refundAmount = offers[_offerHash];
-        require(refundAmount > 0);
-        require(refundAmount == _expectedAvailableAmount);
+        // Error code 38: _cancel, there is no offer amount left to cancel
+        require(refundAmount > 0, "38");
+        // Error code 39: _cancel, the remaining offer amount does not match
+        // the expectedAvailableAmount
+        require(refundAmount == _expectedAvailableAmount, "39");
 
         delete offers[_offerHash];
 
@@ -1865,7 +1905,8 @@ contract BrokerV2 is Ownable {
     )
         private
     {
-        require(_amount > 0);
+        // Error code 40: _withdraw, invalid withdrawal amount
+        require(_amount > 0, "40");
 
         _validateAddress(_receivingAddress);
 
@@ -1976,13 +2017,15 @@ contract BrokerV2 is Ownable {
     /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
     /// @param _nonce The nonce to mark
     function _markNonce(uint256 _nonce) private {
-        require(_nonce != 0);
+        // Error code 41: _markNonce, nonce cannot be zero
+        require(_nonce != 0, "41");
 
         uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slotData];
 
-        require(bits & shiftedBit == 0);
+        // Error code 42: _markNonce, nonce has already been marked
+        require(bits & shiftedBit == 0, "42");
 
         usedNonces[slotData] = bits | shiftedBit;
     }
@@ -2020,9 +2063,11 @@ contract BrokerV2 is Ownable {
                 "\x19Ethereum Signed Message:\n32",
                 eip712Hash
             ));
-            require(_user == ecrecover(prefixedHash, _v, _r, _s));
+            // Error code 43: _validateSignature, invalid prefixed signature
+            require(_user == ecrecover(prefixedHash, _v, _r, _s), "43");
         } else {
-            require(_user == ecrecover(eip712Hash, _v, _r, _s));
+            // Error code 44: _validateSignature, invalid non-prefixed signature
+            require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
         }
     }
 
@@ -2085,7 +2130,8 @@ contract BrokerV2 is Ownable {
     /// @dev Ensures that `_address` is not the zero address
     /// @param _address The address to check
     function _validateAddress(address _address) private pure {
-        require(_address != address(0));
+        // Error code 45: _validateAddress, invalid address
+        require(_address != address(0), "45");
     }
 
 }

@@ -29,7 +29,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid trade inputs'
+                '47'
             )
         })
     })
@@ -39,7 +39,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid trade inputs'
+                '47'
             )
         })
     })
@@ -49,7 +49,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                'Invalid trade inputs'
+                '47'
             )
         })
     })
@@ -59,7 +59,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values.push(1) },
                 () => { /* no op */ },
-                'Invalid _values.length'
+                '48'
             )
         })
     })
@@ -69,7 +69,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes.push(ZERO_ADDR) },
                 () => { /* no op */ },
-                'Invalid _hashes.length'
+                '49'
             )
         })
     })
@@ -82,7 +82,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid offer nonces'
+                '50'
             )
         })
     })
@@ -95,21 +95,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid offer nonces'
-            )
-        })
-    })
-
-    contract('when offer.offerAssetId == offer.wantAssetId', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.offers[1].wantAssetId = jrc.address
-            editedTradeParams.fills[1].offerAssetId = jrc.address
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid trade assets'
+                '50'
             )
         })
     })
@@ -122,7 +108,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid offerIndex'
+                '51'
             )
         })
     })
@@ -135,7 +121,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid fillIndex'
+                '52'
             )
         })
     })
@@ -148,7 +134,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid fillIndex'
+                '52'
             )
         })
     })
@@ -161,7 +147,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid match'
+                '53'
             )
         })
     })
@@ -174,20 +160,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid match'
-            )
-        })
-    })
-
-    contract('when match.takeAmount is 0', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.matches[1].takeAmount = 0
-
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
-                'Invalid takeAmount'
+                '54'
             )
         })
     })
@@ -202,7 +175,20 @@ contract('Test trade: general validations', async (accounts) => {
                     values[values.length - 1] = values[values.length - 1].or(shl(1, 16))
                 },
                 [],
-                'Invalid match data'
+                '55'
+            )
+        })
+    })
+
+    contract('when match.takeAmount is 0', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.matches[1].takeAmount = 0
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                '56'
             )
         })
     })
@@ -215,7 +201,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid amounts'
+                '57'
             )
         })
     })
@@ -228,7 +214,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid fills'
+                '58'
             )
         })
     })
@@ -237,7 +223,7 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes[3] = ZERO_ADDR }, [],
-                'Invalid signature'
+                '44'
             )
         })
     })
@@ -246,7 +232,21 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes[7] = ZERO_ADDR }, [],
-                'Invalid signature'
+                '44'
+            )
+        })
+    })
+
+    contract('when offer.offerAssetId == offer.wantAssetId', async () => {
+        it('raises an error', async () => {
+            const editedTradeParams = clone(tradeParams)
+            editedTradeParams.offers[1].wantAssetId = jrc.address
+            editedTradeParams.fills[1].offerAssetId = jrc.address
+
+            await testValidation(exchange.trade, [],
+                [editedTradeParams, { privateKeys }],
+                [tradeParams, { privateKeys }],
+                '59'
             )
         })
     })
@@ -264,7 +264,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid amounts'
+                '60'
             )
         })
     })
@@ -282,7 +282,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid amounts'
+                '60'
             )
         })
     })
@@ -299,7 +299,7 @@ contract('Test trade: general validations', async (accounts) => {
                     }
                 },
                 [],
-                'Invalid operator address placeholder'
+                '61'
             )
         })
     })
@@ -316,7 +316,7 @@ contract('Test trade: general validations', async (accounts) => {
                     }
                 },
                 [],
-                'Invalid operator fee asset ID'
+                '62'
             )
         })
     })
@@ -333,7 +333,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Invalid availableAmount'
+                '37'
             )
         })
     })
@@ -345,7 +345,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Nonce already used'
+                '42'
             )
         })
     })
@@ -358,7 +358,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                'Nonce already used'
+                '42'
             )
         })
     })
