@@ -319,17 +319,17 @@ contract BrokerV2 is Ownable {
     }
 
     modifier onlyAdmin() {
-        require(adminAddresses[msg.sender], "Invalid sender");
+        require(adminAddresses[msg.sender]);
         _;
     }
 
     modifier onlyActiveState() {
-        require(state == State.Active, "Invalid state");
+        require(state == State.Active);
         _;
     }
 
     modifier onlyEscalatedAdminState() {
-        require(adminState == AdminState.Escalated, "Invalid state");
+        require(adminState == AdminState.Escalated);
         _;
     }
 
@@ -373,7 +373,7 @@ contract BrokerV2 is Ownable {
     /// This differs from the regular `cancel` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
     function setSlowCancelDelay(uint256 _delay) external onlyOwner {
-        require(_delay <= MAX_SLOW_CANCEL_DELAY, "Invalid delay");
+        require(_delay <= MAX_SLOW_CANCEL_DELAY);
         slowCancelDelay = _delay;
     }
 
@@ -384,7 +384,7 @@ contract BrokerV2 is Ownable {
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
     function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
-        require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "Invalid delay");
+        require(_delay <= MAX_SLOW_WITHDRAW_DELAY);
         slowWithdrawDelay = _delay;
     }
 
@@ -395,7 +395,7 @@ contract BrokerV2 is Ownable {
     /// @param _admin The address to give admin permissions to
     function addAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
-        require(!adminAddresses[_admin], "Admin already added");
+        require(!adminAddresses[_admin]);
         adminAddresses[_admin] = true;
     }
 
@@ -403,7 +403,7 @@ contract BrokerV2 is Ownable {
     /// @param _admin The admin address to remove admin permissions from
     function removeAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
-        require(adminAddresses[_admin], "Admin not yet added");
+        require(adminAddresses[_admin]);
         delete adminAddresses[_admin];
     }
 
@@ -415,7 +415,7 @@ contract BrokerV2 is Ownable {
     /// @param _assetId The token address to whitelist
     function whitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
-        require(!tokenWhitelist[_assetId], "Token already whitelisted");
+        require(!tokenWhitelist[_assetId]);
         tokenWhitelist[_assetId] = true;
     }
 
@@ -423,7 +423,7 @@ contract BrokerV2 is Ownable {
     /// @param _assetId The token address to remove from the token whitelist
     function unwhitelistToken(address _assetId) external onlyOwner {
         _validateAddress(_assetId);
-        require(tokenWhitelist[_assetId], "Token not yet whitelisted");
+        require(tokenWhitelist[_assetId]);
         delete tokenWhitelist[_assetId];
     }
 
@@ -438,7 +438,7 @@ contract BrokerV2 is Ownable {
     /// @param _spender The address of the spender contract to whitelist
     function whitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
-        require(!spenderWhitelist[_spender], "Spender already added");
+        require(!spenderWhitelist[_spender]);
         spenderWhitelist[_spender] = true;
     }
 
@@ -451,7 +451,7 @@ contract BrokerV2 is Ownable {
     /// @param _spender The address of the spender contract to remove from the whitelist
     function unwhitelistSpender(address _spender) external onlyOwner {
         _validateAddress(_spender);
-        require(spenderWhitelist[_spender], "Spender not yet added");
+        require(spenderWhitelist[_spender]);
         delete spenderWhitelist[_spender];
     }
 
@@ -479,7 +479,7 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
     {
-        require(spenderWhitelist[_spender], "Invalid spender");
+        require(spenderWhitelist[_spender]);
         _markNonce(_nonce);
 
         _validateSignature(
@@ -508,13 +508,10 @@ contract BrokerV2 is Ownable {
     /// This function does not require admin permission and is invokable directly by users.
     /// @param _spender The address of the spender contract
     function unauthorizeSpender(address _spender) external {
-        require(!spenderWhitelist[_spender], "Spender still active");
+        require(!spenderWhitelist[_spender]);
 
         address user = msg.sender;
-        require(
-            spenderAuthorizations[user][_spender],
-            "Spender not yet authorized"
-        );
+        require(spenderAuthorizations[user][_spender]);
 
         delete spenderAuthorizations[user][_spender];
         emit UnauthorizeSpender(user, _spender);
@@ -537,10 +534,7 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(
-            spenderAuthorizations[_from][msg.sender],
-            "Spender not yet approved"
-        );
+        require(spenderAuthorizations[_from][msg.sender]);
 
         _validateAddress(_to);
 
@@ -553,7 +547,7 @@ contract BrokerV2 is Ownable {
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
     function deposit() external payable onlyActiveState {
-        require(msg.value > 0, "Invalid value");
+        require(msg.value > 0);
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
     }
 
@@ -581,10 +575,7 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        require(
-            tokenWhitelist[_assetId] == false,
-            "Whitelisted tokens cannot use this method of transfer"
-        );
+        require(tokenWhitelist[_assetId] == false);
         _markNonce(_nonce);
 
         _increaseBalance(
@@ -619,7 +610,7 @@ contract BrokerV2 is Ownable {
         onlyActiveState
     {
         address assetId = msg.sender;
-        require(tokenWhitelist[assetId] == true, "Token not whitelisted");
+        require(tokenWhitelist[assetId] == true);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
         emit TokenFallback(_user, assetId, _amount);
     }
@@ -645,7 +636,7 @@ contract BrokerV2 is Ownable {
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
-        require(tokenWhitelist[assetId] == true, "Token not whitelisted");
+        require(tokenWhitelist[assetId] == true);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
         emit TokensReceived(_user, assetId, _amount);
     }
@@ -797,6 +788,9 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
+        // Cache the operator address to reduce gas costs from storage reads
+        address operatorAddress = operator;
+
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is return to reduce repeated
@@ -806,9 +800,6 @@ contract BrokerV2 is Ownable {
             _hashes,
             _addresses
         );
-
-        // Cache the operator address to reduce gas costs from storage reads
-        address operatorAddress = operator;
 
         // Credit fillers for each fill.wantAmount, and credit the operator
         // for each fill.feeAmount.
@@ -837,6 +828,34 @@ contract BrokerV2 is Ownable {
 
         // Mark all fill nonces as taken in the `usedNonces` mapping.
         _storeFillNonces(_values);
+    }
+
+    function networkTrade(
+        uint256[] calldata _values,
+        bytes32[] calldata _hashes,
+        address[] calldata _addresses
+    )
+        external
+        onlyAdmin
+        onlyActiveState
+    {
+        // Cache the operator address to reduce gas costs from storage reads
+        address operatorAddress = operator;
+
+        // `validateTrades` needs to calculate the hash keys of offers and fills
+        // to verify the signature of the offer / fill.
+        // The calculated hash keys for each offer is return to reduce repeated
+        // computation.
+        bytes32[] memory hashKeys = BrokerUtils.validateTrades(
+            _values,
+            _hashes,
+            _addresses
+        );
+
+        _creditMakerBalances(_values, _addresses);
+        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
+        _deductMakerBalances(_values, _addresses);
+        _storeOfferData(_values, hashKeys);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -1007,7 +1026,7 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(_maker == msg.sender, "Invalid sender");
+        require(_maker == msg.sender);
 
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1021,7 +1040,7 @@ contract BrokerV2 is Ownable {
             _offerNonce
         ));
 
-        require(offers[offerHash] > 0, "Invalid offerHash");
+        require(offers[offerHash] > 0);
 
         uint256 cancellableAt = now + slowCancelDelay;
         cancellationAnnouncements[offerHash] = cancellableAt;
@@ -1072,11 +1091,11 @@ contract BrokerV2 is Ownable {
         ));
 
         uint256 cancellableAt = cancellationAnnouncements[offerHash];
-        require(cancellableAt != 0, "Invalid announcement");
-        require(now >= cancellableAt, "Insufficient delay");
+        require(cancellableAt != 0);
+        require(now >= cancellableAt);
 
         uint256 availableAmount = offers[offerHash];
-        require(availableAmount > 0, "Offer already cancelled");
+        require(availableAmount > 0);
 
         delete cancellationAnnouncements[offerHash];
         _cancel(
@@ -1200,8 +1219,7 @@ contract BrokerV2 is Ownable {
         external
     {
         require(
-            _amount > 0 && _amount <= balances[msg.sender][_assetId],
-            "Invalid amount"
+            _amount > 0 && _amount <= balances[msg.sender][_assetId]
         );
 
         WithdrawalAnnouncement storage announcement = withdrawalAnnouncements[msg.sender][_assetId];
@@ -1228,9 +1246,9 @@ contract BrokerV2 is Ownable {
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
-        require(announcement.withdrawableAt != 0, "Invalid announcement");
-        require(now >= announcement.withdrawableAt, "Insufficient delay");
-        require(announcement.amount == _amount, "Invalid amount");
+        require(announcement.withdrawableAt != 0);
+        require(now >= announcement.withdrawableAt);
+        require(announcement.amount == _amount);
 
         delete withdrawalAnnouncements[_withdrawer][_assetId];
         _withdraw(
@@ -1273,13 +1291,13 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        require(_values[0] > 0, "Invalid amount");
-        require(_values[1] > now, "Invalid expiry time");
+        require(_values[0] > 0);
+        require(_values[1] > now);
         _validateAddress(_addresses[1]);
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
         // require that the swap is not yet active
-        require(!atomicSwaps[swapHash], "Invalid swap");
+        require(!atomicSwaps[swapHash]);
 
         _markNonce(_values[3]);
 
@@ -1293,7 +1311,7 @@ contract BrokerV2 is Ownable {
         );
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
-            require(_values[2] < _values[0], "Invalid fee amount"); // feeAmount < amount
+            require(_values[2] < _values[0]); // feeAmount < amount
         } else {
             _decreaseBalance(
                 _addresses[0], // maker
@@ -1341,10 +1359,9 @@ contract BrokerV2 is Ownable {
         external
     {
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        require(atomicSwaps[swapHash], "Swap is not active");
+        require(atomicSwaps[swapHash]);
         require(
-            sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret,
-            "Invalid preimage"
+            sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret
         );
 
         uint256 takeAmount = _values[0];
@@ -1396,17 +1413,15 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(_values[1] <= now, "Swap not yet expired");
+        require(_values[1] <= now);
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        require(atomicSwaps[swapHash], "Swap is not active");
+        require(atomicSwaps[swapHash]);
 
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
 
-        require(
-            cancelFeeAmount <= _values[2], // cancelFeeAmount < feeAmount
-            "Invalid cancel fee amount"
-        );
+        // cancelFeeAmount < feeAmount
+        require(cancelFeeAmount <= _values[2]);
 
         uint256 refundAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1755,7 +1770,7 @@ contract BrokerV2 is Ownable {
             bytes32 hashKey = _hashKeys[i];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
-            require(availableAmount > 0, "Invalid availableAmount");
+            require(availableAmount > 0);
 
             uint256 remainingAmount = availableAmount.sub(decrements[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
@@ -1800,7 +1815,7 @@ contract BrokerV2 is Ownable {
         private
     {
         uint256 refundAmount = offers[_offerHash];
-        require(refundAmount > 0, "Invalid offerHash");
+        require(refundAmount > 0);
         require(refundAmount == _expectedAvailableAmount);
 
         delete offers[_offerHash];
@@ -1850,7 +1865,7 @@ contract BrokerV2 is Ownable {
     )
         private
     {
-        require(_amount > 0, 'Invalid amount');
+        require(_amount > 0);
 
         _validateAddress(_receivingAddress);
 
@@ -1961,13 +1976,13 @@ contract BrokerV2 is Ownable {
     /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
     /// @param _nonce The nonce to mark
     function _markNonce(uint256 _nonce) private {
-        require(_nonce != 0, "Invalid nonce");
+        require(_nonce != 0);
 
         uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slotData];
 
-        require(bits & shiftedBit == 0, "Nonce already used");
+        require(bits & shiftedBit == 0);
 
         usedNonces[slotData] = bits | shiftedBit;
     }
@@ -2005,9 +2020,9 @@ contract BrokerV2 is Ownable {
                 "\x19Ethereum Signed Message:\n32",
                 eip712Hash
             ));
-            require(_user == ecrecover(prefixedHash, _v, _r, _s), "Invalid signature");
+            require(_user == ecrecover(prefixedHash, _v, _r, _s));
         } else {
-            require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
+            require(_user == ecrecover(eip712Hash, _v, _r, _s));
         }
     }
 
@@ -2070,10 +2085,7 @@ contract BrokerV2 is Ownable {
     /// @dev Ensures that `_address` is not the zero address
     /// @param _address The address to check
     function _validateAddress(address _address) private pure {
-        require(
-            _address != address(0),
-            'Invalid address'
-        );
+        require(_address != address(0));
     }
 
 }
