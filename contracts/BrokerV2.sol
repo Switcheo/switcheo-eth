@@ -2,7 +2,7 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
-import "./BrokerValidations.sol";
+import "./BrokerUtils.sol";
 
 interface ERC20Token {
     function balanceOf(address account) external view returns (uint256);
@@ -761,7 +761,7 @@ contract BrokerV2 is Ownable {
     /// bits(16..24): number of matches (numMatches)
     /// bits(24..256): Whether an offer / fill should have the Ethereum signed
     /// message prepended for signature verification. See
-    /// `BrokerValidations._validateTradeSignatures` for more details.
+    /// `BrokerUtils._validateTradeSignatures` for more details.
     ///
     /// @param _values[1 + i * 2] First part of offer data for the i'th offer
     /// bits(0..8): Index of the maker's address in _addresses
@@ -825,7 +825,7 @@ contract BrokerV2 is Ownable {
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = BrokerValidations.validateTrades(
+        bytes32[] memory hashKeys = BrokerUtils.validateTrades(
             _values,
             _hashes,
             _addresses
