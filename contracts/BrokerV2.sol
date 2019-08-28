@@ -868,7 +868,7 @@ contract BrokerV2 is Ownable {
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = BrokerUtils.validateTrades(
+        bytes32[] memory hashKeys = BrokerUtils.validateNetworkTrades(
             _values,
             _hashes,
             _addresses
@@ -878,6 +878,9 @@ contract BrokerV2 is Ownable {
         _creditMakerFeeBalances(_values, _addresses, operatorAddress);
         _deductMakerBalances(_values, _addresses);
         _storeOfferData(_values, hashKeys);
+
+        uint256[] memory increments = BrokerUtils.performNetworkTrades(_values, _addresses);
+        _incrementBalances(increments, 0, increments.length, _addresses);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -1544,15 +1547,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-
-            emit Increment(i << 248 | increment);
-        }
+        _incrementBalances(increments, min, max, _addresses);
     }
 
     /// @dev Credit makers for each amount received through a matched fill.
@@ -1596,15 +1591,7 @@ contract BrokerV2 is Ownable {
             if (max < wantAssetIndex) { max = wantAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-
-            emit Increment(i << 248 | increment);
-        }
+        _incrementBalances(increments, min, max, _addresses);
     }
 
     /// @dev Credit the operator for each offer.feeAmount if the offer has not
@@ -1650,15 +1637,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-
-            emit Increment(i << 248 | increment);
-        }
+        _incrementBalances(increments, min, max, _addresses);
     }
 
     /// @dev Deduct tokens from fillers for each fill.offerAmount
@@ -1701,15 +1680,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 decrement = decrements[i];
-            if (decrement == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
-
-            emit Decrement(i << 248 | decrement);
-        }
+        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Deduct tokens from makers for each offer.offerAmount
@@ -1755,15 +1726,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 decrement = decrements[i];
-            if (decrement == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
-
-            emit Decrement(i << 248 | decrement);
-        }
+        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Reduce available offer amounts of offers and store the remaining
@@ -2068,6 +2031,44 @@ contract BrokerV2 is Ownable {
         } else {
             // Error code 44: _validateSignature, invalid non-prefixed signature
             require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
+        }
+    }
+
+    function _incrementBalances(
+        uint256[] memory increments,
+        uint256 _i,
+        uint256 _end,
+        address[] memory _addresses
+    )
+        private
+    {
+        for(_i; _i <= _end; _i++) {
+            uint256 increment = increments[_i];
+            if (increment == 0) { continue; }
+
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
+
+            emit Increment(_i << 248 | increment);
+        }
+    }
+
+    function _decrementBalances(
+        uint256[] memory decrements,
+        uint256 _i,
+        uint256 _end,
+        address[] memory _addresses
+    )
+        private
+    {
+        for(_i; _i <= _end; _i++) {
+            uint256 decrement = decrements[_i];
+            if (decrement == 0) { continue; }
+
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
+
+            emit Decrement(_i << 248 | decrement);
         }
     }
 

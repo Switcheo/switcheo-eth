@@ -112,6 +112,43 @@ library BrokerUtils {
         );
     }
 
+    function validateNetworkTrades(
+        uint256[] calldata _values,
+        bytes32[] calldata _hashes,
+        address[] calldata _addresses
+    )
+        external
+        pure
+        returns (bytes32[] memory)
+    {
+        _validateNetworkTradeInputLengths(_values, _hashes);
+        _validateUniqueOffers(_values);
+        // TODO: validate matches
+        _validateTradeData(_values, _addresses);
+
+        // validate signatures of all offers
+        return _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            OFFER_TYPEHASH,
+            0,
+            _values[0] & ~(~uint256(0) << 8) // numOffers
+        );
+    }
+
+    function performNetworkTrades(
+        uint256[] calldata _values,
+        address[] calldata _addresses
+    )
+        external
+        pure
+        returns (uint256[] memory)
+    {
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
+        return increments;
+    }
+
     function transferIn(
         address _user,
         address _assetId,
@@ -195,6 +232,27 @@ library BrokerUtils {
 
         // Error code 49: _validateTradeInputLengths, invalid _hashes.length
         require(_hashes.length == (numOffers + numFills) * 2, "49");
+    }
+
+    function _validateNetworkTradeInputLengths(
+        uint256[] memory _values,
+        bytes32[] memory _hashes
+    )
+        private
+        pure
+    {
+        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
+        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
+
+        // Error code 65: _validateNetworkTradeInputLengths, invalid trade input lengths
+        require(numOffers > 0 && numMatches > 0 && numFills == 0, "65");
+
+        // Error code 66: _validateNetworkTradeInputLengths, invalid _values.length
+        require(_values.length == 1 + numOffers * 2 + numFills * 2 + numMatches, "66");
+
+        // Error code 67: _validateNetworkTradeInputLengths, invalid _hashes.length
+        require(_hashes.length == (numOffers + numFills) * 2, "67");
     }
 
     /// @dev See the `BrokerV2.trade` method for an explanation of why offer
