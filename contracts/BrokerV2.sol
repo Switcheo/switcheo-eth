@@ -70,6 +70,8 @@ contract BrokerV2 is Ownable {
 
     // The constants for EIP-712 are precompiled to reduce contract size,
     // the original values are left here for reference and verification.
+    // NOTE: CHAIN_ID and VERIFYING_CONTRACT values must be updated before
+    // mainnet deployment.
     //
     // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
     // bytes32 public constant CONTRACT_VERSION = keccak256("2");
