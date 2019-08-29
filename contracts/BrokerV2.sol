@@ -193,7 +193,7 @@ contract BrokerV2 is Ownable {
     uint256 public slowCancelDelay;
     uint256 public slowWithdrawDelay;
 
-    address[] public providerAddresses;
+    address[] public tradeProviders;
 
     // A mapping of remaining offer amounts: offerHash => availableAmount
     mapping(bytes32 => uint256) public offers;
@@ -301,7 +301,7 @@ contract BrokerV2 is Ownable {
     /// The Broker is put into an active state, with maximum exit delays set.
     /// The Broker is also registered as an implementer of ERC777TokensRecipient
     /// through the ERC1820 registry.
-    constructor(address[] memory _providerAddresses) public {
+    constructor(address[] memory _tradeProviders) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
 
@@ -319,8 +319,8 @@ contract BrokerV2 is Ownable {
             address(this)
         );
 
-        for (uint256 i = 0; i < _providerAddresses.length; i++) {
-            providerAddresses.push(_providerAddresses[i]);
+        for (uint256 i = 0; i < _tradeProviders.length; i++) {
+            tradeProviders.push(_tradeProviders[i]);
         }
     }
 
@@ -895,9 +895,9 @@ contract BrokerV2 is Ownable {
         uint256[] memory increments = BrokerUtils.performNetworkTrades(
             _values,
             _addresses,
-            providerAddresses
+            tradeProviders
         );
-        _incrementBalances(increments, 0, increments.length, _addresses);
+        _incrementBalances(increments, 0, increments.length - 1, _addresses);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer

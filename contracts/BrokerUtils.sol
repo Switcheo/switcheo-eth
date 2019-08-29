@@ -159,7 +159,7 @@ library BrokerUtils {
     function performNetworkTrades(
         uint256[] calldata _values,
         address[] calldata _addresses,
-        address[] calldata _providerAddresses
+        address[] calldata _tradeProviders
     )
         external
         returns (uint256[] memory)
@@ -174,9 +174,9 @@ library BrokerUtils {
             uint256[] memory data = new uint256[](9);
             data[0] = _values[i]; // match data
             data[1] = data[0] & ~(~uint256(0) << 8); // offerIndex
-            data[2] = (data[0] & ~(~uint256(0) << 16)) >> 8; // operator.surplusAssetIndex
-            data[3] = _values[data[1] * 2]; // offer.dataA
-            data[4] = _values[data[1] * 2 + 1]; // offer.dataB
+            data[2] = (data[0] & ~(~uint256(0) << 24)) >> 16; // operator.surplusAssetIndex
+            data[3] = _values[data[1] * 2 + 1]; // offer.dataA
+            data[4] = _values[data[1] * 2 + 2]; // offer.dataB
             data[5] = ((data[3] & ~(~uint256(0) << 16)) >> 8); // maker.offerAssetIndex
             data[6] = ((data[3] & ~(~uint256(0) << 24)) >> 16); // maker.wantAssetIndex
             // amount of offerAssetId to take from offer is equal to the match.takeAmount
@@ -191,7 +191,7 @@ library BrokerUtils {
                 data[8], // the propotionate wantAmount of the offer
                 _addresses[data[2] * 2 + 1], // surplusAssetId
                 data[0], // match data
-                _providerAddresses
+                _tradeProviders
             );
         }
 
@@ -251,6 +251,13 @@ library BrokerUtils {
         _validateTransferResult(returnData);
     }
 
+    // _data
+    // bits(0..8): offerIndex
+    // bits(8..16): tradeProvider
+    // bits(16..24): operator.surplusAssetIndex
+    // bits(24..128): provider data
+    // bits(128..256): match.takeAmount
+    event Log(uint256 tradeProvider);
     function _performNetworkTrade(
         address _offerAssetId,
         uint256 _offerAmount,
@@ -258,18 +265,19 @@ library BrokerUtils {
         uint256 _wantAmount,
         address _surplusAssetId,
         uint256 _data,
-        address[] memory _providerAddresses
+        address[] memory _tradeProviders
     )
         private
         returns (uint256)
     {
-        uint256 tradeProvider = (_data & ~(~uint256(0) << 24)) >> 16;
+        uint256 tradeProvider = (_data & ~(~uint256(0) << 16)) >> 8;
+        emit Log(tradeProvider);
 
-        uint256[] memory tokenBalances = new uint256[](6);
-        tokenBalances[0] = _tokenBalance(_offerAssetId); // initialOfferTokenBalance
-        tokenBalances[1] = _tokenBalance(_wantAssetId); // initialWantTokenBalance
+        uint256[] memory funds = new uint256[](6);
+        funds[0] = _externalBalance(_offerAssetId); // initialOfferTokenBalance
+        funds[1] = _externalBalance(_wantAssetId); // initialWantTokenBalance
         if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
-            tokenBalances[2] = _tokenBalance(_surplusAssetId); // initialSurplusTokenBalance
+            funds[2] = _externalBalance(_surplusAssetId); // initialSurplusTokenBalance
         }
 
         if (tradeProvider == 0) {
@@ -281,14 +289,14 @@ library BrokerUtils {
                 _wantAssetId,
                 _wantAmount,
                 _data,
-                _providerAddresses[1]
+                _tradeProviders[1]
             );
         }
 
-        tokenBalances[3] = _tokenBalance(_offerAssetId); // finalOfferTokenBalance
-        tokenBalances[4] = _tokenBalance(_wantAssetId); // finalWantTokenBalance
+        funds[3] = _externalBalance(_offerAssetId); // finalOfferTokenBalance
+        funds[4] = _externalBalance(_wantAssetId); // finalWantTokenBalance
         if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
-            tokenBalances[5] = _tokenBalance(_surplusAssetId); // finalSurplusTokenBalance
+            funds[5] = _externalBalance(_surplusAssetId); // finalSurplusTokenBalance
         }
 
         uint256 surplusAmount = 0;
@@ -296,30 +304,28 @@ library BrokerUtils {
         // validate that appropriate offerAmount was deducted
         if (_surplusAssetId == _offerAssetId) {
             // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
-            require(tokenBalances[3] >= tokenBalances[0].sub(_offerAmount));
-
+            require(funds[3] >= funds[0].sub(_offerAmount));
             // surplusAmount = finalOfferTokenBalance - (initialOfferTokenBalance - offerAmount)
-            surplusAmount = tokenBalances[3].sub((tokenBalances[0].sub(_offerAmount)));
+            surplusAmount = funds[3].sub((funds[0].sub(_offerAmount)));
         } else {
             // finalOfferTokenBalance == initialOfferTokenBalance - offerAmount
-            require(tokenBalances[3] == tokenBalances[0].sub(_offerAmount));
+            require(funds[3] == funds[0].sub(_offerAmount));
         }
-
+/*
         // validate that appropriate wantAmount was credited
         if (_surplusAssetId == _wantAssetId) {
             // finalWantTokenBalance >= initialWantTokenBalance + wantAmount
-            require(tokenBalances[4] >= tokenBalances[1].add(_wantAmount));
-
+            require(funds[4] >= funds[1].add(_wantAmount));
             // surplusAmount = finalWantTokenBalance - (initialWantTokenBalance + wantAmount)
-            surplusAmount = tokenBalances[4].sub((tokenBalances[1].add(_offerAmount)));
+            surplusAmount = funds[4].sub((funds[1].add(_offerAmount)));
         } else {
             // finalWantTokenBalance == initialWantTokenBalance + wantAmount
-            require(tokenBalances[4] == tokenBalances[1].add(_wantAmount));
+            require(funds[4] == funds[1].add(_wantAmount));
         }
 
         if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
-            surplusAmount = tokenBalances[5].sub(tokenBalances[2]);
-        }
+            surplusAmount = funds[5].sub(funds[2]);
+        } */
 
         return surplusAmount;
     }
@@ -335,7 +341,8 @@ library BrokerUtils {
         private
     {
         UniswapFactory factory = UniswapFactory(_factoryAddress);
-        uint256 deadline = now +  (_data & ~(~uint256(0) << 56)) >> 24;
+        // _data bits(24..56): delay
+        uint256 deadline = now + ((_data & ~(~uint256(0) << 56)) >> 24);
 
         if (_offerAssetId == ETHER_ADDR) {
             UniswapExchange exchange = UniswapExchange(factory.getExchange(_wantAssetId));
@@ -343,18 +350,25 @@ library BrokerUtils {
             return;
         }
 
-        UniswapExchange exchange = UniswapExchange(factory.getExchange(_offerAssetId));
+        /* UniswapExchange exchange = UniswapExchange(factory.getExchange(_offerAssetId));
 
         if (_wantAssetId == ETHER_ADDR) {
             exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
             return;
         }
 
-        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 0, deadline, _wantAssetId);
+        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 0, deadline, _wantAssetId); */
     }
 
 
     function _tokenBalance(address _assetId) private view returns (uint256) {
+        return ERC20Token(_assetId).balanceOf(address(this));
+    }
+
+    function _externalBalance(address _assetId) private view returns (uint256) {
+        if (_assetId == ETHER_ADDR) {
+            return address(this).balance;
+        }
         return ERC20Token(_assetId).balanceOf(address(this));
     }
 

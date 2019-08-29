@@ -7,6 +7,7 @@ module.exports = function(deployer) {
         await deployer.deploy(BrokerUtils)
         await deployer.link(BrokerUtils, BrokerV2)
         const providerAddresses = [
+            (await UniswapFactory.deployed()).address, // placeholder for KyberSwap contract
             (await UniswapFactory.deployed()).address
         ]
         await deployer.deploy(BrokerV2, providerAddresses)
