@@ -452,15 +452,6 @@ async function networkTrade({ offers, matches, operator }, { privateKeys }, modi
         values.push(value)
     }
 
-    // zero out operator addresses and asset IDs as these will overwritten by
-    // the contract
-    for (let i = 0; i < addresses.length; i += 2) {
-        if (addresses[i] === operator) {
-            addresses[i] = ZERO_ADDR
-            addresses[i + 1] = ZERO_ADDR
-        }
-    }
-
     if (modify !== undefined) { modify({ values, hashes, addresses }) }
 
     return await broker.networkTrade(values, hashes, addresses)

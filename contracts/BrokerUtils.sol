@@ -257,7 +257,6 @@ library BrokerUtils {
     // bits(16..24): operator.surplusAssetIndex
     // bits(24..128): provider data
     // bits(128..256): match.takeAmount
-    event Log(uint256 tradeProvider);
     function _performNetworkTrade(
         address _offerAssetId,
         uint256 _offerAmount,
@@ -271,7 +270,6 @@ library BrokerUtils {
         returns (uint256)
     {
         uint256 tradeProvider = (_data & ~(~uint256(0) << 16)) >> 8;
-        emit Log(tradeProvider);
 
         uint256[] memory funds = new uint256[](6);
         funds[0] = _externalBalance(_offerAssetId); // initialOfferTokenBalance
@@ -311,13 +309,13 @@ library BrokerUtils {
             // finalOfferTokenBalance == initialOfferTokenBalance - offerAmount
             require(funds[3] == funds[0].sub(_offerAmount));
         }
-/*
+
         // validate that appropriate wantAmount was credited
         if (_surplusAssetId == _wantAssetId) {
             // finalWantTokenBalance >= initialWantTokenBalance + wantAmount
             require(funds[4] >= funds[1].add(_wantAmount));
             // surplusAmount = finalWantTokenBalance - (initialWantTokenBalance + wantAmount)
-            surplusAmount = funds[4].sub((funds[1].add(_offerAmount)));
+            surplusAmount = funds[4].sub((funds[1].add(_wantAmount)));
         } else {
             // finalWantTokenBalance == initialWantTokenBalance + wantAmount
             require(funds[4] == funds[1].add(_wantAmount));
@@ -325,7 +323,7 @@ library BrokerUtils {
 
         if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
             surplusAmount = funds[5].sub(funds[2]);
-        } */
+        }
 
         return surplusAmount;
     }
@@ -617,23 +615,6 @@ library BrokerUtils {
                 // offerAmount > 0 && wantAmount > 0
                 (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
                 "60"
-            );
-
-            // Error code 61: _validateTradeData, invalid operator address placeholder
-            require(
-                // _addresses[operator address index] == address(0)
-                // The actual operator address will be read directly from
-                // the contract's storage
-                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == address(0),
-                "61"
-            );
-
-            // Error code 62: _validateTradeData, Invalid operator fee asset ID
-            require(
-                // _addresses[operator fee asset ID index] == address(0)
-                // The actual fee asset ID will be read from the filler / maker feeAssetId
-                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(0),
-                "62"
             );
         }
     }

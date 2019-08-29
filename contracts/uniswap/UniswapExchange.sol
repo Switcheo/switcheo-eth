@@ -21,7 +21,6 @@ contract UniswapExchange {
     }
 
     // Trade ETH to ERC20
-    /* event Log(uint256 deadline, uint256 time); */
     function ethToTokenSwapInput(
         uint256 _minTokens,
         uint256 _deadline

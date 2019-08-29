@@ -1,4 +1,5 @@
-const { getJrc, getBroker, exchange, validateBalance, validateExternalBalance, printLogs } = require('../../utils')
+const { getJrc, getBroker, exchange, validateBalance, validateExternalBalance,
+        hashOffer, assertAsync } = require('../../utils')
 const { getUniswapExchange, fundUniswapExchange } = require('../../utils/uniswapUtils')
 const { ETHER_ADDR } = require('../../constants')
 const { PRIVATE_KEYS } = require('../../wallets')
@@ -20,7 +21,13 @@ contract('Test networkTrade: uniswap', async (accounts) => {
         it('performs a network trade', async () => {
             await fundUniswapExchange(jrc, 300, 100, operator)
 
+            await validateBalance(maker, jrc, 0)
+            await validateBalance(maker, ETHER_ADDR, 60)
+            await validateBalance(operator, jrc, 0)
+            await validateBalance(operator, ETHER_ADDR, 0)
+
             await validateExternalBalance(broker, jrc, 0)
+            await validateExternalBalance(broker, ETHER_ADDR, 60)
             await validateExternalBalance(maker, jrc, 0)
             await validateExternalBalance(operator, jrc, 0)
             await validateExternalBalance(jrcExchange, jrc, 300)
@@ -44,17 +51,33 @@ contract('Test networkTrade: uniswap', async (accounts) => {
                 takeAmount: 40
             }]
 
+            const offerHash = hashOffer(offers[0])
+            await assertAsync(broker.offers(offerHash), 0)
+
             const result = await exchange.networkTrade({ offers, matches, operator }, { privateKeys })
             console.log('gas used', result.receipt.gasUsed)
-            printLogs(result, ['Log'])
+
+            // _inputAmount = 40 eth
+            // _inputReserve = 100 eth
+            // _outputReserve = 300 jrc
+            // inputAmountWithFee = _inputAmount * 997 = 40 * 997 = 39,880
+            // numerator = inputAmountWithFee * _outputReserve = 39,880 * 300 = 11,964,000
+            // denominator = _inputReserve * 1000 + inputAmountWithFee =  100 * 1000 + 39,880 = 139,880
+            // tokensBought = numerator / denominator = 11,964,000 / 139,880 = 85 jrc
 
             await validateBalance(maker, jrc, 73) // 80 jrc - 7 jrc
-            // await validateBalance(operator, jrc, 60) //
-            // await validateExternalBalance(broker, jrc, 60)
-            // await validateExternalBalance(maker, jrc, 0)
-            // await validateExternalBalance(operator, jrc, 0)
-            // await validateExternalBalance(jrcExchange, jrc, 300)
-            // await validateExternalBalance(jrcExchange, ETHER_ADDR, 100)
+            await validateBalance(maker, ETHER_ADDR, 10) // 60 eth - 50 eth
+            await validateBalance(operator, jrc, 12) // 7 jrc + (85 jrc - 80 jrc) = 12
+            await validateBalance(operator, ETHER_ADDR, 0)
+
+            await validateExternalBalance(broker, jrc, 85)
+            await validateExternalBalance(broker, ETHER_ADDR, 20) // 60 eth - 40 eth
+            await validateExternalBalance(maker, jrc, 0)
+            await validateExternalBalance(operator, jrc, 0)
+            await validateExternalBalance(jrcExchange, jrc, 215) // 300 jrc - 85 jrc
+            await validateExternalBalance(jrcExchange, ETHER_ADDR, 140) // 100 eth + 40 eth
+
+            await assertAsync(broker.offers(offerHash), 10) // 50 eth - 40 eth
         })
     })
 })
