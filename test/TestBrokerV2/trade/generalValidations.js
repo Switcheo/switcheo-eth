@@ -6,7 +6,6 @@ const { ZERO_ADDR, ETHER_ADDR } = require('../../constants')
 
 contract('Test trade: general validations', async (accounts) => {
     let broker, jrc, swc, tradeParams
-    const operator = accounts[0]
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
