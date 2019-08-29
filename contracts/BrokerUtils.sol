@@ -6,6 +6,23 @@ interface ERC20Token {
     function balanceOf(address account) external view returns (uint256);
 }
 
+interface UniswapFactory {
+    function getExchange(address token) external view returns (address exchange);
+}
+
+interface UniswapExchange {
+    // Trade ETH to ERC20
+    function ethToTokenSwapInput(uint256 min_tokens, uint256 deadline) external payable returns (uint256  tokens_bought);
+    // Trade ERC20 to ETH
+    function tokenToEthSwapInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline) external returns (uint256  eth_bought);
+    // Trade ERC20 to ERC20
+    function tokenToTokenSwapInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address token_addr) external returns (uint256  tokens_bought);
+}
+
+interface KyberNetworkProxy {
+    function tradeWithHint(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId, bytes calldata hint) external returns (uint256);
+}
+
 /// @title Validations for the BrokerV2 contract for Switcheo Exchange
 /// @author Switcheo Network
 /// @notice Validations were moved from the BrokerV2 contract into this library
@@ -142,10 +159,31 @@ library BrokerUtils {
         address[] calldata _addresses
     )
         external
-        pure
         returns (uint256[] memory)
     {
         uint256[] memory increments = new uint256[](_addresses.length / 2);
+        // i = 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 surplusAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 dataA = _values[offerIndex * 2];
+            uint256 dataB = _values[offerIndex * 2 + 1];
+            uint256 tradeData = _values[i];
+
+            increments[surplusAssetIndex] = _performNetworkTrade(
+                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
+                dataB & ~(~uint256(0) << 128), // offerAmount
+                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
+                dataB >> 128, // wantAmount
+                _addresses[surplusAssetIndex + 1], // surplusAssetId
+                tradeData
+            );
+        }
+
         return increments;
     }
 
@@ -159,8 +197,7 @@ library BrokerUtils {
     {
         _validateContractAddress(_assetId);
 
-        ERC20Token token = ERC20Token(_assetId);
-        uint256 initialBalance = token.balanceOf(address(this));
+        uint256 initialBalance = _tokenBalance(_assetId);
 
         // Some tokens have a `transferFrom` which returns a boolean and some do not.
         // The ERC20Token interface cannot be used here because it requires specifying
@@ -176,7 +213,7 @@ library BrokerUtils {
         // Ensure that the asset transfer succeeded
         _validateTransferResult(returnData);
 
-        uint256 finalBalance = token.balanceOf(address(this));
+        uint256 finalBalance = _tokenBalance(_assetId);
         uint256 transferredAmount = finalBalance.sub(initialBalance);
 
         // Error code 46: transferIn, transferredAmount does not match expectedAmount
@@ -201,6 +238,93 @@ library BrokerUtils {
 
         // Ensure that the asset transfer succeeded
         _validateTransferResult(returnData);
+    }
+
+    function _performNetworkTrade(
+        address _offerAssetId,
+        uint256 _offerAmount,
+        address _wantAssetId,
+        uint256 _wantAmount,
+        address _surplusAssetId,
+        uint256 _data
+    )
+        private
+        returns (uint256)
+    {
+        uint256 tradeProvider = (_data & ~(~uint256(0) << 24)) >> 16;
+
+        uint256[] memory tokenBalances = new uint256[](6);
+        tokenBalances[0] = _tokenBalance(_offerAssetId); // initialOfferTokenBalance
+        tokenBalances[1] = _tokenBalance(_wantAssetId); // initialWantTokenBalance
+        if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
+            tokenBalances[2] = _tokenBalance(_surplusAssetId); // initialSurplusTokenBalance
+        }
+
+        if (tradeProvider == 0) {
+            // perform KyberSwap trade
+        } else if (tradeProvider == 1) {
+            _performUniswapTrade(
+                _offerAssetId,
+                _offerAmount,
+                _wantAssetId,
+                _wantAmount,
+                _data
+            );
+        }
+
+        tokenBalances[3] = _tokenBalance(_offerAssetId); // finalOfferTokenBalance
+        tokenBalances[4] = _tokenBalance(_wantAssetId); // finalWantTokenBalance
+        if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
+            tokenBalances[5] = _tokenBalance(_surplusAssetId); // finalSurplusTokenBalance
+        }
+
+        uint256 surplusAmount = 0;
+
+        // validate that appropriate offerAmount was deducted
+        if (_surplusAssetId == _offerAssetId) {
+            // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
+            require(tokenBalances[3] >= tokenBalances[0].sub(_offerAmount));
+
+            // surplusAmount = finalOfferTokenBalance - (initialOfferTokenBalance - offerAmount)
+            surplusAmount = tokenBalances[3].sub((tokenBalances[0].sub(_offerAmount)));
+        } else {
+            // finalOfferTokenBalance == initialOfferTokenBalance - offerAmount
+            require(tokenBalances[3] == tokenBalances[0].sub(_offerAmount));
+        }
+
+        // validate that appropriate wantAmount was credited
+        if (_surplusAssetId == _wantAssetId) {
+            // finalWantTokenBalance >= initialWantTokenBalance + wantAmount
+            require(tokenBalances[4] >= tokenBalances[1].add(_wantAmount));
+
+            // surplusAmount = finalWantTokenBalance - (initialWantTokenBalance + wantAmount)
+            surplusAmount = tokenBalances[4].sub((tokenBalances[1].add(_offerAmount)));
+        } else {
+            // finalWantTokenBalance == initialWantTokenBalance + wantAmount
+            require(tokenBalances[4] == tokenBalances[1].add(_wantAmount));
+        }
+
+        if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
+            surplusAmount = tokenBalances[5].sub(tokenBalances[2]);
+        }
+
+        return surplusAmount;
+    }
+
+    function _performUniswapTrade(
+        address _offerAssetId,
+        uint256 _offerAmount,
+        address _wantAssetId,
+        uint256 _wantAmount,
+        uint256 _data
+    )
+        private
+    {
+
+    }
+
+    function _tokenBalance(address _assetId) private view returns (uint256) {
+        return ERC20Token(_assetId).balanceOf(address(this));
     }
 
     /// @dev Validates that input lengths based on the expected format

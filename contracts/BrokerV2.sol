@@ -535,6 +535,8 @@ contract BrokerV2 is Ownable {
     /// To invoke this method, a spender contract must have been
     /// previously whitelisted and also authorized by the address from which
     /// funds will be deducted.
+    /// Balance events are not emitted by this method, they should be separately
+    /// emitted by the spender contract.
     /// @param _from The address to deduct from
     /// @param _to The address to credit
     /// @param _assetId The asset to transfer
@@ -554,6 +556,11 @@ contract BrokerV2 is Ownable {
 
         balances[_from][_assetId] = balances[_from][_assetId].sub(_amount);
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
+    }
+
+    function markNonce(uint256 _nonce) external {
+        require(spenderWhitelist[msg.sender]);
+        _markNonce(_nonce);
     }
 
     /// @notice Deposits ETH into the sender's contract balance
