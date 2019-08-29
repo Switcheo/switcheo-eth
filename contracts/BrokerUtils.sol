@@ -168,19 +168,26 @@ library BrokerUtils {
 
         // loop matches
         for(i; i < end; i++) {
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 surplusAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 dataA = _values[offerIndex * 2];
-            uint256 dataB = _values[offerIndex * 2 + 1];
-            uint256 tradeData = _values[i];
+            uint256[] memory data = new uint256[](9);
+            data[0] = _values[i]; // match data
+            data[1] = data[0] & ~(~uint256(0) << 8); // offerIndex
+            data[2] = (data[0] & ~(~uint256(0) << 16)) >> 8; // operator.surplusAssetIndex
+            data[3] = _values[data[1] * 2]; // offer.dataA
+            data[4] = _values[data[1] * 2 + 1]; // offer.dataB
+            data[5] = ((data[3] & ~(~uint256(0) << 16)) >> 8); // maker.offerAssetIndex
+            data[6] = ((data[3] & ~(~uint256(0) << 24)) >> 16); // maker.wantAssetIndex
+            // amount of offerAssetId to take from offer is equal to the match.takeAmount
+            data[7] = data[0] >> 128;
+            // expected amount to receive is: matchData.takeAmount * offer.wantAmount / offer.offerAmount
+            data[8] = data[7].mul(data[4] >> 128).div(data[4] & ~(~uint256(0) << 128));
 
-            increments[surplusAssetIndex] = _performNetworkTrade(
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
-                dataB & ~(~uint256(0) << 128), // offerAmount
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
-                dataB >> 128, // wantAmount
-                _addresses[surplusAssetIndex + 1], // surplusAssetId
-                tradeData
+            increments[data[2]] = _performNetworkTrade(
+                _addresses[data[5] * 2 + 1], // offer.offerAssetId
+                data[7], // the proportion of offerAmount to offer
+                _addresses[data[6] * 2 + 1], // offer.wantAssetId
+                data[8], // the propotionate wantAmount of the offer
+                _addresses[data[2] * 2 + 1], // surplusAssetId
+                data[0] // match data
             );
         }
 
