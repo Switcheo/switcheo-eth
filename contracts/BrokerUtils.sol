@@ -6,21 +6,21 @@ interface ERC20Token {
     function balanceOf(address account) external view returns (uint256);
 }
 
+interface KyberNetworkProxy {
+    function tradeWithHint(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId, bytes calldata hint) external returns (uint256);
+}
+
 interface UniswapFactory {
     function getExchange(address token) external view returns (address exchange);
 }
 
 interface UniswapExchange {
     // Trade ETH to ERC20
-    function ethToTokenSwapInput(uint256 min_tokens, uint256 deadline) external payable returns (uint256  tokens_bought);
+    function ethToTokenSwapInput(uint256 minTokens, uint256 deadline) external payable returns (uint256 tokensBought);
     // Trade ERC20 to ETH
-    function tokenToEthSwapInput(uint256 tokens_sold, uint256 min_eth, uint256 deadline) external returns (uint256  eth_bought);
+    function tokenToEthSwapInput(uint256 tokensSold, uint256 minEth, uint256 deadline) external returns (uint256 ethBought);
     // Trade ERC20 to ERC20
-    function tokenToTokenSwapInput(uint256 tokens_sold, uint256 min_tokens_bought, uint256 min_eth_bought, uint256 deadline, address token_addr) external returns (uint256  tokens_bought);
-}
-
-interface KyberNetworkProxy {
-    function tradeWithHint(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId, bytes calldata hint) external returns (uint256);
+    function tokenToTokenSwapInput(uint256 tokensSold, uint256 minTokensBought, uint256 minEthBought, uint256 deadline, address tokenAddr) external returns (uint256 tokensBought);
 }
 
 /// @title Validations for the BrokerV2 contract for Switcheo Exchange
@@ -87,6 +87,8 @@ library BrokerUtils {
     //     ")"
     // ));
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
+
+    address private constant ETHER_ADDR = address(0);
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
@@ -156,7 +158,8 @@ library BrokerUtils {
 
     function performNetworkTrades(
         uint256[] calldata _values,
-        address[] calldata _addresses
+        address[] calldata _addresses,
+        address[] calldata _providerAddresses
     )
         external
         returns (uint256[] memory)
@@ -187,7 +190,8 @@ library BrokerUtils {
                 _addresses[data[6] * 2 + 1], // offer.wantAssetId
                 data[8], // the propotionate wantAmount of the offer
                 _addresses[data[2] * 2 + 1], // surplusAssetId
-                data[0] // match data
+                data[0], // match data
+                _providerAddresses
             );
         }
 
@@ -253,7 +257,8 @@ library BrokerUtils {
         address _wantAssetId,
         uint256 _wantAmount,
         address _surplusAssetId,
-        uint256 _data
+        uint256 _data,
+        address[] memory _providerAddresses
     )
         private
         returns (uint256)
@@ -275,7 +280,8 @@ library BrokerUtils {
                 _offerAmount,
                 _wantAssetId,
                 _wantAmount,
-                _data
+                _data,
+                _providerAddresses[1]
             );
         }
 
@@ -323,12 +329,30 @@ library BrokerUtils {
         uint256 _offerAmount,
         address _wantAssetId,
         uint256 _wantAmount,
-        uint256 _data
+        uint256 _data,
+        address _factoryAddress
     )
         private
     {
+        UniswapFactory factory = UniswapFactory(_factoryAddress);
+        uint256 deadline = now +  (_data & ~(~uint256(0) << 56)) >> 24;
 
+        if (_offerAssetId == ETHER_ADDR) {
+            UniswapExchange exchange = UniswapExchange(factory.getExchange(_wantAssetId));
+            exchange.ethToTokenSwapInput.value(_offerAmount)(_wantAmount, deadline);
+            return;
+        }
+
+        UniswapExchange exchange = UniswapExchange(factory.getExchange(_offerAssetId));
+
+        if (_wantAssetId == ETHER_ADDR) {
+            exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
+            return;
+        }
+
+        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 0, deadline, _wantAssetId);
     }
+
 
     function _tokenBalance(address _assetId) private view returns (uint256) {
         return ERC20Token(_assetId).balanceOf(address(this));

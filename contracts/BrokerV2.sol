@@ -193,6 +193,8 @@ contract BrokerV2 is Ownable {
     uint256 public slowCancelDelay;
     uint256 public slowWithdrawDelay;
 
+    address[] public providerAddresses;
+
     // A mapping of remaining offer amounts: offerHash => availableAmount
     mapping(bytes32 => uint256) public offers;
     // A mapping of used nonces: nonceIndex => nonceData
@@ -299,7 +301,7 @@ contract BrokerV2 is Ownable {
     /// The Broker is put into an active state, with maximum exit delays set.
     /// The Broker is also registered as an implementer of ERC777TokensRecipient
     /// through the ERC1820 registry.
-    constructor() public {
+    constructor(address[] memory _providerAddresses) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
 
@@ -316,6 +318,10 @@ contract BrokerV2 is Ownable {
             keccak256("ERC777TokensRecipient"),
             address(this)
         );
+
+        for (uint256 i = 0; i < _providerAddresses.length; i++) {
+            providerAddresses.push(_providerAddresses[i]);
+        }
     }
 
     modifier onlyAdmin() {
@@ -886,7 +892,11 @@ contract BrokerV2 is Ownable {
         _deductMakerBalances(_values, _addresses);
         _storeOfferData(_values, hashKeys);
 
-        uint256[] memory increments = BrokerUtils.performNetworkTrades(_values, _addresses);
+        uint256[] memory increments = BrokerUtils.performNetworkTrades(
+            _values,
+            _addresses,
+            providerAddresses
+        );
         _incrementBalances(increments, 0, increments.length, _addresses);
     }
 
