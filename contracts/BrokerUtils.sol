@@ -383,7 +383,7 @@ library BrokerUtils {
     )
         private
     {
-        UniswapFactory factory = UniswapFactory(_tradeProviders[0]);
+        UniswapFactory factory = UniswapFactory(_tradeProviders[1]);
         // _dataValues[2] bits(24..56): delay
         uint256 deadline = now + ((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);
 

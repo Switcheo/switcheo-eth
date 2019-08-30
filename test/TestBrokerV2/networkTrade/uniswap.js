@@ -1,10 +1,10 @@
 const { getJrc, getSwc, getBroker, exchange, validateBalance, validateExternalBalance,
-        hashOffer, assertAsync, printLogs } = require('../../utils')
+        hashOffer, assertAsync } = require('../../utils')
 const { getUniswapExchange, fundUniswapExchange } = require('../../utils/uniswapUtils')
 const { ETHER_ADDR } = require('../../constants')
 const { PRIVATE_KEYS } = require('../../wallets')
 
-contract('Test networkTrade: uniswap', async (accounts) => {
+contract('Test networkTrade: Uniswap', async (accounts) => {
     let jrc, swc, broker, jrcExchange, swcExchange
     const operator = accounts[0]
     const maker = accounts[1]
@@ -208,7 +208,6 @@ contract('Test networkTrade: uniswap', async (accounts) => {
 
                 const result = await exchange.networkTrade({ offers, matches, operator }, { privateKeys })
                 console.log('gas used', result.receipt.gasUsed)
-                printLogs(result, ['Log'])
 
                 // /* Received amount calculations
                 //  * _inputAmount = 40 jrc
