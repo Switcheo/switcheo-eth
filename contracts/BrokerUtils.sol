@@ -8,7 +8,8 @@ interface ERC20 {
 }
 
 interface KyberNetworkProxy {
-    function tradeWithHint(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId, bytes calldata hint) external returns (uint256);
+    function kyberNetworkContract() external view returns (address);
+    function trade(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) external payable returns (uint256);
 }
 
 interface UniswapFactory {
@@ -90,6 +91,7 @@ library BrokerUtils {
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
 
     address private constant ETHER_ADDR = address(0);
+    address private constant KYBER_ETHER_ADDR = address(0x00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee);
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
@@ -185,14 +187,21 @@ library BrokerUtils {
             // expected amount to receive is: matchData.takeAmount * offer.wantAmount / offer.offerAmount
             data[8] = data[7].mul(data[4] >> 128).div(data[4] & ~(~uint256(0) << 128));
 
+            address[] memory assetIds = new address[](3);
+            assetIds[0] = _addresses[data[5] * 2 + 1]; // offer.offerAssetId
+            assetIds[1] = _addresses[data[6] * 2 + 1]; // offer.wantAssetId
+            assetIds[2] = _addresses[data[2] * 2 + 1]; // surplusAssetId
+
+            uint256[] memory dataValues = new uint256[](3);
+            dataValues[0] = data[7]; // the proportion of offerAmount to offer
+            dataValues[1] = data[8]; // the propotionate wantAmount of the offer
+            dataValues[2] = data[0]; // match data
+
             increments[data[2]] = _performNetworkTrade(
-                _addresses[data[5] * 2 + 1], // offer.offerAssetId
-                data[7], // the proportion of offerAmount to offer
-                _addresses[data[6] * 2 + 1], // offer.wantAssetId
-                data[8], // the propotionate wantAmount of the offer
-                _addresses[data[2] * 2 + 1], // surplusAssetId
-                data[0], // match data
-                _tradeProviders
+                assetIds,
+                dataValues,
+                _tradeProviders,
+                _addresses
             );
         }
 
@@ -263,112 +272,142 @@ library BrokerUtils {
     // bits(24..128): provider-specific data
     // bits(128..256): match.takeAmount
     function _performNetworkTrade(
-        address _offerAssetId,
-        uint256 _offerAmount,
-        address _wantAssetId,
-        uint256 _wantAmount,
-        address _surplusAssetId,
-        uint256 _data,
-        address[] memory _tradeProviders
+        address[] memory _assetIds,
+        uint256[] memory _dataValues,
+        address[] memory _tradeProviders,
+        address[] memory _addresses
     )
         private
         returns (uint256)
     {
-        uint256 tradeProvider = (_data & ~(~uint256(0) << 16)) >> 8;
+        uint256 tradeProvider = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
 
         uint256[] memory funds = new uint256[](6);
-        funds[0] = _externalBalance(_offerAssetId); // initialOfferTokenBalance
-        funds[1] = _externalBalance(_wantAssetId); // initialWantTokenBalance
-        if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
-            funds[2] = _externalBalance(_surplusAssetId); // initialSurplusTokenBalance
+        funds[0] = _externalBalance(_assetIds[0]); // initialOfferTokenBalance
+        funds[1] = _externalBalance(_assetIds[1]); // initialWantTokenBalance
+        if (_assetIds[2] != _assetIds[0] && _assetIds[2] != _assetIds[1]) {
+            funds[2] = _externalBalance(_assetIds[2]); // initialSurplusTokenBalance
         }
 
         if (tradeProvider == 0) {
-            // perform KyberSwap trade
+            _performKyberSwapTrade(
+                _assetIds,
+                _dataValues,
+                _tradeProviders,
+                _addresses
+            );
         } else if (tradeProvider == 1) {
             _performUniswapTrade(
-                _offerAssetId,
-                _offerAmount,
-                _wantAssetId,
-                _wantAmount,
-                _data,
-                _tradeProviders[1]
+                _assetIds,
+                _dataValues,
+                _tradeProviders
             );
         }
 
-        funds[3] = _externalBalance(_offerAssetId); // finalOfferTokenBalance
-        funds[4] = _externalBalance(_wantAssetId); // finalWantTokenBalance
-        if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
-            funds[5] = _externalBalance(_surplusAssetId); // finalSurplusTokenBalance
+        funds[3] = _externalBalance(_assetIds[0]); // finalOfferTokenBalance
+        funds[4] = _externalBalance(_assetIds[1]); // finalWantTokenBalance
+        if (_assetIds[2] != _assetIds[0] && _assetIds[2] != _assetIds[1]) {
+            funds[5] = _externalBalance(_assetIds[2]); // finalSurplusTokenBalance
         }
 
         uint256 surplusAmount = 0;
 
         // validate that appropriate offerAmount was deducted
-        if (_surplusAssetId == _offerAssetId) {
+        if (_assetIds[2] == _assetIds[0]) {
             // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
-            require(funds[3] >= funds[0].sub(_offerAmount));
+            require(funds[3] >= funds[0].sub(_dataValues[0]));
             // surplusAmount = finalOfferTokenBalance - (initialOfferTokenBalance - offerAmount)
-            surplusAmount = funds[3].sub((funds[0].sub(_offerAmount)));
+            surplusAmount = funds[3].sub((funds[0].sub(_dataValues[0])));
         } else {
             // finalOfferTokenBalance == initialOfferTokenBalance - offerAmount
-            require(funds[3] == funds[0].sub(_offerAmount));
+            require(funds[3] == funds[0].sub(_dataValues[0]));
         }
 
         // validate that appropriate wantAmount was credited
-        if (_surplusAssetId == _wantAssetId) {
+        if (_assetIds[2] == _assetIds[1]) {
             // finalWantTokenBalance >= initialWantTokenBalance + wantAmount
-            require(funds[4] >= funds[1].add(_wantAmount));
+            require(funds[4] >= funds[1].add(_dataValues[1]));
             // surplusAmount = finalWantTokenBalance - (initialWantTokenBalance + wantAmount)
-            surplusAmount = funds[4].sub((funds[1].add(_wantAmount)));
+            surplusAmount = funds[4].sub((funds[1].add(_dataValues[1])));
         } else {
             // finalWantTokenBalance == initialWantTokenBalance + wantAmount
-            require(funds[4] == funds[1].add(_wantAmount));
+            require(funds[4] == funds[1].add(_dataValues[1]));
         }
 
-        if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
+        if (_assetIds[2] != _assetIds[0] && _assetIds[2] != _assetIds[1]) {
             surplusAmount = funds[5].sub(funds[2]);
         }
 
         return surplusAmount;
     }
 
-    function _performUniswapTrade(
-        address _offerAssetId,
-        uint256 _offerAmount,
-        address _wantAssetId,
-        uint256 _wantAmount,
-        uint256 _data,
-        address _factoryAddress
+    function _performKyberSwapTrade(
+        address[] memory _assetIds,
+        uint256[] memory _dataValues,
+        address[] memory _tradeProviders,
+        address[] memory _addresses
     )
         private
     {
-        UniswapFactory factory = UniswapFactory(_factoryAddress);
-        // _data bits(24..56): delay
-        uint256 deadline = now + ((_data & ~(~uint256(0) << 56)) >> 24);
+        KyberNetworkProxy kyberProxy = KyberNetworkProxy(_tradeProviders[0]);
+        address kyberNetworkContract = kyberProxy.kyberNetworkContract();
 
-        if (_offerAssetId == ETHER_ADDR) {
-            UniswapExchange exchange = UniswapExchange(factory.getExchange(_wantAssetId));
-            exchange.ethToTokenSwapInput.value(_offerAmount)(_wantAmount, deadline);
+        uint256 ethValue = 0;
+        if (_assetIds[0] != ETHER_ADDR) {
+            ERC20(_assetIds[0]).approve(kyberNetworkContract, _dataValues[0]);
+        } else {
+            ethValue = _dataValues[0];
+        }
+
+        address srcAssetId = _assetIds[0] == ETHER_ADDR ? KYBER_ETHER_ADDR : _assetIds[0];
+        address dstAssetId = _assetIds[1] == ETHER_ADDR ? KYBER_ETHER_ADDR : _assetIds[1];
+
+        // _dataValues[2] bits(24..32): fee sharing walletAddressIndex
+        uint256 walletAddressIndex = (_dataValues[2] & ~(~uint256(0) << 32)) >> 24;
+
+        kyberProxy.trade.value(ethValue)(
+            srcAssetId, // src
+            _dataValues[0], // srcAmount
+            dstAssetId, // dest
+            address(this), // destAddress
+            ~uint256(0), // maxDestAmount
+            uint256(0), // minConversionRate
+            _addresses[walletAddressIndex] // walletId
+        );
+    }
+
+    function _performUniswapTrade(
+        address[] memory _assetIds,
+        uint256[] memory _dataValues,
+        address[] memory _tradeProviders
+    )
+        private
+    {
+        UniswapFactory factory = UniswapFactory(_tradeProviders[0]);
+        // _dataValues[2] bits(24..56): delay
+        uint256 deadline = now + ((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);
+
+        if (_assetIds[0] == ETHER_ADDR) {
+            UniswapExchange exchange = UniswapExchange(factory.getExchange(_assetIds[1]));
+            exchange.ethToTokenSwapInput.value(_dataValues[0])(_dataValues[1], deadline);
             return;
         }
 
-        address exchangeAddress = factory.getExchange(_offerAssetId);
+        address exchangeAddress = factory.getExchange(_assetIds[0]);
         UniswapExchange exchange = UniswapExchange(exchangeAddress);
 
-        ERC20(_offerAssetId).approve(exchangeAddress, _offerAmount);
+        ERC20(_assetIds[0]).approve(exchangeAddress, _dataValues[0]);
 
-        if (_wantAssetId == ETHER_ADDR) {
-            exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
+        if (_assetIds[1] == ETHER_ADDR) {
+            exchange.tokenToEthSwapInput(_dataValues[0], _dataValues[1], deadline);
             return;
         }
 
         // Use the minimum of 1 for minEth as the amount of intermediate eth
         // used for the trade is not important. It is only important that the
         // final received tokens is more than or equal to the wantAmount.
-        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 1, deadline, _wantAssetId);
+        exchange.tokenToTokenSwapInput(_dataValues[0], _dataValues[1], 1, deadline, _assetIds[1]);
     }
-
 
     function _tokenBalance(address _assetId) private view returns (uint256) {
         return ERC20(_assetId).balanceOf(address(this));
