@@ -58,7 +58,7 @@ contract UniswapExchange {
         require(ethBought >= _minEth);
 
         buyer.transfer(ethBought);
-        /* ERC20(token).transferFrom(buyer, address(this), _tokensSold); */
+        ERC20(token).transferFrom(buyer, address(this), _tokensSold);
 
         return ethBought;
     }

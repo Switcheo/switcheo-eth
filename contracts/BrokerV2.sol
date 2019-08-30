@@ -579,6 +579,8 @@ contract BrokerV2 is Ownable {
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
     }
 
+    function() payable external {}
+
     /// @notice Deposits ERC20 tokens under the `_user`'s balance
     /// @dev Transfers token into the Broker contract using the
     /// token's `transferFrom` method.

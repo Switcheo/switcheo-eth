@@ -300,7 +300,7 @@ library BrokerUtils {
 
         uint256 surplusAmount = 0;
 
-        /* // validate that appropriate offerAmount was deducted
+        // validate that appropriate offerAmount was deducted
         if (_surplusAssetId == _offerAssetId) {
             // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
             require(funds[3] >= funds[0].sub(_offerAmount));
@@ -324,12 +324,11 @@ library BrokerUtils {
 
         if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
             surplusAmount = funds[5].sub(funds[2]);
-        } */
+        }
 
         return surplusAmount;
     }
 
-    event Log(uint256 v1);
     function _performUniswapTrade(
         address _offerAssetId,
         uint256 _offerAmount,
@@ -356,8 +355,7 @@ library BrokerUtils {
         ERC20(_offerAssetId).approve(exchangeAddress, _offerAmount);
 
         if (_wantAssetId == ETHER_ADDR) {
-            uint256 v1 = exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
-            emit Log(v1);
+            exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
             return;
         }
 
