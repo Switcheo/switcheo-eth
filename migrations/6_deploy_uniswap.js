@@ -5,7 +5,7 @@ const UniswapExchange = artifacts.require('UniswapExchange')
 
 async function deployUniswapExchange(deployer, token) {
     const factory = await UniswapFactory.deployed()
-    const exchange = await deployer.deploy(UniswapExchange, token.address)
+    const exchange = await deployer.deploy(UniswapExchange, token.address, factory.address)
     await factory.registerExchange(exchange.address, token.address)
 }
 

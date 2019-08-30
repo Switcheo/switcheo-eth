@@ -359,7 +359,10 @@ library BrokerUtils {
             return;
         }
 
-        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 0, deadline, _wantAssetId);
+        // Use the minimum of 1 for minEth as the amount of intermediate eth
+        // used for the trade is not important. It is only important that the
+        // final received tokens is more than or equal to the wantAmount.
+        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 1, deadline, _wantAssetId);
     }
 
 
