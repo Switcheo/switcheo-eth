@@ -241,6 +241,10 @@ library BrokerUtils {
     {
         _validateContractAddress(_assetId);
 
+        // Some tokens have a `transfer` which returns a boolean and some do not.
+        // The ERC20 interface cannot be used here because it requires specifying
+        // an explicit return value, and an EVM exception would be raised when calling
+        // a token with the mismatched return value.
         bytes memory payload = abi.encodeWithSignature(
                                    "transfer(address,uint256)",
                                    _receivingAddress,
