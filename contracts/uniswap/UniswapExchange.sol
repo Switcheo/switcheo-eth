@@ -1,8 +1,9 @@
 pragma solidity 0.5.10;
 
-interface ERC20Token {
+interface ERC20 {
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 tokens) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
 }
 
 contract UniswapExchange {
@@ -20,7 +21,6 @@ contract UniswapExchange {
         return exchangeAddresses[_token];
     }
 
-    // Trade ETH to ERC20
     function ethToTokenSwapInput(
         uint256 _minTokens,
         uint256 _deadline
@@ -32,17 +32,47 @@ contract UniswapExchange {
         uint256 ethSold = msg.value;
         require(_deadline > now && ethSold > 0 && _minTokens > 0);
 
-        uint256 tokenReserve = _tokenBalance(token);
-        uint256 tokensBought = _getInputPrice(ethSold, address(this).balance - ethSold, tokenReserve);
+        uint256 tokenReserve = _getTokenReserve();
+        uint256 tokensBought = _getInputPrice(ethSold, _getEthBalance() - ethSold, tokenReserve);
 
         require(tokensBought >= _minTokens);
-        ERC20Token(token).transfer(msg.sender, tokensBought);
+        ERC20(token).transfer(msg.sender, tokensBought);
 
         return tokensBought;
     }
 
+    function tokenToEthSwapInput(
+        uint256 _tokensSold,
+        uint256 _minEth,
+        uint256 _deadline
+    )
+        external
+        returns (uint256)
+    {
+        address payable buyer = msg.sender;
+        require(_deadline > now && _tokensSold > 0 && _minEth > 0);
+
+        uint256 tokenReserve = _getTokenReserve();
+        uint256 ethBought = _getInputPrice(_tokensSold, tokenReserve, _getEthBalance());
+
+        require(ethBought >= _minEth);
+
+        buyer.transfer(ethBought);
+        /* ERC20(token).transferFrom(buyer, address(this), _tokensSold); */
+
+        return ethBought;
+    }
+
+    function _getTokenReserve() private view returns (uint256) {
+        return _tokenBalance(token);
+    }
+
+    function _getEthBalance() private view returns (uint256) {
+        return address(this).balance;
+    }
+
     function _tokenBalance(address _assetId) private view returns (uint256) {
-        return ERC20Token(_assetId).balanceOf(address(this));
+        return ERC20(_assetId).balanceOf(address(this));
     }
 
     function _getInputPrice(

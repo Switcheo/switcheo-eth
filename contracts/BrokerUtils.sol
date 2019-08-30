@@ -2,8 +2,9 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 
-interface ERC20Token {
+interface ERC20 {
     function balanceOf(address account) external view returns (uint256);
+    function approve(address spender, uint256 value) external returns (bool);
 }
 
 interface KyberNetworkProxy {
@@ -198,7 +199,7 @@ library BrokerUtils {
         return increments;
     }
 
-    function transferIn(
+    function transferTokensIn(
         address _user,
         address _assetId,
         uint256 _amount,
@@ -211,7 +212,7 @@ library BrokerUtils {
         uint256 initialBalance = _tokenBalance(_assetId);
 
         // Some tokens have a `transferFrom` which returns a boolean and some do not.
-        // The ERC20Token interface cannot be used here because it requires specifying
+        // The ERC20 interface cannot be used here because it requires specifying
         // an explicit return value, and an EVM exception would be raised when calling
         // a token with the mismatched return value.
         bytes memory payload = abi.encodeWithSignature(
@@ -227,11 +228,11 @@ library BrokerUtils {
         uint256 finalBalance = _tokenBalance(_assetId);
         uint256 transferredAmount = finalBalance.sub(initialBalance);
 
-        // Error code 46: transferIn, transferredAmount does not match expectedAmount
+        // Error code 46: transferTokensIn, transferredAmount does not match expectedAmount
         require(transferredAmount == _expectedAmount, "46");
     }
 
-    function transferOut(
+    function transferTokensOut(
         address _receivingAddress,
         address _assetId,
         uint256 _amount
@@ -255,7 +256,7 @@ library BrokerUtils {
     // bits(0..8): offerIndex
     // bits(8..16): tradeProvider
     // bits(16..24): operator.surplusAssetIndex
-    // bits(24..128): provider data
+    // bits(24..128): provider-specific data
     // bits(128..256): match.takeAmount
     function _performNetworkTrade(
         address _offerAssetId,
@@ -299,7 +300,7 @@ library BrokerUtils {
 
         uint256 surplusAmount = 0;
 
-        // validate that appropriate offerAmount was deducted
+        /* // validate that appropriate offerAmount was deducted
         if (_surplusAssetId == _offerAssetId) {
             // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
             require(funds[3] >= funds[0].sub(_offerAmount));
@@ -323,11 +324,12 @@ library BrokerUtils {
 
         if (_surplusAssetId != _offerAssetId && _surplusAssetId != _wantAssetId) {
             surplusAmount = funds[5].sub(funds[2]);
-        }
+        } */
 
         return surplusAmount;
     }
 
+    event Log(uint256 v1);
     function _performUniswapTrade(
         address _offerAssetId,
         uint256 _offerAmount,
@@ -348,26 +350,30 @@ library BrokerUtils {
             return;
         }
 
-        /* UniswapExchange exchange = UniswapExchange(factory.getExchange(_offerAssetId));
+        address exchangeAddress = factory.getExchange(_offerAssetId);
+        UniswapExchange exchange = UniswapExchange(exchangeAddress);
+
+        ERC20(_offerAssetId).approve(exchangeAddress, _offerAmount);
 
         if (_wantAssetId == ETHER_ADDR) {
-            exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
+            uint256 v1 = exchange.tokenToEthSwapInput(_offerAmount, _wantAmount, deadline);
+            emit Log(v1);
             return;
         }
 
-        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 0, deadline, _wantAssetId); */
+        exchange.tokenToTokenSwapInput(_offerAmount, _wantAmount, 0, deadline, _wantAssetId);
     }
 
 
     function _tokenBalance(address _assetId) private view returns (uint256) {
-        return ERC20Token(_assetId).balanceOf(address(this));
+        return ERC20(_assetId).balanceOf(address(this));
     }
 
     function _externalBalance(address _assetId) private view returns (uint256) {
         if (_assetId == ETHER_ADDR) {
             return address(this).balance;
         }
-        return ERC20Token(_assetId).balanceOf(address(this));
+        return ERC20(_assetId).balanceOf(address(this));
     }
 
     /// @dev Validates that input lengths based on the expected format

@@ -619,7 +619,7 @@ contract BrokerV2 is Ownable {
             _nonce
         );
 
-        BrokerUtils.transferIn(
+        BrokerUtils.transferTokensIn(
             _user,
             _assetId,
             _amount,
@@ -1926,7 +1926,7 @@ contract BrokerV2 is Ownable {
             return;
         }
 
-        BrokerUtils.transferOut(
+        BrokerUtils.transferTokensOut(
             _receivingAddress,
             _assetId,
             withdrawAmount
