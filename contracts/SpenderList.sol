@@ -70,13 +70,6 @@ contract SpenderList {
         spenderWhitelist[address(this)] = true;
     }
 
-    function setBroker(address _brokerAddress) external {
-        require(_brokerAddress != address(0));
-        require(brokerAddress == address(0));
-        brokerAddress = _brokerAddress;
-        broker = Broker(_brokerAddress);
-    }
-
     modifier onlyAdmin() {
         // Error code 1: onlyAdmin, address is not an admin address
         require(broker.isAdmin(msg.sender), "1");
@@ -86,6 +79,13 @@ contract SpenderList {
     modifier onlyOwner() {
         require(broker.owner() == msg.sender, "Ownable: caller is not the owner");
         _;
+    }
+
+    function setBroker(address _brokerAddress) external {
+        require(_brokerAddress != address(0));
+        require(brokerAddress == address(0));
+        brokerAddress = _brokerAddress;
+        broker = Broker(_brokerAddress);
     }
 
     /// @notice Whitelists a spender contract

@@ -219,7 +219,7 @@ library BrokerUtils {
     {
         _validateContractAddress(_assetId);
 
-        uint256 initialBalance = _tokenBalance(_assetId);
+        uint256 initialBalance = tokenBalance(_assetId);
 
         // Some tokens have a `transferFrom` which returns a boolean and some do not.
         // The ERC20 interface cannot be used here because it requires specifying
@@ -235,7 +235,7 @@ library BrokerUtils {
         // Ensure that the asset transfer succeeded
         _validateTransferResult(returnData);
 
-        uint256 finalBalance = _tokenBalance(_assetId);
+        uint256 finalBalance = tokenBalance(_assetId);
         uint256 transferredAmount = finalBalance.sub(initialBalance);
 
         // Error code 46: transferTokensIn, transferredAmount does not match expectedAmount
@@ -266,6 +266,17 @@ library BrokerUtils {
         _validateTransferResult(returnData);
     }
 
+    function externalBalance(address _assetId) public view returns (uint256) {
+        if (_assetId == ETHER_ADDR) {
+            return address(this).balance;
+        }
+        return tokenBalance(_assetId);
+    }
+
+    function tokenBalance(address _assetId) public view returns (uint256) {
+        return ERC20(_assetId).balanceOf(address(this));
+    }
+
     // _data
     // bits(0..8): offerIndex
     // bits(8..16): tradeProvider
@@ -284,10 +295,10 @@ library BrokerUtils {
         uint256 tradeProvider = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
 
         uint256[] memory funds = new uint256[](6);
-        funds[0] = _externalBalance(_assetIds[0]); // initialOfferTokenBalance
-        funds[1] = _externalBalance(_assetIds[1]); // initialWantTokenBalance
+        funds[0] = externalBalance(_assetIds[0]); // initialOfferTokenBalance
+        funds[1] = externalBalance(_assetIds[1]); // initialWantTokenBalance
         if (_assetIds[2] != _assetIds[0] && _assetIds[2] != _assetIds[1]) {
-            funds[2] = _externalBalance(_assetIds[2]); // initialSurplusTokenBalance
+            funds[2] = externalBalance(_assetIds[2]); // initialSurplusTokenBalance
         }
 
         if (tradeProvider == 0) {
@@ -305,10 +316,10 @@ library BrokerUtils {
             );
         }
 
-        funds[3] = _externalBalance(_assetIds[0]); // finalOfferTokenBalance
-        funds[4] = _externalBalance(_assetIds[1]); // finalWantTokenBalance
+        funds[3] = externalBalance(_assetIds[0]); // finalOfferTokenBalance
+        funds[4] = externalBalance(_assetIds[1]); // finalWantTokenBalance
         if (_assetIds[2] != _assetIds[0] && _assetIds[2] != _assetIds[1]) {
-            funds[5] = _externalBalance(_assetIds[2]); // finalSurplusTokenBalance
+            funds[5] = externalBalance(_assetIds[2]); // finalSurplusTokenBalance
         }
 
         uint256 surplusAmount = 0;
@@ -405,17 +416,6 @@ library BrokerUtils {
         // used for the trade is not important. It is only important that the
         // final received tokens is more than or equal to the wantAmount.
         exchange.tokenToTokenSwapInput(_dataValues[0], _dataValues[1], 1, deadline, _assetIds[1]);
-    }
-
-    function _externalBalance(address _assetId) private view returns (uint256) {
-        if (_assetId == ETHER_ADDR) {
-            return address(this).balance;
-        }
-        return _tokenBalance(_assetId);
-    }
-
-    function _tokenBalance(address _assetId) private view returns (uint256) {
-        return ERC20(_assetId).balanceOf(address(this));
     }
 
     /// @dev Validates that input lengths based on the expected format

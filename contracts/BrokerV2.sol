@@ -14,6 +14,10 @@ interface SpenderList {
     function validateSpenderAuthorization(address user, address spender) external view;
 }
 
+interface TokenList {
+    function validateToken(address assetId) external view;
+}
+
 /// @title The BrokerV2 contract for Switcheo Exchange
 /// @author Switcheo Network
 /// @notice This contract faciliates Ethereum and Ethereum token trades
@@ -184,6 +188,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // All fees will be transferred to the operator address
     address public operator;
     SpenderList public spenderList;
+    TokenList public tokenList;
 
     // The delay in seconds to complete the respective escape hatch (`slowCancel` / `slowWithdraw`).
     // This gives the off-chain service time to update the off-chain state
@@ -204,15 +209,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     mapping(uint256 => uint256) public usedNonces;
     // A mapping of user balances: userAddress => assetId => balance
     mapping(address => mapping(address => uint256)) public balances;
+    mapping(address => uint256) public totalBalances;
     // A mapping of atomic swap states: swapHash => isSwapActive
     mapping(bytes32 => bool) public atomicSwaps;
 
     // A record of admin addresses: userAddress => isAdmin
     mapping(address => bool) public adminAddresses;
-    // A record of whitelisted tokens: tokenAddress => isWhitelisted.
-    // This controls token permission to invoke `tokenFallback` and `tokensReceived` callbacks
-    // on this contract.
-    mapping(address => bool) public tokenWhitelist;
     address[] public tradeProviders;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
@@ -283,10 +285,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// The Broker is put into an active state, with maximum exit delays set.
     /// The Broker is also registered as an implementer of ERC777TokensRecipient
     /// through the ERC1820 registry.
-    constructor(address _spenderListAddress) public {
+    constructor(address _spenderListAddress, address _tokenListAddress) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
         spenderList = SpenderList(_spenderListAddress);
+        tokenList = TokenList(_tokenListAddress);
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
         slowCancelDelay = MAX_SLOW_CANCEL_DELAY;
@@ -403,28 +406,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         delete adminAddresses[_admin];
     }
 
-    /// @notice Whitelists a token contract
-    /// @dev This enables the token contract to call `tokensReceived` or `tokenFallback`
-    /// on this contract.
-    /// This layer of management is to prevent misuse of `tokensReceived` and `tokenFallback`
-    /// methods by unvetted tokens.
-    /// @param _assetId The token address to whitelist
-    function whitelistToken(address _assetId) external onlyOwner {
-        _validateAddress(_assetId);
-        // Error code 8: whitelistToken, token is already whitelisted
-        require(!tokenWhitelist[_assetId], "8");
-        tokenWhitelist[_assetId] = true;
-    }
-
-    /// @notice Removes a token contract from the token whitelist
-    /// @param _assetId The token address to remove from the token whitelist
-    function unwhitelistToken(address _assetId) external onlyOwner {
-        _validateAddress(_assetId);
-         // Error code 9: unwhitelistToken, token is not whitelisted
-        require(tokenWhitelist[_assetId], "9");
-        delete tokenWhitelist[_assetId];
-    }
-
     function addTradeProvider(address _provider) external onlyOwner {
         _validateAddress(_provider);
         tradeProviders.push(_provider);
@@ -481,6 +462,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Error code 15: deposit, msg.value is 0
         require(msg.value > 0, "15");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
+        totalBalances[ETHER_ADDR] = totalBalances[ETHER_ADDR].add(msg.value);
     }
 
     function() payable external {}
@@ -514,8 +496,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         onlyActiveState
         nonReentrant
     {
-        // Error code 16: depositToken, whitelisted tokens cannot use this method
-        require(tokenWhitelist[_assetId] == false, "16");
         _markNonce(_nonce);
 
         _increaseBalance(
@@ -525,6 +505,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             REASON_DEPOSIT,
             _nonce
         );
+        totalBalances[_assetId] = totalBalances[_assetId].add(_expectedAmount);
 
         BrokerUtils.transferTokensIn(
             _user,
@@ -551,9 +532,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         nonReentrant
     {
         address assetId = msg.sender;
-        // Error code 17: tokenFallback, token is not whitelisted
-        require(tokenWhitelist[assetId], "17");
+        tokenList.validateToken(assetId);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
+        totalBalances[assetId] = totalBalances[assetId].add(_amount);
         emit TokenFallback(_user, assetId, _amount);
     }
 
@@ -579,9 +560,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
-        // Error code 18: tokensReceived, token is not whitelisted
-        require(tokenWhitelist[assetId], "18");
+        tokenList.validateToken(assetId);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
+        totalBalances[assetId] = totalBalances[assetId].add(_amount);
         emit TokensReceived(_user, assetId, _amount);
     }
 
@@ -1425,6 +1406,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
+    function claimExcessBalance(address _assetId) external onlyOwner {
+        uint256 externalBalance = BrokerUtils.externalBalance(_assetId);
+        uint256 diff = totalBalances[_assetId].sub(externalBalance);
+        balances[owner][_assetId] = balances[owner][_assetId].add(diff);
+    }
+
     /// @dev Credit fillers for each fill.wantAmount,and credit the operator
     /// for each fill.feeAmount. See the `trade` method for param details.
     /// @param _values Values from `trade`
@@ -1809,6 +1796,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             REASON_WITHDRAW,
             _nonce
         );
+        totalBalances[_assetId] = totalBalances[_assetId].sub(_amount);
 
         _increaseBalance(
             operator,
