@@ -2,6 +2,7 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
+import "./lib/utils/ReentrancyGuard.sol";
 import "./BrokerUtils.sol";
 
 interface IERC1820Registry {
@@ -56,7 +57,7 @@ interface SpenderList {
 /// The only exception is the Ethereum token, which does not have a contract
 /// address, for this reason, the zero address is used to represent the
 /// Ethereum token's ID.
-contract BrokerV2 is Ownable {
+contract BrokerV2 is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
 
     struct WithdrawalAnnouncement {
@@ -511,6 +512,7 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Error code 16: depositToken, whitelisted tokens cannot use this method
         require(tokenWhitelist[_assetId] == false, "16");
@@ -546,6 +548,7 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyActiveState
+        nonReentrant
     {
         address assetId = msg.sender;
         // Error code 17: tokenFallback, token is not whitelisted
@@ -572,6 +575,7 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyActiveState
+        nonReentrant
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
@@ -778,6 +782,7 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
@@ -1789,6 +1794,7 @@ contract BrokerV2 is Ownable {
         uint256 _nonce
     )
         private
+        nonReentrant
     {
         // Error code 40: _withdraw, invalid withdrawal amount
         require(_amount > 0, "40");
