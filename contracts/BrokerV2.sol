@@ -1531,7 +1531,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 feeAmount = _values[i] >> 128;
@@ -1620,7 +1620,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
@@ -1679,7 +1679,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 56;
             bool existingOffer = _nonceTaken(nonce);
             bytes32 hashKey = _hashKeys[i];
 
@@ -1709,7 +1709,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
             _markNonce(nonce);
         }
     }

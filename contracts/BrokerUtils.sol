@@ -484,7 +484,7 @@ library BrokerUtils {
         uint256 mask = ~(~uint256(0) << 128);
 
         for(uint256 i = 0; i < numOffers; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & mask) >> 48;
+            uint256 nonce = (_values[i * 2 + 1] & mask) >> 56;
 
             if (i == 0) {
                 // Set the value of the first nonce
@@ -803,14 +803,14 @@ library BrokerUtils {
                 dataB >> 128, // wantAmount
                 _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
                 dataA >> 128, // feeAmount
-                (dataA & ~(~uint256(0) << 128)) >> 48 // nonce
+                (dataA & ~(~uint256(0) << 128)) >> 56 // nonce
             ));
 
             // To reduce gas costs, each bit of _values[0] after the 24th bit
             // is used to indicate whether the Ethereum signed message prefix
             // should be prepended for signature verification of the offer / fill
             // at that index
-            bool prefixedSignature = _values[0] & (uint256(1) << (24 + _i)) != 0;
+            bool prefixedSignature = ((dataA & ~(~uint256(0) << 56)) >> 48) != 0;
 
             _validateSignature(
                 hashKey,

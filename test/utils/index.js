@@ -1,5 +1,5 @@
 const BrokerV2 = artifacts.require('BrokerV2')
-const TokenList = artifacts.require('SpenderList')
+const TokenList = artifacts.require('TokenList')
 const SpenderList = artifacts.require('SpenderList')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
@@ -302,7 +302,7 @@ function constructTradeData(data) {
                                .or(shl(addressMap[user][feeAssetId], 24))
                                .or(shl(addressMap[operator][feeAssetId], 32))
                                .or(shl(v, 40))
-                               .or(shl(nonce, 48))
+                               .or(shl(nonce, 56))
                                .or(shl(feeAmount, 128))
 
     const dataB = bn(offerAmount).or(shl(wantAmount, 128))
@@ -555,6 +555,7 @@ module.exports = {
     shl,
     clone,
     getBroker,
+    getTokenList,
     getSpenderList,
     getJrc,
     getSwc,

@@ -47,6 +47,10 @@ contract TokenList {
         delete tokenWhitelist[_assetId];
     }
 
+    function validateToken(address _assetId) external view {
+        require(tokenWhitelist[_assetId]);
+    }
+
     /// @dev Ensures that `_address` is not the zero address
     /// @param _address The address to check
     function _validateAddress(address _address) private pure {

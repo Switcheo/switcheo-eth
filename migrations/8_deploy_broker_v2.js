@@ -1,8 +1,8 @@
 const KyberNetworkProxy = artifacts.require('KyberNetworkProxy')
 const UniswapFactory = artifacts.require('UniswapFactory')
 const BrokerUtils = artifacts.require('BrokerUtils')
-const SpenderList = artifacts.require('SpenderList')
 const TokenList = artifacts.require('TokenList')
+const SpenderList = artifacts.require('SpenderList')
 const BrokerV2 = artifacts.require('BrokerV2')
 
 module.exports = function(deployer) {
