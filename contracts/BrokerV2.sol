@@ -8,6 +8,11 @@ interface IERC1820Registry {
     function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
 }
 
+interface SpenderList {
+    function validateSpender(address spender) external view;
+    function validateSpenderAuthorization(address user, address spender) external view;
+}
+
 /// @title The BrokerV2 contract for Switcheo Exchange
 /// @author Switcheo Network
 /// @notice This contract faciliates Ethereum and Ethereum token trades
@@ -95,15 +100,6 @@ contract BrokerV2 is Ownable {
     // ));
     bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
 
-    // bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
-    //     "AuthorizeSpender(",
-    //         "address user,",
-    //         "address spender,",
-    //         "uint256 nonce",
-    //     ")"
-    // ));
-    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
-
     // bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
     //     "Withdraw(",
     //         "address withdrawer,",
@@ -186,14 +182,13 @@ contract BrokerV2 is Ownable {
     AdminState public adminState;
     // All fees will be transferred to the operator address
     address public operator;
+    SpenderList public spenderList;
 
     // The delay in seconds to complete the respective escape hatch (`slowCancel` / `slowWithdraw`).
     // This gives the off-chain service time to update the off-chain state
     // before the state is separately updated by the user.
     uint256 public slowCancelDelay;
     uint256 public slowWithdrawDelay;
-
-    address[] public tradeProviders;
 
     // A mapping of remaining offer amounts: offerHash => availableAmount
     mapping(bytes32 => uint256) public offers;
@@ -217,13 +212,7 @@ contract BrokerV2 is Ownable {
     // This controls token permission to invoke `tokenFallback` and `tokensReceived` callbacks
     // on this contract.
     mapping(address => bool) public tokenWhitelist;
-    // A record of whitelisted spenders: spenderContract => isWhitelisted.
-    // Spenders are intended to be extension contracts.
-    // A user would first manually vet a spender contract then approve it to perform
-     // balance transfers for their address, using the `authorizeSpender` method.
-    mapping(address => bool) public spenderWhitelist;
-    // A record of spender authorizations: userAddress => spenderAddress => isAuthorized
-    mapping(address => mapping(address => bool)) public spenderAuthorizations;
+    address[] public tradeProviders;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
     // A mapping of withdrawal announcements: userAddress => assetId => announcementData
@@ -251,14 +240,6 @@ contract BrokerV2 is Ownable {
     // These are used in the `trade` method, they are compacted to save gas costs.
     event Increment(uint256 data);
     event Decrement(uint256 data);
-
-    event AuthorizeSpender(
-        address indexed user,
-        address indexed spender,
-        uint256 nonce
-    );
-
-    event UnauthorizeSpender(address indexed user, address indexed spender);
 
     event TokenFallback(
         address indexed user,
@@ -301,9 +282,10 @@ contract BrokerV2 is Ownable {
     /// The Broker is put into an active state, with maximum exit delays set.
     /// The Broker is also registered as an implementer of ERC777TokensRecipient
     /// through the ERC1820 registry.
-    constructor(address[] memory _tradeProviders) public {
+    constructor(address _spenderListAddress) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
+        spenderList = SpenderList(_spenderListAddress);
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
         slowCancelDelay = MAX_SLOW_CANCEL_DELAY;
@@ -318,10 +300,6 @@ contract BrokerV2 is Ownable {
             keccak256("ERC777TokensRecipient"),
             address(this)
         );
-
-        for (uint256 i = 0; i < _tradeProviders.length; i++) {
-            tradeProviders.push(_tradeProviders[i]);
-        }
     }
 
     modifier onlyAdmin() {
@@ -340,6 +318,10 @@ contract BrokerV2 is Ownable {
         // Error code 3: onlyEscalatedAdminState, adminState is not 'Escalated'
         require(adminState == AdminState.Escalated, "3");
         _;
+    }
+
+    function isAdmin(address _user) external view returns(bool) {
+        return adminAddresses[_user];
     }
 
     /// @notice Sets tbe Broker's state.
@@ -442,98 +424,20 @@ contract BrokerV2 is Ownable {
         delete tokenWhitelist[_assetId];
     }
 
-    /// @notice Whitelists a spender contract
-    /// @dev Spender contracts are intended to offer additional functionality
-    /// to the Broker contract, allowing for new contract features to be added without
-    /// having to migrate user funds to a new contract.
-    /// After a spender contract is whitelisted, a user intending to use its
-    /// features must separately authorize the spender contract before it can
-    /// perform balance transfers for the user.
-    /// See `authorizeSpender` and `spendFrom` methods for more details.
-    /// @param _spender The address of the spender contract to whitelist
-    function whitelistSpender(address _spender) external onlyOwner {
-        _validateAddress(_spender);
-        // Error code 10: whitelistSpender, spender is already whitelisted
-        require(!spenderWhitelist[_spender], "10");
-        spenderWhitelist[_spender] = true;
+    function addTradeProvider(address _provider) external onlyOwner {
+        _validateAddress(_provider);
+        tradeProviders.push(_provider);
     }
 
-    /// @notice Removes a spender contract from the spender whitelist
-    /// @dev Note that removing a spender from the whitelist will not prevent
-    /// a it from transferring balances for users who had previously
-    /// authorized it.
-    /// This is required because the contract owner would otherwise be able to
-    /// cause a user's funds to be locked in the spender contract.
-    /// @param _spender The address of the spender contract to remove from the whitelist
-    function unwhitelistSpender(address _spender) external onlyOwner {
-        _validateAddress(_spender);
-         // Error code 11: unwhitelistSpender, spender is not whitelisted
-        require(spenderWhitelist[_spender], "11");
-        delete spenderWhitelist[_spender];
+    function updateTradeProvider(uint256 _index, address _provider) external onlyOwner {
+        _validateAddress(_provider);
+        require(tradeProviders[_index] != address(0));
+        tradeProviders[_index] = _provider;
     }
 
-    /// @notice Allows users to authorize a spender contract to perform
-    /// balance transfers for their address
-    /// @dev After a spender contract is authorized, it can call the `spendFrom`
-    /// method for the permitted user's address.
-    /// @param _user The address of the user
-    /// @param _spender The address of the whitelisted spender contract
-    /// @param _nonce An unused nonce to prevent replay attacks
-    /// @param _v The `v` component of the `_user`'s signature
-    /// @param _r The `r` component of the `_user`'s signature
-    /// @param _s The `s` component of the `_user`'s signature
-    /// @param _prefixedSignature Indicates whether the Ethereum signed message
-    /// prefix should be prepended during signature verification
-    function authorizeSpender(
-        address _user,
-        address _spender,
-        uint256 _nonce,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s,
-        bool _prefixedSignature
-    )
-        external
-        onlyAdmin
-    {
-        // Error code 12: authorizeSpender, spender is not whitelisted
-        require(spenderWhitelist[_spender], "12");
-        _markNonce(_nonce);
-
-        _validateSignature(
-            keccak256(abi.encode(
-                AUTHORIZE_SPENDER_TYPEHASH,
-                _user,
-                _spender,
-                _nonce
-            )),
-            _user,
-            _v,
-            _r,
-            _s,
-            _prefixedSignature
-        );
-        spenderAuthorizations[_user][_spender] = true;
-        emit AuthorizeSpender(_user, _spender, _nonce);
-    }
-
-    /// @notice Allows users to remove authorization for a spender contract to
-    /// perform balance transfers for their address
-    /// @dev This method can only be invoked for spender contracts already removed
-    /// from the whitelist. This is to prevent users from unexpectedly removing
-    /// authorization for a previously authorized spender, as doing so could prevent
-    /// regular operation of the features offerred by the spender contract.
-    /// This function does not require admin permission and is invokable directly by users.
-    /// @param _spender The address of the spender contract
-    function unauthorizeSpender(address _spender) external {
-        // Error code 13: unauthorizeSpender, spender has not been removed from whitelist
-        require(!spenderWhitelist[_spender], "13");
-
-        address user = msg.sender;
-        require(spenderAuthorizations[user][_spender]);
-
-        delete spenderAuthorizations[user][_spender];
-        emit UnauthorizeSpender(user, _spender);
+    function removeTradeProvider(uint256 _index) external onlyOwner {
+        require(tradeProviders[_index] != address(0));
+        delete tradeProviders[_index];
     }
 
     /// @notice Performs a balance transfer from one address to another
@@ -555,8 +459,7 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        // Error code 14: spendFrom, spender is not authorized
-        require(spenderAuthorizations[_from][msg.sender], "14");
+        spenderList.validateSpenderAuthorization(_from, msg.sender);
 
         _validateAddress(_to);
 
@@ -565,7 +468,7 @@ contract BrokerV2 is Ownable {
     }
 
     function markNonce(uint256 _nonce) external {
-        require(spenderWhitelist[msg.sender]);
+        spenderList.validateSpender(msg.sender);
         _markNonce(_nonce);
     }
 

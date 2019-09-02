@@ -1,5 +1,5 @@
 const BrokerV2 = artifacts.require('BrokerV2')
-const Scratchpad = artifacts.require('Scratchpad')
+const SpenderList = artifacts.require('SpenderList')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const DGTXCoin = artifacts.require('DGTX')
@@ -21,7 +21,7 @@ abiDecoder.addABI(BrokerV2.abi)
 const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR, ETHER_ADDR } = require('../constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
-async function getScratchpad() { return await Scratchpad.deployed() }
+async function getSpenderList() { return await SpenderList.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
 async function getDgtx() { return await DGTXCoin.deployed() }
@@ -204,13 +204,13 @@ async function signParameters(types, values, privateKey) {
 }
 
 async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
-    const broker = await getBroker()
+    const spenderList = await getSpenderList()
     const { v, r, s } = await signParameters(
         ['bytes32', 'address', 'address', 'uint256'],
         [TYPEHASHES.AUTHORIZE_SPENDER_TYPEHASH, user, spender, nonce],
         privateKey
     )
-    return await broker.authorizeSpender(user, spender, nonce, v, r, s, false)
+    return await spenderList.authorizeSpender(user, spender, nonce, v, r, s, false)
 }
 
 async function withdraw({ user, receivingAddress, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
@@ -553,11 +553,11 @@ module.exports = {
     shl,
     clone,
     getBroker,
+    getSpenderList,
     getJrc,
     getSwc,
     getDgtx,
     getZeus,
-    getScratchpad,
     printLogs,
     hashSecret,
     validateBalance,

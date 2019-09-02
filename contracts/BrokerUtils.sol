@@ -25,9 +25,9 @@ interface UniswapExchange {
     function tokenToTokenSwapInput(uint256 tokensSold, uint256 minTokensBought, uint256 minEthBought, uint256 deadline, address tokenAddr) external returns (uint256 tokensBought);
 }
 
-/// @title Validations for the BrokerV2 contract for Switcheo Exchange
+/// @title Util functions for the BrokerV2 contract for Switcheo Exchange
 /// @author Switcheo Network
-/// @notice Validations were moved from the BrokerV2 contract into this library
+/// @notice Functions were moved from the BrokerV2 contract into this contract
 /// so that the BrokerV2 contract would not exceed the maximum contract size of
 /// 24 KB.
 library BrokerUtils {
