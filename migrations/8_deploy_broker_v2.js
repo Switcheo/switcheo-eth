@@ -7,13 +7,13 @@ const BrokerV2 = artifacts.require('BrokerV2')
 
 module.exports = function(deployer) {
     deployer.then(async () => {
-        const spenderList = await deployer.deploy(SpenderList)
         const tokenList = await deployer.deploy(TokenList)
+        const spenderList = await deployer.deploy(SpenderList)
 
         await deployer.deploy(BrokerUtils)
         await deployer.link(BrokerUtils, BrokerV2)
 
-        const broker = await deployer.deploy(BrokerV2, spenderList.address, tokenList.address)
+        const broker = await deployer.deploy(BrokerV2, tokenList.address, spenderList.address)
 
         await spenderList.setBroker(broker.address)
         await tokenList.setBroker(broker.address)

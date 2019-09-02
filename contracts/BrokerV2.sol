@@ -9,13 +9,13 @@ interface IERC1820Registry {
     function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
 }
 
+interface TokenList {
+    function validateToken(address assetId) external view;
+}
+
 interface SpenderList {
     function validateSpender(address spender) external view;
     function validateSpenderAuthorization(address user, address spender) external view;
-}
-
-interface TokenList {
-    function validateToken(address assetId) external view;
 }
 
 /// @title The BrokerV2 contract for Switcheo Exchange
@@ -187,8 +187,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     AdminState public adminState;
     // All fees will be transferred to the operator address
     address public operator;
-    SpenderList public spenderList;
     TokenList public tokenList;
+    SpenderList public spenderList;
 
     // The delay in seconds to complete the respective escape hatch (`slowCancel` / `slowWithdraw`).
     // This gives the off-chain service time to update the off-chain state
@@ -285,11 +285,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// The Broker is put into an active state, with maximum exit delays set.
     /// The Broker is also registered as an implementer of ERC777TokensRecipient
     /// through the ERC1820 registry.
-    constructor(address _spenderListAddress, address _tokenListAddress) public {
+    constructor(address _tokenListAddress, address _spenderListAddress) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
-        spenderList = SpenderList(_spenderListAddress);
         tokenList = TokenList(_tokenListAddress);
+        spenderList = SpenderList(_spenderListAddress);
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
         slowCancelDelay = MAX_SLOW_CANCEL_DELAY;

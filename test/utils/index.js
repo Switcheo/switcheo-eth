@@ -1,4 +1,5 @@
 const BrokerV2 = artifacts.require('BrokerV2')
+const TokenList = artifacts.require('SpenderList')
 const SpenderList = artifacts.require('SpenderList')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
@@ -21,6 +22,7 @@ abiDecoder.addABI(BrokerV2.abi)
 const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR, ETHER_ADDR } = require('../constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
+async function getTokenList() { return await TokenList.deployed() }
 async function getSpenderList() { return await SpenderList.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
