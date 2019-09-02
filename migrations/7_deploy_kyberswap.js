@@ -1,5 +1,8 @@
 const KyberNetworkProxy = artifacts.require('KyberNetworkProxy')
 
 module.exports = function(deployer) {
-    deployer.deploy(KyberNetworkProxy)
+    deployer.then(async () => {
+        const kyberNetworkProxy = await deployer.deploy(KyberNetworkProxy)
+        await kyberNetworkProxy.setKyberNetworkContract(kyberNetworkProxy.address)
+    })
 }

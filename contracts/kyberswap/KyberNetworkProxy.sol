@@ -18,6 +18,7 @@ contract KyberNetworkProxy {
 
     ERC20 constant internal ETH_TOKEN_ADDRESS = ERC20(0x00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee);
 
+    address public kyberNetworkContract;
     uint256 public amountToGive;
 
     /// @notice use token address ETH_TOKEN_ADDRESS for ether
@@ -62,9 +63,9 @@ contract KyberNetworkProxy {
     }
 
     function deposit() public payable {}
-
-    function setAmountToGive(uint256 _amount) public {
-        amountToGive = _amount;
+    function setAmountToGive(uint256 _amount) public { amountToGive = _amount; }
+    function setKyberNetworkContract(address _address) public {
+        kyberNetworkContract = _address;
     }
 
     function _transferTokensIn(

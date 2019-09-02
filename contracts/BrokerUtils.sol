@@ -9,7 +9,7 @@ interface ERC20 {
 
 interface KyberNetworkProxy {
     function kyberNetworkContract() external view returns (address);
-    function trade(address src, uint256 srcAmount, address dest, address destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) external payable returns (uint256);
+    function trade(address src, uint256 srcAmount, address dest, address payable destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) external payable returns (uint256);
 }
 
 interface UniswapFactory {
@@ -312,7 +312,7 @@ library BrokerUtils {
 
         uint256 surplusAmount = 0;
 
-        // validate that appropriate offerAmount was deducted
+        // validate that the appropriate offerAmount was deducted
         if (_assetIds[2] == _assetIds[0]) {
             // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
             require(funds[3] >= funds[0].sub(_dataValues[0]));
@@ -323,7 +323,7 @@ library BrokerUtils {
             require(funds[3] == funds[0].sub(_dataValues[0]));
         }
 
-        // validate that appropriate wantAmount was credited
+        // validate that the appropriate wantAmount was credited
         if (_assetIds[2] == _assetIds[1]) {
             // finalWantTokenBalance >= initialWantTokenBalance + wantAmount
             require(funds[4] >= funds[1].add(_dataValues[1]));
@@ -349,8 +349,8 @@ library BrokerUtils {
     )
         private
     {
-        KyberNetworkProxy kyberProxy = KyberNetworkProxy(_tradeProviders[0]);
-        address kyberNetworkContract = kyberProxy.kyberNetworkContract();
+        KyberNetworkProxy kyberNetworkProxy = KyberNetworkProxy(_tradeProviders[0]);
+        address kyberNetworkContract = kyberNetworkProxy.kyberNetworkContract();
 
         uint256 ethValue = 0;
         if (_assetIds[0] != ETHER_ADDR) {
@@ -365,11 +365,12 @@ library BrokerUtils {
         // _dataValues[2] bits(24..32): fee sharing walletAddressIndex
         uint256 walletAddressIndex = (_dataValues[2] & ~(~uint256(0) << 32)) >> 24;
 
-        kyberProxy.trade.value(ethValue)(
-            srcAssetId, // src
+        kyberNetworkProxy.trade.value(ethValue)(
+            srcAssetId,
             _dataValues[0], // srcAmount
             dstAssetId, // dest
-            address(this), // destAddress
+            // use uint160 to cast `address` to `address payable`
+            address(uint160(address(this))), // destAddress
             ~uint256(0), // maxDestAmount
             uint256(0), // minConversionRate
             _addresses[walletAddressIndex] // walletId
@@ -409,14 +410,14 @@ library BrokerUtils {
         exchange.tokenToTokenSwapInput(_dataValues[0], _dataValues[1], 1, deadline, _assetIds[1]);
     }
 
-    function _tokenBalance(address _assetId) private view returns (uint256) {
-        return ERC20(_assetId).balanceOf(address(this));
-    }
-
     function _externalBalance(address _assetId) private view returns (uint256) {
         if (_assetId == ETHER_ADDR) {
             return address(this).balance;
         }
+        return _tokenBalance(_assetId);
+    }
+
+    function _tokenBalance(address _assetId) private view returns (uint256) {
         return ERC20(_assetId).balanceOf(address(this));
     }
 
