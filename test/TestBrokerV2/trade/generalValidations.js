@@ -6,6 +6,7 @@ const { ZERO_ADDR, ETHER_ADDR } = require('../../constants')
 
 contract('Test trade: general validations', async (accounts) => {
     let broker, jrc, swc, tradeParams
+    const operator = accounts[0]
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
@@ -285,6 +286,40 @@ contract('Test trade: general validations', async (accounts) => {
             )
         })
     })
+
+    contract('when the operator address is not set to address(0)', async () => {
+       it('raises an error', async () => {
+           await testValidation(exchange.trade, [tradeParams, { privateKeys }],
+               ({ addresses }) => {
+                   for (let i = 0; i < addresses.length; i += 2) {
+                       if (addresses[i] == ZERO_ADDR) {
+                           addresses[i] = operator
+                           break
+                       }
+                   }
+               },
+               [],
+               '61'
+           )
+       })
+   })
+
+    contract('when the operator\'s fee asset ID is not set to address(0)', async () => {
+       it('raises an error', async () => {
+           await testValidation(exchange.trade, [tradeParams, { privateKeys }],
+               ({ addresses }) => {
+                   for (let i = 0; i < addresses.length; i += 2) {
+                       if (addresses[i] == ZERO_ADDR) {
+                           addresses[i + 1] = jrc.address
+                           break
+                       }
+                   }
+               },
+               [],
+               '62'
+           )
+       })
+   })
 
     contract('when an offer.nonce is already used', async () => {
         it('raises an error', async () => {

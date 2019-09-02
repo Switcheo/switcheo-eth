@@ -137,7 +137,8 @@ library BrokerUtils {
     function validateNetworkTrades(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
-        address[] calldata _addresses
+        address[] calldata _addresses,
+        address _operator
     )
         external
         pure
@@ -145,8 +146,8 @@ library BrokerUtils {
     {
         _validateNetworkTradeInputLengths(_values, _hashes);
         _validateUniqueOffers(_values);
-        // TODO: validate matches
-        _validateTradeData(_values, _addresses);
+        _validateNetworkMatches(_values, _addresses, _operator);
+        _validateOfferData(_values, _addresses, _operator);
 
         // validate signatures of all offers
         return _validateTradeSignatures(
@@ -314,10 +315,8 @@ library BrokerUtils {
 
         // validate that the appropriate offerAmount was deducted
         if (_assetIds[2] == _assetIds[0]) {
-            // finalOfferTokenBalance >= initialOfferTokenBalance - offerAmount
-            require(funds[3] >= funds[0].sub(_dataValues[0]));
             // surplusAmount = finalOfferTokenBalance - (initialOfferTokenBalance - offerAmount)
-            surplusAmount = funds[3].sub((funds[0].sub(_dataValues[0])));
+            surplusAmount = funds[3].sub(funds[0].sub(_dataValues[0]));
         } else {
             // finalOfferTokenBalance == initialOfferTokenBalance - offerAmount
             require(funds[3] == funds[0].sub(_dataValues[0]));
@@ -325,10 +324,8 @@ library BrokerUtils {
 
         // validate that the appropriate wantAmount was credited
         if (_assetIds[2] == _assetIds[1]) {
-            // finalWantTokenBalance >= initialWantTokenBalance + wantAmount
-            require(funds[4] >= funds[1].add(_dataValues[1]));
             // surplusAmount = finalWantTokenBalance - (initialWantTokenBalance + wantAmount)
-            surplusAmount = funds[4].sub((funds[1].add(_dataValues[1])));
+            surplusAmount = funds[4].sub(funds[1].add(_dataValues[1]));
         } else {
             // finalWantTokenBalance == initialWantTokenBalance + wantAmount
             require(funds[4] == funds[1].add(_dataValues[1]));
@@ -386,7 +383,7 @@ library BrokerUtils {
     {
         UniswapFactory factory = UniswapFactory(_tradeProviders[1]);
         // _dataValues[2] bits(24..56): delay
-        uint256 deadline = now + ((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);
+        uint256 deadline = now.add((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);
 
         if (_assetIds[0] == ETHER_ADDR) {
             UniswapExchange exchange = UniswapExchange(factory.getExchange(_assetIds[1]));
@@ -517,16 +514,11 @@ library BrokerUtils {
         private
         pure
     {
-        uint256 i = 1;
-        // i += numOffers * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+
+        uint256 i = 1 + numOffers * 2 + numFills * 2;
+        uint256 end = _values.length;
 
         // loop matches
         for (i; i < end; i++) {
@@ -559,6 +551,43 @@ library BrokerUtils {
             // require that bits(16..128) are all zero for every match
             // Error code 55: _validateMatches, invalid match data
             require((_values[i] & ~(~uint256(0) << 128)) >> 16 == uint256(0), "55");
+
+            uint256 takeAmount = _values[i] >> 128;
+            // Error code 56: _validateMatches, invalid match.takeAmount
+            require(takeAmount > 0, "56");
+
+            uint256 offerDataB = _values[2 + offerIndex * 2];
+            // (offer.wantAmount * takeAmount) % offer.offerAmount == 0
+            // Error code 57: _validateMatches, invalid amounts
+            require(
+                (offerDataB >> 128).mul(takeAmount).mod(offerDataB & ~(~uint256(0) << 128)) == 0,
+                "57"
+            );
+        }
+    }
+
+    function _validateNetworkMatches(
+        uint256[] memory _values,
+        address[] memory _addresses,
+        address _operator
+    )
+        private
+        pure
+    {
+        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
+
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 end = _values.length;
+
+        // loop matches
+        for (i; i < end; i++) {
+            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 surplusAssetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
+
+            // Error code 51: _validateMatches, invalid match.offerIndex
+            require(offerIndex < numOffers, "51");
+            require(_addresses[surplusAssetIndex * 2] == _operator);
 
             uint256 takeAmount = _values[i] >> 128;
             // Error code 56: _validateMatches, invalid match.takeAmount
@@ -666,6 +695,71 @@ library BrokerUtils {
                 // offerAmount > 0 && wantAmount > 0
                 (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
                 "60"
+            );
+
+            // Error code 61: _validateTradeData, invalid operator address placeholder
+             require(
+                // _addresses[operator address index] == address(0)
+                // The actual operator address will be read directly from
+                // the contract's storage
+                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == address(0),
+                "61"
+            );
+
+            // Error code 62: _validateTradeData, invalid operator fee asset ID placeholder
+             require(
+                // _addresses[operator fee asset ID index] == address(0)
+                // The actual fee asset ID will be read from the filler / maker feeAssetId
+                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(0),
+                "62"
+            );
+        }
+    }
+
+    function _validateOfferData(
+        uint256[] memory _values,
+        address[] memory _addresses,
+        address _operator
+    )
+        private
+        pure
+    {
+        // numOffers
+        uint256 i = (_values[0] & ~(~uint256(0) << 8));
+        // numOffers + numFills
+        uint256 end = (_values[0] & ~(~uint256(0) << 8)) +
+                      ((_values[0] & ~(~uint256(0) << 16)) >> 8);
+
+        for (i; i < end; i++) {
+            uint256 dataA = _values[i * 2 + 1];
+            uint256 dataB = _values[i * 2 + 2];
+            uint256 feeAssetIndex = ((dataA & ~(~uint256(0) << 40)) >> 32) * 2;
+
+            // Error code 59: _validateTradeData, invalid trade assets
+            require(
+                // offerAssetId != wantAssetId
+                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1] !=
+                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1],
+                "59"
+            );
+
+            // Error code 60: _validateTradeData, invalid trade amounts
+            require(
+                // offerAmount > 0 && wantAmount > 0
+                (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
+                "60"
+            );
+
+            // Error code 61: _validateTradeData, invalid operator address
+             require(
+                _addresses[feeAssetIndex] == _operator,
+                "61"
+            );
+
+            // Error code 62: _validateTradeData, invalid operator fee asset ID
+             require(
+                _addresses[feeAssetIndex + 1] == _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1],
+                "62"
             );
         }
     }

@@ -794,7 +794,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         bytes32[] memory hashKeys = BrokerUtils.validateNetworkTrades(
             _values,
             _hashes,
-            _addresses
+            _addresses,
+            operatorAddress
         );
 
         _creditMakerBalances(_values, _addresses);
@@ -996,7 +997,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Error code 20: announceCancel, nothing left to cancel
         require(offers[offerHash] > 0, "20");
 
-        uint256 cancellableAt = now + slowCancelDelay;
+        uint256 cancellableAt = now.add(slowCancelDelay);
         cancellationAnnouncements[offerHash] = cancellableAt;
 
         emit AnnounceCancel(offerHash, cancellableAt);
@@ -1181,7 +1182,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         WithdrawalAnnouncement storage announcement = withdrawalAnnouncements[msg.sender][_assetId];
 
-        announcement.withdrawableAt = now + slowWithdrawDelay;
+        announcement.withdrawableAt = now.add(slowWithdrawDelay);
         announcement.amount = _amount;
 
         emit AnnounceWithdraw(msg.sender, _assetId, _amount, announcement.withdrawableAt);
