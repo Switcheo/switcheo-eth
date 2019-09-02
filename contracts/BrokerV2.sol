@@ -808,7 +808,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _addresses,
             tradeProviders
         );
-        _incrementBalances(increments, 0, increments.length - 1, _addresses);
+        _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -1475,7 +1475,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        _incrementBalances(increments, min, max, _addresses);
+        _incrementBalances(increments, 1, min, max, _addresses);
     }
 
     /// @dev Credit makers for each amount received through a matched fill.
@@ -1519,7 +1519,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < wantAssetIndex) { max = wantAssetIndex; }
         }
 
-        _incrementBalances(increments, min, max, _addresses);
+        _incrementBalances(increments, 1, min, max, _addresses);
     }
 
     /// @dev Credit the operator for each offer.feeAmount if the offer has not
@@ -1565,7 +1565,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        _incrementBalances(increments, min, max, _addresses);
+        _incrementBalances(increments, 1, min, max, _addresses);
     }
 
     /// @dev Deduct tokens from fillers for each fill.offerAmount
@@ -2028,6 +2028,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     function _incrementBalances(
         uint256[] memory increments,
+        uint256 _static,
         uint256 _i,
         uint256 _end,
         address[] memory _addresses
@@ -2041,7 +2042,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
             balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
 
-            emit Increment(_i << 248 | increment);
+            emit Increment((_i << 248) | (_static << 240) | increment);
         }
     }
 
