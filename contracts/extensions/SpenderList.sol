@@ -1,6 +1,7 @@
 pragma solidity 0.5.10;
 
 import "./BrokerExtension.sol";
+import "../Utils.sol";
 
 contract SpenderList is BrokerExtension {
     // The constants for EIP-712 are precompiled to reduce contract size,
@@ -73,7 +74,7 @@ contract SpenderList is BrokerExtension {
     /// See `authorizeSpender` and `spendFrom` methods for more details.
     /// @param _spender The address of the spender contract to whitelist
     function whitelistSpender(address _spender) external onlyOwner {
-        _validateAddress(_spender);
+        Utils.validateAddress(_spender);
         // Error code 10: whitelistSpender, spender is already whitelisted
         require(!spenderWhitelist[_spender], "10");
         spenderWhitelist[_spender] = true;
@@ -87,7 +88,7 @@ contract SpenderList is BrokerExtension {
     /// cause a user's funds to be locked in the spender contract.
     /// @param _spender The address of the spender contract to remove from the whitelist
     function unwhitelistSpender(address _spender) external onlyOwner {
-        _validateAddress(_spender);
+        Utils.validateAddress(_spender);
          // Error code 11: unwhitelistSpender, spender is not whitelisted
         require(spenderWhitelist[_spender], "11");
         delete spenderWhitelist[_spender];
@@ -121,7 +122,7 @@ contract SpenderList is BrokerExtension {
         require(spenderWhitelist[_spender], "12");
         broker.markNonce(_nonce);
 
-        _validateSignature(
+        Utils.validateSignature(
             keccak256(abi.encode(
                 AUTHORIZE_SPENDER_TYPEHASH,
                 _user,
@@ -163,53 +164,5 @@ contract SpenderList is BrokerExtension {
 
     function validateSpenderAuthorization(address _user, address _spender) external view {
         require(spenderAuthorizations[_user][_spender]);
-    }
-
-    /// @dev Validates that the specified `_hash` was signed by the specified `_user`.
-    /// This method supports the EIP712 specification, the older Ethereum
-    /// signed message specification is also supported for backwards compatibility.
-    /// @param _hash The original hash that was signed by the user
-    /// @param _user The user who signed the hash
-    /// @param _v The `v` component of the `_user`'s signature
-    /// @param _r The `r` component of the `_user`'s signature
-    /// @param _s The `s` component of the `_user`'s signature
-    /// @param _prefixed If true, the signature will be verified
-    /// against the Ethereum signed message specification instead of the
-    /// EIP712 specification
-    function _validateSignature(
-        bytes32 _hash,
-        address _user,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s,
-        bool _prefixed
-    )
-        private
-        pure
-    {
-        bytes32 eip712Hash = keccak256(abi.encodePacked(
-            "\x19\x01",
-            DOMAIN_SEPARATOR,
-            _hash
-        ));
-
-        if (_prefixed) {
-            bytes32 prefixedHash = keccak256(abi.encodePacked(
-                "\x19Ethereum Signed Message:\n32",
-                eip712Hash
-            ));
-            // Error code 43: _validateSignature, invalid prefixed signature
-            require(_user == ecrecover(prefixedHash, _v, _r, _s), "43");
-        } else {
-            // Error code 44: _validateSignature, invalid non-prefixed signature
-            require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
-        }
-    }
-
-    /// @dev Ensures that `_address` is not the zero address
-    /// @param _address The address to check
-    function _validateAddress(address _address) private pure {
-        // Error code 45: _validateAddress, invalid address
-        require(_address != address(0), "45");
     }
 }

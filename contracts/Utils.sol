@@ -287,6 +287,54 @@ library Utils {
         return ERC20(_assetId).balanceOf(address(this));
     }
 
+    /// @dev Validates that the specified `_hash` was signed by the specified `_user`.
+    /// This method supports the EIP712 specification, the older Ethereum
+    /// signed message specification is also supported for backwards compatibility.
+    /// @param _hash The original hash that was signed by the user
+    /// @param _user The user who signed the hash
+    /// @param _v The `v` component of the `_user`'s signature
+    /// @param _r The `r` component of the `_user`'s signature
+    /// @param _s The `s` component of the `_user`'s signature
+    /// @param _prefixed If true, the signature will be verified
+    /// against the Ethereum signed message specification instead of the
+    /// EIP712 specification
+    function validateSignature(
+        bytes32 _hash,
+        address _user,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s,
+        bool _prefixed
+    )
+        public
+        pure
+    {
+        bytes32 eip712Hash = keccak256(abi.encodePacked(
+            "\x19\x01",
+            DOMAIN_SEPARATOR,
+            _hash
+        ));
+
+        if (_prefixed) {
+            bytes32 prefixedHash = keccak256(abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                eip712Hash
+            ));
+            // Error code 43: validateSignature, invalid prefixed signature
+            require(_user == ecrecover(prefixedHash, _v, _r, _s), "43");
+        } else {
+            // Error code 44: validateSignature, invalid non-prefixed signature
+            require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
+        }
+    }
+
+    /// @dev Ensures that `_address` is not the zero address
+    /// @param _address The address to check
+    function validateAddress(address _address) public pure {
+        // Error code 45: validateAddress, invalid address
+        require(_address != address(0), "45");
+    }
+
     // _data
     // bits(0..8): offerIndex
     // bits(8..16): marketDapp
@@ -758,7 +806,7 @@ library Utils {
             // at that index
             bool prefixedSignature = ((dataA & ~(~uint256(0) << 56)) >> 48) != 0;
 
-            _validateSignature(
+            validateSignature(
                 hashKey,
                 _addresses[(dataA & ~(~uint256(0) << 8)) * 2], // user
                 uint8((dataA & ~(~uint256(0) << 48)) >> 40), // The `v` component of the user's signature
@@ -771,47 +819,6 @@ library Utils {
         }
 
         return hashKeys;
-    }
-
-    /// @dev Validates that the specified `_hash` was signed by the specified `_user`.
-    /// This method supports the EIP712 specification, the older Ethereum
-    /// signed message specification is also supported for backwards compatibility.
-    /// @param _hash The original hash that was signed by the user
-    /// @param _user The user who signed the hash
-    /// @param _v The `v` component of the `_user`'s signature
-    /// @param _r The `r` component of the `_user`'s signature
-    /// @param _s The `s` component of the `_user`'s signature
-    /// @param _prefixed If true, the signature will be verified
-    /// against the Ethereum signed message specification instead of the
-    /// EIP712 specification
-    function _validateSignature(
-        bytes32 _hash,
-        address _user,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s,
-        bool _prefixed
-    )
-        private
-        pure
-    {
-        bytes32 eip712Hash = keccak256(abi.encodePacked(
-            "\x19\x01",
-            DOMAIN_SEPARATOR,
-            _hash
-        ));
-
-        if (_prefixed) {
-            bytes32 prefixedHash = keccak256(abi.encodePacked(
-                "\x19Ethereum Signed Message:\n32",
-                eip712Hash
-            ));
-            // Error code 43: _validateSignature, invalid prefixed signature
-            require(_user == ecrecover(prefixedHash, _v, _r, _s), "43");
-        } else {
-            // Error code 44: _validateSignature, invalid non-prefixed signature
-            require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
-        }
     }
 
     /// @dev Ensure that the address is a deployed contract

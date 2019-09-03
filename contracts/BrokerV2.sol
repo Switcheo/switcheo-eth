@@ -1934,23 +1934,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
         pure
     {
-        bytes32 eip712Hash = keccak256(abi.encodePacked(
-            "\x19\x01",
-            DOMAIN_SEPARATOR,
-            _hash
-        ));
-
-        if (_prefixed) {
-            bytes32 prefixedHash = keccak256(abi.encodePacked(
-                "\x19Ethereum Signed Message:\n32",
-                eip712Hash
-            ));
-            // Error code 43: _validateSignature, invalid prefixed signature
-            require(_user == ecrecover(prefixedHash, _v, _r, _s), "43");
-        } else {
-            // Error code 44: _validateSignature, invalid non-prefixed signature
-            require(_user == ecrecover(eip712Hash, _v, _r, _s), "44");
-        }
+        Utils.validateSignature(
+            _hash,
+            _user,
+            _v,
+            _r,
+            _s,
+            _prefixed
+        );
     }
 
     /// @dev A utility method to increase the balance of a user.
@@ -2012,8 +2003,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @dev Ensures that `_address` is not the zero address
     /// @param _address The address to check
     function _validateAddress(address _address) private pure {
-        // Error code 45: _validateAddress, invalid address
-        require(_address != address(0), "45");
+        Utils.validateAddress(_address);
     }
 
     function _incrementBalances(

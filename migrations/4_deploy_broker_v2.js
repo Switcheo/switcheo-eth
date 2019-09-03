@@ -13,9 +13,14 @@ const BrokerV2 = artifacts.require('BrokerV2')
 module.exports = function(deployer) {
     deployer.then(async () => {
         await deployer.deploy(Utils)
-        await deployer.link(Utils, BrokerV2)
+
+        await deployer.link(Utils, TokenList)
+        await deployer.link(Utils, SpenderList)
+
         await deployer.link(Utils, KyberSwapDapp)
         await deployer.link(Utils, UniswapDapp)
+
+        await deployer.link(Utils, BrokerV2)
 
         const tokenList = await deployer.deploy(TokenList)
         const spenderList = await deployer.deploy(SpenderList)
