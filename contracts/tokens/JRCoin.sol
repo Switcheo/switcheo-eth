@@ -1,7 +1,7 @@
 pragma solidity 0.5.10;
 
-import "./lib/token/ERC20/ERC20.sol";
-import "./lib/token/ERC20/ERC20Detailed.sol";
+import "../lib/token/ERC20/ERC20.sol";
+import "../lib/token/ERC20/ERC20Detailed.sol";
 
 /**
 * @title JR Coin - Standard ERC20 token for testing
