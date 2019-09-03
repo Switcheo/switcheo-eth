@@ -156,7 +156,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // ));
     bytes32 public constant SWAP_TYPEHASH = 0x6ba9001457a287c210b728198a424a4222098d7fac48f8c5fb5ab10ef907d3ef;
 
-    // Ether token address is set as the constant 0x00
+    // The Ether token address is set as the constant 0x00 for backwards
+    // compatibility
     address private constant ETHER_ADDR = address(0);
 
     // Reason codes are used by the off-chain coordinator to track balance changes
@@ -215,6 +216,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     // A record of admin addresses: userAddress => isAdmin
     mapping(address => bool) public adminAddresses;
+    // A record of market DApp addresses
     address[] public marketDapps;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
@@ -406,17 +408,24 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         delete adminAddresses[_admin];
     }
 
-    function addMarketDapp(address _provider) external onlyOwner {
-        _validateAddress(_provider);
-        marketDapps.push(_provider);
+    /// @notice Adds a market DApp to be used in `networkTrade`
+    /// @param _dapp Address of the market DApp
+    function addMarketDapp(address _dapp) external onlyOwner {
+        _validateAddress(_dapp);
+        marketDapps.push(_dapp);
     }
 
-    function updateMarketDapp(uint256 _index, address _provider) external onlyOwner {
-        _validateAddress(_provider);
+    /// @notice Updates a market DApp to be used in `networkTrade`
+    /// @param _index Index of the market DApp to update
+    /// @param _dapp The new address of the market DApp
+    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner {
+        _validateAddress(_dapp);
         require(marketDapps[_index] != address(0));
-        marketDapps[_index] = _provider;
+        marketDapps[_index] = _dapp;
     }
 
+    /// @notice Removes a market DApp
+    /// @param _index Index of the market DApp to remove
     function removeMarketDapp(uint256 _index) external onlyOwner {
         require(marketDapps[_index] != address(0));
         delete marketDapps[_index];
@@ -786,8 +795,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _values[1 + numOffers * 2 + i] Data for the i'th match
     /// bits(0..8): Index of the offerIndex for this match
     /// bits(8..16): Index of the marketDapp for this match
-    /// bits(16..24): Index of the surplus asset ID for this match, for any excess
-    /// tokens resulting from the trade
+    /// bits(16..24): Index of the surplus receiver and surplus asset ID for this
+    /// match, for any excess tokens resulting from the trade
+    /// bits(24..128): Additional DApp specific data
     /// bits(128..256): The number of tokens to take from the matched offer's offerAmount
     ///
     /// @param _hashes[i * 2] The `r` component of the maker's / filler's signature

@@ -77,6 +77,8 @@ library Utils {
     // ));
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
 
+    // The Ether token address is set as the constant 0x00 for backwards
+    // compatibility
     address private constant ETHER_ADDR = address(0);
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
@@ -152,6 +154,11 @@ library Utils {
         );
     }
 
+    /// @dev Executes trades against external markets,
+    /// see `BrokerV2.networkTrade` for param details.
+    /// @param _values Values from `networkTrade`
+    /// @param _addresses Addresses from `networkTrade`
+    /// @param _marketDapps See `BrokerV2.marketDapps`
     function performNetworkTrades(
         uint256[] memory _values,
         address[] memory _addresses,
@@ -201,6 +208,10 @@ library Utils {
         return increments;
     }
 
+    /// @notice Approves a token transfer
+    /// @param _assetId The address of the token to approve
+    /// @param _spender The address of the spender to approve
+    /// @param _amount The number of tokens to approve
     function approveTokenTransfer(
         address _assetId,
         address _spender,
@@ -224,6 +235,13 @@ library Utils {
         _validateContractCallResult(returnData);
     }
 
+    /// @notice Transfers tokens into the contract
+    /// @param _user The address to transfer the tokens from
+    /// @param _assetId The address of the token to transfer
+    /// @param _amount The number of tokens to transfer
+    /// @param _expectedAmount The number of tokens expected to be received,
+    /// this may not match `_amount`, for example, tokens which have a
+    /// propotion burnt on transfer will have a different amount received.
     function transferTokensIn(
         address _user,
         address _assetId,
@@ -257,6 +275,10 @@ library Utils {
         require(transferredAmount == _expectedAmount, "46");
     }
 
+    /// @notice Transfers tokens from the contract to a user
+    /// @param _receivingAddress The address to transfer the tokens to
+    /// @param _assetId The address of the token to transfer
+    /// @param _amount The number of tokens to transfer
     function transferTokensOut(
         address _receivingAddress,
         address _assetId,
@@ -281,6 +303,8 @@ library Utils {
         _validateContractCallResult(returnData);
     }
 
+    /// @notice Returns the number of tokens owned by this contract
+    /// @param _assetId The address of the token to query
     function externalBalance(address _assetId) public view returns (uint256) {
         if (_assetId == ETHER_ADDR) {
             return address(this).balance;
@@ -288,6 +312,10 @@ library Utils {
         return tokenBalance(_assetId);
     }
 
+    /// @notice Returns the number of tokens owned by this contract.
+    /// @dev This will not work for Ether tokens, use `externalBalance` for
+    /// Ether tokens.
+    /// @param _assetId The address of the token to query
     function tokenBalance(address _assetId) public view returns (uint256) {
         return ERC20(_assetId).balanceOf(address(this));
     }
@@ -340,12 +368,21 @@ library Utils {
         require(_address != address(0), "45");
     }
 
-    // _data
-    // bits(0..8): offerIndex
-    // bits(8..16): marketDapp
-    // bits(16..24): operator.surplusAssetIndex
-    // bits(24..128): provider-specific data
-    // bits(128..256): match.takeAmount
+    /// @notice Executes a trade against an external market.
+    /// @dev The initial Ether or token balance is compared with the
+    /// balance after the trade to ensure that the appropriate amounts of
+    /// tokens were taken and an appropriate amount received.
+    /// The trade will fail if the number of tokens received is less than
+    /// expected. If the number of tokens received is more than expected than
+    /// the excess tokens are transferred to the `BrokerV2.operator`.
+    /// @param _assetIds[0] The offerAssetId of the offer
+    /// @param _assetIds[2] The wantAssetId of the offer
+    /// @param _assetIds[3] The surplusAssetId
+    /// @param _dataValues[0] The number of tokens offerred
+    /// @param _dataValues[1] The number of tokens expected to be received
+    /// @param _dataValues[2] Match data
+    /// @param _marketDapps See `BrokerV2.marketDapps`
+    /// @param _addresses Addresses from `networkTrade`
     function _performNetworkTrade(
         address[] memory _assetIds,
         uint256[] memory _dataValues,
@@ -366,14 +403,17 @@ library Utils {
         }
 
         uint256 ethValue = 0;
+        address tokenReceiver;
+
         if (_assetIds[0] != ETHER_ADDR) {
+            tokenReceiver = marketDapp.tokenReceiver(_assetIds, _dataValues, _addresses);
             approveTokenTransfer(
-                _assetIds[0],
-                marketDapp.tokenReceiver(_assetIds, _dataValues, _addresses),
-                _dataValues[0]
+                _assetIds[0], // offerAssetId
+                tokenReceiver,
+                _dataValues[0] // offerAmount
             );
         } else {
-            ethValue = _dataValues[0];
+            ethValue = _dataValues[0]; // offerAmount
         }
 
         marketDapp.trade.value(ethValue)(
@@ -393,6 +433,7 @@ library Utils {
         uint256 surplusAmount = 0;
 
         // validate that the appropriate offerAmount was deducted
+        // surplusAssetId == offerAssetId
         if (_assetIds[2] == _assetIds[0]) {
             // surplusAmount = finalOfferTokenBalance - (initialOfferTokenBalance - offerAmount)
             surplusAmount = funds[3].sub(funds[0].sub(_dataValues[0]));
@@ -402,6 +443,7 @@ library Utils {
         }
 
         // validate that the appropriate wantAmount was credited
+        // surplusAssetId == wantAssetId
         if (_assetIds[2] == _assetIds[1]) {
             // surplusAmount = finalWantTokenBalance - (initialWantTokenBalance + wantAmount)
             surplusAmount = funds[4].sub(funds[1].add(_dataValues[1]));
@@ -410,8 +452,19 @@ library Utils {
             require(funds[4] == funds[1].add(_dataValues[1]));
         }
 
+        // surplusAssetId != offerAssetId && surplusAssetId != wantAssetId
         if (_assetIds[2] != _assetIds[0] && _assetIds[2] != _assetIds[1]) {
+            // surplusAmount = finalSurplusTokenBalance - initialSurplusTokenBalance
             surplusAmount = funds[5].sub(funds[2]);
+        }
+
+        // set the approved token amount back to zero
+        if (_assetIds[0] != ETHER_ADDR) {
+            approveTokenTransfer(
+                _assetIds[0],
+                tokenReceiver,
+                0
+            );
         }
 
         return surplusAmount;
