@@ -18,7 +18,7 @@ module.exports = function(deployer) {
         await spenderList.setBroker(broker.address)
         await tokenList.setBroker(broker.address)
 
-        await broker.addTradeProvider((await KyberNetworkProxy.deployed()).address)
-        await broker.addTradeProvider((await UniswapFactory.deployed()).address)
+        await broker.addMarketDapp((await KyberNetworkProxy.deployed()).address)
+        await broker.addMarketDapp((await UniswapFactory.deployed()).address)
     })
 }

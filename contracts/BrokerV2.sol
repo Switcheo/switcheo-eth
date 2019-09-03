@@ -215,7 +215,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     // A record of admin addresses: userAddress => isAdmin
     mapping(address => bool) public adminAddresses;
-    address[] public tradeProviders;
+    address[] public marketDapps;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
     // A mapping of withdrawal announcements: userAddress => assetId => announcementData
@@ -406,20 +406,20 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         delete adminAddresses[_admin];
     }
 
-    function addTradeProvider(address _provider) external onlyOwner {
+    function addMarketDapp(address _provider) external onlyOwner {
         _validateAddress(_provider);
-        tradeProviders.push(_provider);
+        marketDapps.push(_provider);
     }
 
-    function updateTradeProvider(uint256 _index, address _provider) external onlyOwner {
+    function updateMarketDapp(uint256 _index, address _provider) external onlyOwner {
         _validateAddress(_provider);
-        require(tradeProviders[_index] != address(0));
-        tradeProviders[_index] = _provider;
+        require(marketDapps[_index] != address(0));
+        marketDapps[_index] = _provider;
     }
 
-    function removeTradeProvider(uint256 _index) external onlyOwner {
-        require(tradeProviders[_index] != address(0));
-        delete tradeProviders[_index];
+    function removeMarketDapp(uint256 _index) external onlyOwner {
+        require(marketDapps[_index] != address(0));
+        delete marketDapps[_index];
     }
 
     /// @notice Performs a balance transfer from one address to another
@@ -787,7 +787,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256[] memory increments = BrokerUtils.performNetworkTrades(
             _values,
             _addresses,
-            tradeProviders
+            marketDapps
         );
         _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
     }

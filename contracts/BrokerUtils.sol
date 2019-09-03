@@ -163,7 +163,7 @@ library BrokerUtils {
     function performNetworkTrades(
         uint256[] calldata _values,
         address[] calldata _addresses,
-        address[] calldata _tradeProviders
+        address[] calldata _marketDapps
     )
         external
         returns (uint256[] memory)
@@ -201,7 +201,7 @@ library BrokerUtils {
             increments[data[2]] = _performNetworkTrade(
                 assetIds,
                 dataValues,
-                _tradeProviders,
+                _marketDapps,
                 _addresses
             );
         }
@@ -286,7 +286,7 @@ library BrokerUtils {
     function _performNetworkTrade(
         address[] memory _assetIds,
         uint256[] memory _dataValues,
-        address[] memory _tradeProviders,
+        address[] memory _marketDapps,
         address[] memory _addresses
     )
         private
@@ -305,14 +305,14 @@ library BrokerUtils {
             _performKyberSwapTrade(
                 _assetIds,
                 _dataValues,
-                _tradeProviders,
+                _marketDapps,
                 _addresses
             );
         } else if (tradeProvider == 1) {
             _performUniswapTrade(
                 _assetIds,
                 _dataValues,
-                _tradeProviders
+                _marketDapps
             );
         }
 
@@ -352,12 +352,12 @@ library BrokerUtils {
     function _performKyberSwapTrade(
         address[] memory _assetIds,
         uint256[] memory _dataValues,
-        address[] memory _tradeProviders,
+        address[] memory _marketDapps,
         address[] memory _addresses
     )
         private
     {
-        KyberNetworkProxy kyberNetworkProxy = KyberNetworkProxy(_tradeProviders[0]);
+        KyberNetworkProxy kyberNetworkProxy = KyberNetworkProxy(_marketDapps[0]);
         address kyberNetworkContract = kyberNetworkProxy.kyberNetworkContract();
 
         uint256 ethValue = 0;
@@ -388,11 +388,11 @@ library BrokerUtils {
     function _performUniswapTrade(
         address[] memory _assetIds,
         uint256[] memory _dataValues,
-        address[] memory _tradeProviders
+        address[] memory _marketDapps
     )
         private
     {
-        UniswapFactory factory = UniswapFactory(_tradeProviders[1]);
+        UniswapFactory factory = UniswapFactory(_marketDapps[1]);
         // _dataValues[2] bits(24..56): delay
         uint256 deadline = now.add((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);
 
