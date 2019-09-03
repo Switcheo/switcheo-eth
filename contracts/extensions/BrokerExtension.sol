@@ -7,7 +7,6 @@ interface Broker {
 }
 
 contract BrokerExtension {
-    address public brokerAddress;
     Broker public broker;
 
     modifier onlyAdmin() {
@@ -21,10 +20,9 @@ contract BrokerExtension {
         _;
     }
 
-    function setBrokerAddress(address _brokerAddress) external {
+    function setBroker(address _brokerAddress) external {
         require(_brokerAddress != address(0));
-        require(brokerAddress == address(0));
-        brokerAddress = _brokerAddress;
-        broker = Broker(brokerAddress);
+        require(address(broker) == address(0));
+        broker = Broker(_brokerAddress);
     }
 }

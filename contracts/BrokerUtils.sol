@@ -7,22 +7,9 @@ interface ERC20 {
     function approve(address spender, uint256 value) external returns (bool);
 }
 
-interface KyberNetworkProxy {
-    function kyberNetworkContract() external view returns (address);
-    function trade(address src, uint256 srcAmount, address dest, address payable destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) external payable returns (uint256);
-}
-
-interface UniswapFactory {
-    function getExchange(address token) external view returns (address exchange);
-}
-
-interface UniswapExchange {
-    // Trade ETH to ERC20
-    function ethToTokenSwapInput(uint256 minTokens, uint256 deadline) external payable returns (uint256 tokensBought);
-    // Trade ERC20 to ETH
-    function tokenToEthSwapInput(uint256 tokensSold, uint256 minEth, uint256 deadline) external returns (uint256 ethBought);
-    // Trade ERC20 to ERC20
-    function tokenToTokenSwapInput(uint256 tokensSold, uint256 minTokensBought, uint256 minEthBought, uint256 deadline, address tokenAddr) external returns (uint256 tokensBought);
+interface MarketDapp {
+    function tokenReceiver(address[] calldata assetIds, uint256[] calldata dataValues, address[] calldata addresses) external view returns(address);
+    function trade(address[] calldata assetIds, uint256[] calldata dataValues, address[] calldata addresses, address payable recipient) external payable;
 }
 
 /// @title Util functions for the BrokerV2 contract for Switcheo Exchange
@@ -292,7 +279,8 @@ library BrokerUtils {
         private
         returns (uint256)
     {
-        uint256 marketDapp = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
+        uint256 dappIndex = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
+        MarketDapp marketDapp = MarketDapp(_marketDapps[dappIndex]);
 
         uint256[] memory funds = new uint256[](6);
         funds[0] = externalBalance(_assetIds[0]); // initialOfferTokenBalance
@@ -301,20 +289,23 @@ library BrokerUtils {
             funds[2] = externalBalance(_assetIds[2]); // initialSurplusTokenBalance
         }
 
-        if (marketDapp == 0) {
-            _performKyberSwapTrade(
-                _assetIds,
-                _dataValues,
-                _marketDapps,
-                _addresses
+        uint256 ethValue = 0;
+        if (_assetIds[0] != ETHER_ADDR) {
+            ERC20(_assetIds[0]).approve(
+                marketDapp.tokenReceiver(_assetIds, _dataValues, _addresses),
+                _dataValues[0]
             );
-        } else if (marketDapp == 1) {
-            _performUniswapTrade(
-                _assetIds,
-                _dataValues,
-                _marketDapps
-            );
+        } else {
+            ethValue = _dataValues[0];
         }
+
+        marketDapp.trade.value(ethValue)(
+            _assetIds,
+            _dataValues,
+            _addresses,
+            // use uint160 to cast `address` to `address payable`
+            address(uint160(address(this))) // destAddress
+        );
 
         funds[3] = externalBalance(_assetIds[0]); // finalOfferTokenBalance
         funds[4] = externalBalance(_assetIds[1]); // finalWantTokenBalance
@@ -347,75 +338,6 @@ library BrokerUtils {
         }
 
         return surplusAmount;
-    }
-
-    function _performKyberSwapTrade(
-        address[] memory _assetIds,
-        uint256[] memory _dataValues,
-        address[] memory _marketDapps,
-        address[] memory _addresses
-    )
-        private
-    {
-        KyberNetworkProxy kyberNetworkProxy = KyberNetworkProxy(_marketDapps[0]);
-        address kyberNetworkContract = kyberNetworkProxy.kyberNetworkContract();
-
-        uint256 ethValue = 0;
-        if (_assetIds[0] != ETHER_ADDR) {
-            ERC20(_assetIds[0]).approve(kyberNetworkContract, _dataValues[0]);
-        } else {
-            ethValue = _dataValues[0];
-        }
-
-        address srcAssetId = _assetIds[0] == ETHER_ADDR ? KYBER_ETHER_ADDR : _assetIds[0];
-        address dstAssetId = _assetIds[1] == ETHER_ADDR ? KYBER_ETHER_ADDR : _assetIds[1];
-
-        // _dataValues[2] bits(24..32): fee sharing walletAddressIndex
-        uint256 walletAddressIndex = (_dataValues[2] & ~(~uint256(0) << 32)) >> 24;
-
-        kyberNetworkProxy.trade.value(ethValue)(
-            srcAssetId,
-            _dataValues[0], // srcAmount
-            dstAssetId, // dest
-            // use uint160 to cast `address` to `address payable`
-            address(uint160(address(this))), // destAddress
-            ~uint256(0), // maxDestAmount
-            uint256(0), // minConversionRate
-            _addresses[walletAddressIndex] // walletId
-        );
-    }
-
-    function _performUniswapTrade(
-        address[] memory _assetIds,
-        uint256[] memory _dataValues,
-        address[] memory _marketDapps
-    )
-        private
-    {
-        UniswapFactory factory = UniswapFactory(_marketDapps[1]);
-        // _dataValues[2] bits(24..56): delay
-        uint256 deadline = now.add((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);
-
-        if (_assetIds[0] == ETHER_ADDR) {
-            UniswapExchange exchange = UniswapExchange(factory.getExchange(_assetIds[1]));
-            exchange.ethToTokenSwapInput.value(_dataValues[0])(_dataValues[1], deadline);
-            return;
-        }
-
-        address exchangeAddress = factory.getExchange(_assetIds[0]);
-        UniswapExchange exchange = UniswapExchange(exchangeAddress);
-
-        ERC20(_assetIds[0]).approve(exchangeAddress, _dataValues[0]);
-
-        if (_assetIds[1] == ETHER_ADDR) {
-            exchange.tokenToEthSwapInput(_dataValues[0], _dataValues[1], deadline);
-            return;
-        }
-
-        // Use the minimum of 1 for minEth as the amount of intermediate eth
-        // used for the trade is not important. It is only important that the
-        // final received tokens is more than or equal to the wantAmount.
-        exchange.tokenToTokenSwapInput(_dataValues[0], _dataValues[1], 1, deadline, _assetIds[1]);
     }
 
     /// @dev Validates that input lengths based on the expected format

@@ -1,6 +1,6 @@
 pragma solidity 0.5.10;
 
-import "../lib/math/SafeMath.sol";
+import "../../lib/math/SafeMath.sol";
 
 interface ERC20 {
     function balanceOf(address account) external view returns (uint256);
@@ -34,17 +34,6 @@ contract UniswapExchange {
         return exchangeAddresses[_token];
     }
 
-    function ethToTokenSwapInput(
-        uint256 _minTokens,
-        uint256 _deadline
-    )
-        external
-        payable
-        returns (uint256)
-    {
-        return _ethToTokenInput(msg.value, _minTokens, _deadline, msg.sender);
-    }
-
     function ethToTokenTransferInput(
         uint256 _minTokens,
         uint256 _deadline,
@@ -57,10 +46,11 @@ contract UniswapExchange {
         return _ethToTokenInput(msg.value, _minTokens, _deadline, _recipient);
     }
 
-    function tokenToEthSwapInput(
+    function tokenToEthTransferInput(
         uint256 _tokensSold,
         uint256 _minEth,
-        uint256 _deadline
+        uint256 _deadline,
+        address payable _recipient
     )
         external
         returns (uint256)
@@ -73,17 +63,18 @@ contract UniswapExchange {
 
         require(ethBought >= _minEth);
 
-        buyer.transfer(ethBought);
+        _recipient.transfer(ethBought);
         _transferTokensIn(buyer, token, _tokensSold, _tokensSold);
 
         return ethBought;
     }
 
-    function tokenToTokenSwapInput(
+    function tokenToTokenTransferInput(
         uint256 _tokensSold,
         uint256 _minTokensBought,
         uint256 _minEthBought,
         uint256 _deadline,
+        address _recipient,
         address _tokenAddr
     )
         external
@@ -105,7 +96,7 @@ contract UniswapExchange {
         uint256 tokensBought = exchange.ethToTokenTransferInput.value(ethBought)(
             _minTokensBought,
             _deadline,
-            buyer
+            _recipient
         );
 
         return tokensBought;
