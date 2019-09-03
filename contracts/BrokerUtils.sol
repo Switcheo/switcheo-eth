@@ -196,6 +196,29 @@ library BrokerUtils {
         return increments;
     }
 
+    function approveTokenTransfer(
+        address _assetId,
+        address _spender,
+        uint256 _amount
+    )
+        public
+    {
+        _validateContractAddress(_assetId);
+
+        // Some tokens have an `approve` which returns a boolean and some do not.
+        // The ERC20 interface cannot be used here because it requires specifying
+        // an explicit return value, and an EVM exception would be raised when calling
+        // a token with the mismatched return value.
+        bytes memory payload = abi.encodeWithSignature(
+            "approve(address,uint256)",
+            _spender,
+            _amount
+        );
+        bytes memory returnData = _callContract(_assetId, payload);
+        // Ensure that the asset transfer succeeded
+        _validateContractCallResult(returnData);
+    }
+
     function transferTokensIn(
         address _user,
         address _assetId,
@@ -220,7 +243,7 @@ library BrokerUtils {
         );
         bytes memory returnData = _callContract(_assetId, payload);
         // Ensure that the asset transfer succeeded
-        _validateTransferResult(returnData);
+        _validateContractCallResult(returnData);
 
         uint256 finalBalance = tokenBalance(_assetId);
         uint256 transferredAmount = finalBalance.sub(initialBalance);
@@ -250,7 +273,7 @@ library BrokerUtils {
         bytes memory returnData = _callContract(_assetId, payload);
 
         // Ensure that the asset transfer succeeded
-        _validateTransferResult(returnData);
+        _validateContractCallResult(returnData);
     }
 
     function externalBalance(address _assetId) public view returns (uint256) {
@@ -291,7 +314,8 @@ library BrokerUtils {
 
         uint256 ethValue = 0;
         if (_assetIds[0] != ETHER_ADDR) {
-            ERC20(_assetIds[0]).approve(
+            approveTokenTransfer(
+                _assetIds[0],
                 marketDapp.tokenReceiver(_assetIds, _dataValues, _addresses),
                 _dataValues[0]
             );
@@ -827,8 +851,8 @@ library BrokerUtils {
     /// https://medium.com/loopring-protocol/an-incompatibility-in-smart-contract-threatening-dapp-ecosystem-72b8ca5db4da
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
     /// @param _data The data returned from a transfer call
-    function _validateTransferResult(bytes memory _data) private pure {
-        // Error code 64: _validateTransferResult, invalid transfer result
+    function _validateContractCallResult(bytes memory _data) private pure {
+        // Error code 64: _validateContractCallResult, invalid contract call result
         require(
             _data.length == 0 ||
             (_data.length == 32 && _getUint256FromBytes(_data) != 0),
