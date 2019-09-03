@@ -29,7 +29,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                '47'
+                'Invalid trade input'
             )
         })
     })
@@ -39,7 +39,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                '47'
+                'Invalid trade input'
             )
         })
     })
@@ -49,7 +49,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
                 ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
-                '47'
+                'Invalid trade input'
             )
         })
     })
@@ -59,7 +59,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ values }) => { values.push(1) },
                 () => { /* no op */ },
-                '48'
+                'Invalid _values.length'
             )
         })
     })
@@ -69,7 +69,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes.push(ZERO_ADDR) },
                 () => { /* no op */ },
-                '49'
+                'Invalid _hashes.length'
             )
         })
     })
@@ -82,7 +82,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '50'
+                'Invalid offer nonces'
             )
         })
     })
@@ -95,7 +95,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '50'
+                'Invalid offer nonces'
             )
         })
     })
@@ -108,7 +108,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '51'
+                'Invalid match.offerIndex'
             )
         })
     })
@@ -121,7 +121,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '52'
+                'Invalid match.fillIndex'
             )
         })
     })
@@ -134,7 +134,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '52'
+                'Invalid match.fillIndex'
             )
         })
     })
@@ -147,7 +147,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '53'
+                'offer.offerAssetId does not match fill.wantAssetId'
             )
         })
     })
@@ -160,7 +160,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '54'
+                'offer.wantAssetId does not match fill.offerAssetId'
             )
         })
     })
@@ -175,7 +175,7 @@ contract('Test trade: general validations', async (accounts) => {
                     values[values.length - 1] = values[values.length - 1].or(shl(1, 16))
                 },
                 [],
-                '55'
+                'Invalid match data'
             )
         })
     })
@@ -188,7 +188,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '56'
+                'Invalid match.takeAmount'
             )
         })
     })
@@ -201,7 +201,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '57'
+                'Invalid amounts'
             )
         })
     })
@@ -214,7 +214,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '58'
+                'Invalid fills'
             )
         })
     })
@@ -223,7 +223,7 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes[3] = ZERO_ADDR }, [],
-                '44'
+                'Invalid signature'
             )
         })
     })
@@ -232,7 +232,7 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                 ({ hashes }) => { hashes[7] = ZERO_ADDR }, [],
-                '44'
+                'Invalid signature'
             )
         })
     })
@@ -246,7 +246,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '59'
+                'Invalid trade assets'
             )
         })
     })
@@ -264,7 +264,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '60'
+                'Invalid trade amounts'
             )
         })
     })
@@ -282,7 +282,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '60'
+                'Invalid trade amounts'
             )
         })
     })
@@ -299,12 +299,12 @@ contract('Test trade: general validations', async (accounts) => {
                    }
                },
                [],
-               '61'
+               'Invalid operator address placeholder'
            )
        })
    })
 
-    contract('when the operator\'s fee asset ID is not set to address(0)', async () => {
+    contract('when the operator\'s fee asset ID is not set to address(1)', async () => {
        it('raises an error', async () => {
            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
                ({ addresses }) => {
@@ -316,7 +316,7 @@ contract('Test trade: general validations', async (accounts) => {
                    }
                },
                [],
-               '62'
+               'Invalid operator fee asset ID placeholder'
            )
        })
    })
@@ -333,7 +333,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '37'
+                '31'
             )
         })
     })
@@ -345,7 +345,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '42'
+                '36'
             )
         })
     })
@@ -358,7 +358,7 @@ contract('Test trade: general validations', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '42'
+                '36'
             )
         })
     })

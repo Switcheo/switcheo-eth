@@ -42,7 +42,7 @@ contract('Test trade: over match', async (accounts) => {
             await testValidation(exchange.trade, [],
                 [editedTradeParams, { privateKeys }],
                 [tradeParams, { privateKeys }],
-                '58'
+                'Invalid fills'
             )
         })
     })

@@ -419,14 +419,16 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _dapp The new address of the market DApp
     function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner {
         _validateAddress(_dapp);
-        require(marketDapps[_index] != address(0));
+        // Error code 8: updateMarketDapp, _index does not refer to a DApp address
+        require(marketDapps[_index] != address(0), "8");
         marketDapps[_index] = _dapp;
     }
 
     /// @notice Removes a market DApp
     /// @param _index Index of the market DApp to remove
     function removeMarketDapp(uint256 _index) external onlyOwner {
-        require(marketDapps[_index] != address(0));
+        // Error code 9: removeMarketDapp, _index does not refer to a DApp address
+        require(marketDapps[_index] != address(0), "9");
         delete marketDapps[_index];
     }
 
@@ -467,8 +469,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
     function deposit() external payable onlyActiveState {
-        // Error code 15: deposit, msg.value is 0
-        require(msg.value > 0, "15");
+        // Error code 10: deposit, msg.value is 0
+        require(msg.value > 0, "10");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
     }
 
@@ -1018,8 +1020,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
     {
-        // Error code 19: announceCancel, invalid msg.sender
-        require(_maker == msg.sender, "19");
+        // Error code 11: announceCancel, invalid msg.sender
+        require(_maker == msg.sender, "11");
 
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1033,8 +1035,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _offerNonce
         ));
 
-        // Error code 20: announceCancel, nothing left to cancel
-        require(offers[offerHash] > 0, "20");
+        // Error code 12: announceCancel, nothing left to cancel
+        require(offers[offerHash] > 0, "12");
 
         uint256 cancellableAt = now.add(slowCancelDelay);
         cancellationAnnouncements[offerHash] = cancellableAt;
@@ -1085,14 +1087,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         ));
 
         uint256 cancellableAt = cancellationAnnouncements[offerHash];
-        // Error code 21: slowCancel, cancellation was not announced
-        require(cancellableAt != 0, "21");
-        // Error code 22: slowCancel, cancellation delay not yet reached
-        require(now >= cancellableAt, "22");
+        // Error code 13: slowCancel, cancellation was not announced
+        require(cancellableAt != 0, "13");
+        // Error code 14: slowCancel, cancellation delay not yet reached
+        require(now >= cancellableAt, "14");
 
         uint256 availableAmount = offers[offerHash];
-        // Error code 23: slowCancel, nothing left to cancel
-        require(availableAmount > 0, "23");
+        // Error code 15: slowCancel, nothing left to cancel
+        require(availableAmount > 0, "15");
 
         delete cancellationAnnouncements[offerHash];
         _cancel(
@@ -1217,8 +1219,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
     {
 
-        // Error code 24: announceWithdraw, invalid withdrawal amount
-        require(_amount > 0 && _amount <= balances[msg.sender][_assetId], "24");
+        // Error code 16: announceWithdraw, invalid withdrawal amount
+        require(_amount > 0 && _amount <= balances[msg.sender][_assetId], "16");
 
         WithdrawalAnnouncement storage announcement = withdrawalAnnouncements[msg.sender][_assetId];
 
@@ -1244,12 +1246,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
-        // Error code 25: slowWithdraw, withdrawal was not announced
-        require(announcement.withdrawableAt != 0, "25");
-        // Error code 26: slowWithdraw, withdrawal delay not yet reached
-        require(now >= announcement.withdrawableAt, "26");
-        // Error code 27: slowWithdraw, withdrawal amount does not match announced amount
-        require(announcement.amount == _amount, "27");
+        // Error code 17: slowWithdraw, withdrawal was not announced
+        require(announcement.withdrawableAt != 0, "17");
+        // Error code 18: slowWithdraw, withdrawal delay not yet reached
+        require(now >= announcement.withdrawableAt, "18");
+        // Error code 19: slowWithdraw, withdrawal amount does not match announced amount
+        require(announcement.amount == _amount, "19");
 
         delete withdrawalAnnouncements[_withdrawer][_assetId];
         _withdraw(
@@ -1292,15 +1294,15 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         onlyAdmin
         onlyActiveState
     {
-        // Error code 28: createSwap, invalid swap amount
-        require(_values[0] > 0, "28");
-        // Error code 29: createSwap, expiry time has already passed
-        require(_values[1] > now, "29");
+        // Error code 20: createSwap, invalid swap amount
+        require(_values[0] > 0, "20");
+        // Error code 21: createSwap, expiry time has already passed
+        require(_values[1] > now, "21");
         _validateAddress(_addresses[1]);
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
-        // Error code 30: createSwap, the swap is already active
-        require(!atomicSwaps[swapHash], "30");
+        // Error code 22: createSwap, the swap is already active
+        require(!atomicSwaps[swapHash], "22");
 
         _markNonce(_values[3]);
 
@@ -1314,8 +1316,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         );
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
-            // Error code 31: createSwap, swap.feeAmount exceeds swap.amount
-            require(_values[2] < _values[0], "31"); // feeAmount < amount
+            // Error code 23: createSwap, swap.feeAmount exceeds swap.amount
+            require(_values[2] < _values[0], "23"); // feeAmount < amount
         } else {
             _decreaseBalance(
                 _addresses[0], // maker
@@ -1363,10 +1365,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
     {
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        // Error code 32: executeSwap, swap is not active
-        require(atomicSwaps[swapHash], "32");
-        // Error code 32: executeSwap, hash of preimage does not match hashedSecret
-        require(sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret, "33");
+        // Error code 24: executeSwap, swap is not active
+        require(atomicSwaps[swapHash], "24");
+        // Error code 25: executeSwap, hash of preimage does not match hashedSecret
+        require(sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret, "25");
 
         uint256 takeAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1417,18 +1419,18 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
     {
-        // Error code 34: cancelSwap, expiry time has not been reached
-        require(_values[1] <= now, "34");
+        // Error code 26: cancelSwap, expiry time has not been reached
+        require(_values[1] <= now, "26");
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        // Error code 35: cancelSwap, swap is not active
-        require(atomicSwaps[swapHash], "35");
+        // Error code 27: cancelSwap, swap is not active
+        require(atomicSwaps[swapHash], "27");
 
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
 
         // cancelFeeAmount < feeAmount
-        // Error code 36: cancelSwap, cancelFeeAmount exceeds swap.feeAmount
-        require(cancelFeeAmount <= _values[2], "36");
+        // Error code 28: cancelSwap, cancelFeeAmount exceeds swap.feeAmount
+        require(cancelFeeAmount <= _values[2], "28");
 
         uint256 refundAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1513,7 +1515,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             } else {
                 // if the value is not address(1) then it must have been previously set
                 // to a value matching the make's feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1]);
+                // Error code 29: _creditFillBalances, invalid operator feeAssetId
+                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "29");
             }
 
             // credit fill.feeAmount to operator
@@ -1610,7 +1613,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             } else {
                 // if the value is not address(1) then it must have been previously set
                 // to a value matching the make's feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1]);
+                // Error code 30: _creditMakerFeeBalances, invalid operator feeAssetId
+                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "30");
             }
 
             // credit make.feeAmount to operator
@@ -1751,8 +1755,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             bytes32 hashKey = _hashKeys[i];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
-            // Error code 37: offer's available amount is zero
-            require(availableAmount > 0, "37");
+            // Error code 31: _storeOfferData, offer's available amount is zero
+            require(availableAmount > 0, "31");
 
             uint256 remainingAmount = availableAmount.sub(decrements[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
@@ -1797,11 +1801,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
     {
         uint256 refundAmount = offers[_offerHash];
-        // Error code 38: _cancel, there is no offer amount left to cancel
-        require(refundAmount > 0, "38");
-        // Error code 39: _cancel, the remaining offer amount does not match
+        // Error code 32: _cancel, there is no offer amount left to cancel
+        require(refundAmount > 0, "32");
+        // Error code 33: _cancel, the remaining offer amount does not match
         // the expectedAvailableAmount
-        require(refundAmount == _expectedAvailableAmount, "39");
+        require(refundAmount == _expectedAvailableAmount, "33");
 
         delete offers[_offerHash];
 
@@ -1851,8 +1855,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
         nonReentrant
     {
-        // Error code 40: _withdraw, invalid withdrawal amount
-        require(_amount > 0, "40");
+        // Error code 34: _withdraw, invalid withdrawal amount
+        require(_amount > 0, "34");
 
         _validateAddress(_receivingAddress);
 
@@ -1963,15 +1967,15 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
     /// @param _nonce The nonce to mark
     function _markNonce(uint256 _nonce) private {
-        // Error code 41: _markNonce, nonce cannot be zero
-        require(_nonce != 0, "41");
+        // Error code 35: _markNonce, nonce cannot be zero
+        require(_nonce != 0, "35");
 
         uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slotData];
 
-        // Error code 42: _markNonce, nonce has already been marked
-        require(bits & shiftedBit == 0, "42");
+        // Error code 36: _markNonce, nonce has already been marked
+        require(bits & shiftedBit == 0, "36");
 
         usedNonces[slotData] = bits | shiftedBit;
     }

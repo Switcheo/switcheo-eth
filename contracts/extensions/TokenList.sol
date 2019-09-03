@@ -22,8 +22,7 @@ contract TokenList is BrokerExtension {
     /// @param _assetId The token address to whitelist
     function whitelistToken(address _assetId) external onlyOwner {
         Utils.validateAddress(_assetId);
-        // Error code 8: whitelistToken, token is already whitelisted
-        require(!tokenWhitelist[_assetId], "8");
+        require(!tokenWhitelist[_assetId], "Token already whitelisted");
         tokenWhitelist[_assetId] = true;
     }
 
@@ -31,14 +30,13 @@ contract TokenList is BrokerExtension {
     /// @param _assetId The token address to remove from the token whitelist
     function unwhitelistToken(address _assetId) external onlyOwner {
         Utils.validateAddress(_assetId);
-         // Error code 9: unwhitelistToken, token is not whitelisted
-        require(tokenWhitelist[_assetId], "9");
+        require(tokenWhitelist[_assetId], "Token not whitelisted");
         delete tokenWhitelist[_assetId];
     }
 
     /// @notice Validates if a token has been whitelisted
     /// @param _assetId The token address to validate
     function validateToken(address _assetId) external view {
-        require(tokenWhitelist[_assetId]);
+        require(tokenWhitelist[_assetId], "Invalid token");
     }
 }

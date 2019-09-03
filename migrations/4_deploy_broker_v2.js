@@ -29,10 +29,10 @@ module.exports = function(deployer) {
 
         const broker = await deployer.deploy(BrokerV2, tokenList.address, spenderList.address)
 
-        await spenderList.setBroker(broker.address)
-        await tokenList.setBroker(broker.address)
-        await kyberSwapDapp.setBroker(broker.address)
-        await uniswapDapp.setBroker(broker.address)
+        await spenderList.initializeBroker(broker.address)
+        await tokenList.initializeBroker(broker.address)
+        await kyberSwapDapp.initializeBroker(broker.address)
+        await uniswapDapp.initializeBroker(broker.address)
 
         await broker.addMarketDapp(kyberSwapDapp.address)
         await broker.addMarketDapp(uniswapDapp.address)

@@ -54,8 +54,7 @@ contract SpenderList is BrokerExtension {
     /// @param _spender The address of the spender contract to whitelist
     function whitelistSpender(address _spender) external onlyOwner {
         Utils.validateAddress(_spender);
-        // Error code 10: whitelistSpender, spender is already whitelisted
-        require(!spenderWhitelist[_spender], "10");
+        require(!spenderWhitelist[_spender], "Spender already whitelisted");
         spenderWhitelist[_spender] = true;
     }
 
@@ -68,8 +67,7 @@ contract SpenderList is BrokerExtension {
     /// @param _spender The address of the spender contract to remove from the whitelist
     function unwhitelistSpender(address _spender) external onlyOwner {
         Utils.validateAddress(_spender);
-         // Error code 11: unwhitelistSpender, spender is not whitelisted
-        require(spenderWhitelist[_spender], "11");
+        require(spenderWhitelist[_spender], "Spender not whitelisted");
         delete spenderWhitelist[_spender];
     }
 
@@ -97,8 +95,7 @@ contract SpenderList is BrokerExtension {
         external
         onlyAdmin
     {
-        // Error code 12: authorizeSpender, spender is not whitelisted
-        require(spenderWhitelist[_spender], "12");
+        require(spenderWhitelist[_spender], "Spender not whitelisted");
         broker.markNonce(_nonce);
 
         Utils.validateSignature(
@@ -127,11 +124,10 @@ contract SpenderList is BrokerExtension {
     /// This function does not require admin permission and is invokable directly by users.
     /// @param _spender The address of the spender contract
     function unauthorizeSpender(address _spender) external {
-        // Error code 13: unauthorizeSpender, spender has not been removed from whitelist
-        require(!spenderWhitelist[_spender], "13");
+        require(!spenderWhitelist[_spender], "Spender not unlisted");
 
         address user = msg.sender;
-        require(spenderAuthorizations[user][_spender]);
+        require(spenderAuthorizations[user][_spender], "Spender not authorized");
 
         delete spenderAuthorizations[user][_spender];
         emit UnauthorizeSpender(user, _spender);
@@ -140,13 +136,13 @@ contract SpenderList is BrokerExtension {
     /// @notice Validates if a spender contract has been whitelisted
     /// @param _spender The address of the spender contract
     function validateSpender(address _spender) external view {
-        require(spenderWhitelist[_spender]);
+        require(spenderWhitelist[_spender], "Invalid spender");
     }
 
     /// @notice Validates if a spender contract has been authorized by a user
     /// @param _user The user of the spender contract
     /// @param _spender The address of the spender contract
     function validateSpenderAuthorization(address _user, address _spender) external view {
-        require(spenderAuthorizations[_user][_spender]);
+        require(spenderAuthorizations[_user][_spender], "Unauthorized spender");
     }
 }

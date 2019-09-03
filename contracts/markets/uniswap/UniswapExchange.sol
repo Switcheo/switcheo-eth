@@ -58,12 +58,12 @@ contract UniswapExchange {
         returns (uint256)
     {
         address payable buyer = msg.sender;
-        require(_deadline > now && _tokensSold > 0 && _minEth > 0);
+        require(_deadline > now && _tokensSold > 0 && _minEth > 0, "Invalid input");
 
         uint256 tokenReserve = _getTokenReserve();
         uint256 ethBought = _getInputPrice(_tokensSold, tokenReserve, _getEthBalance());
 
-        require(ethBought >= _minEth);
+        require(ethBought >= _minEth, "Invalid eth amount received");
 
         _recipient.transfer(ethBought);
         _transferTokensIn(buyer, token, _tokensSold, _tokensSold);
@@ -84,15 +84,18 @@ contract UniswapExchange {
     {
         address exchangeAddr = UniswapFactory(factoryAddress).getExchange(_tokenAddr);
         address buyer = msg.sender;
-        require(_deadline > now && _tokensSold > 0 && _minTokensBought > 0 && _minEthBought > 0);
-        require(exchangeAddr != address(this) && exchangeAddr != address(0));
+        require(
+            _deadline > now && _tokensSold > 0 && _minTokensBought > 0 && _minEthBought > 0,
+            "Invalid input"
+        );
+        require(exchangeAddr != address(this) && exchangeAddr != address(0), "Invalid market");
 
         uint256 tokenReserve = _getTokenReserve();
         uint256 ethBought = _getInputPrice(_tokensSold, tokenReserve, _getEthBalance());
 
         _transferTokensIn(buyer, token, _tokensSold, _tokensSold);
 
-        require(ethBought > _minEthBought);
+        require(ethBought > _minEthBought, "Invalid eth amount received");
         Exchange exchange = Exchange(exchangeAddr);
 
         uint256 tokensBought = exchange.ethToTokenTransferInput.value(ethBought)(
@@ -113,12 +116,12 @@ contract UniswapExchange {
         private
         returns (uint256)
     {
-        require(_deadline > now && _ethSold > 0 && _minTokens > 0);
+        require(_deadline > now && _ethSold > 0 && _minTokens > 0, "Invalid input");
 
         uint256 tokenReserve = _getTokenReserve();
         uint256 tokensBought = _getInputPrice(_ethSold, _getEthBalance() - _ethSold, tokenReserve);
 
-        require(tokensBought >= _minTokens);
+        require(tokensBought >= _minTokens, "Invalid token amount received");
         _transferTokensOut(_recipient, token, tokensBought);
 
         return tokensBought;
@@ -145,7 +148,7 @@ contract UniswapExchange {
         pure
         returns (uint256)
     {
-        require(_inputReserve > 0 && _outputReserve > 0);
+        require(_inputReserve > 0 && _outputReserve > 0, "Invalid reserves");
         uint256 inputAmountWithFee = _inputAmount * 997;
         uint256 numerator = inputAmountWithFee * _outputReserve;
         uint256 denominator = _inputReserve * 1000 + inputAmountWithFee;
@@ -182,8 +185,7 @@ contract UniswapExchange {
         uint256 finalBalance = _tokenBalance(_assetId);
         uint256 transferredAmount = finalBalance.sub(initialBalance);
 
-        // Error code 46: transferTokensIn, transferredAmount does not match expectedAmount
-        require(transferredAmount == _expectedAmount, "46");
+        require(transferredAmount == _expectedAmount, "Invalid transfer");
     }
 
     function _transferTokensOut(
@@ -236,8 +238,7 @@ contract UniswapExchange {
         bytes memory returnData;
 
         (success, returnData) = _contract.call(_payload);
-        // Error code 63: _callContract, contract call failed
-        require(success, "63");
+        require(success, "Contract call failed");
 
         return returnData;
     }
@@ -248,11 +249,10 @@ contract UniswapExchange {
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
     /// @param _data The data returned from a transfer call
     function _validateTransferResult(bytes memory _data) private pure {
-        // Error code 64: _validateTransferResult, invalid transfer result
         require(
             _data.length == 0 ||
             (_data.length == 32 && _getUint256FromBytes(_data) != 0),
-            "64"
+            "Invalid transfer result"
         );
     }
 

@@ -47,9 +47,9 @@ contract KyberNetworkProxy {
         payable
         returns(uint)
     {
-        require(_src == ETH_TOKEN_ADDRESS || msg.value == 0);
+        require(_src == ETH_TOKEN_ADDRESS || msg.value == 0, "Invalid msg.value");
         if (_src == ETH_TOKEN_ADDRESS) {
-            require(msg.value == _srcAmount);
+            require(msg.value == _srcAmount, "Invalid msg.value");
         } else {
             _transferTokensIn(msg.sender, address(_src), _srcAmount, _srcAmount);
         }
@@ -102,8 +102,7 @@ contract KyberNetworkProxy {
         uint256 finalBalance = _tokenBalance(_assetId);
         uint256 transferredAmount = finalBalance.sub(initialBalance);
 
-        // Error code 46: transferTokensIn, transferredAmount does not match expectedAmount
-        require(transferredAmount == _expectedAmount, "46");
+        require(transferredAmount == _expectedAmount, "Invalid transfer");
     }
 
     function _tokenBalance(address _assetId) private view returns (uint256) {
@@ -160,8 +159,7 @@ contract KyberNetworkProxy {
         bytes memory returnData;
 
         (success, returnData) = _contract.call(_payload);
-        // Error code 63: _callContract, contract call failed
-        require(success, "63");
+        require(success, "Contract call failed");
 
         return returnData;
     }
@@ -172,11 +170,10 @@ contract KyberNetworkProxy {
     /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
     /// @param _data The data returned from a transfer call
     function _validateTransferResult(bytes memory _data) private pure {
-        // Error code 64: _validateTransferResult, invalid transfer result
         require(
             _data.length == 0 ||
             (_data.length == 32 && _getUint256FromBytes(_data) != 0),
-            "64"
+            "Invalid transfer result"
         );
     }
 
