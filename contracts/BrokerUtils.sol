@@ -279,7 +279,7 @@ library BrokerUtils {
 
     // _data
     // bits(0..8): offerIndex
-    // bits(8..16): tradeProvider
+    // bits(8..16): marketDapp
     // bits(16..24): operator.surplusAssetIndex
     // bits(24..128): provider-specific data
     // bits(128..256): match.takeAmount
@@ -292,7 +292,7 @@ library BrokerUtils {
         private
         returns (uint256)
     {
-        uint256 tradeProvider = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
+        uint256 marketDapp = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
 
         uint256[] memory funds = new uint256[](6);
         funds[0] = externalBalance(_assetIds[0]); // initialOfferTokenBalance
@@ -301,14 +301,14 @@ library BrokerUtils {
             funds[2] = externalBalance(_assetIds[2]); // initialSurplusTokenBalance
         }
 
-        if (tradeProvider == 0) {
+        if (marketDapp == 0) {
             _performKyberSwapTrade(
                 _assetIds,
                 _dataValues,
                 _marketDapps,
                 _addresses
             );
-        } else if (tradeProvider == 1) {
+        } else if (marketDapp == 1) {
             _performUniswapTrade(
                 _assetIds,
                 _dataValues,

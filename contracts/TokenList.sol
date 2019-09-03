@@ -1,29 +1,12 @@
 pragma solidity 0.5.10;
 
-interface Broker {
-    function owner() external returns (address);
-}
+import "./BrokerExtension.sol";
 
-contract TokenList {
-    Broker broker;
-    address brokerAddress;
-
+contract TokenList is BrokerExtension {
     // A record of whitelisted tokens: tokenAddress => isWhitelisted.
     // This controls token permission to invoke `tokenFallback` and `tokensReceived` callbacks
     // on this contract.
     mapping(address => bool) public tokenWhitelist;
-
-    modifier onlyOwner() {
-        require(broker.owner() == msg.sender, "Ownable: caller is not the owner");
-        _;
-    }
-
-    function setBroker(address _brokerAddress) external {
-        require(_brokerAddress != address(0));
-        require(brokerAddress == address(0));
-        brokerAddress = _brokerAddress;
-        broker = Broker(_brokerAddress);
-    }
 
     /// @notice Whitelists a token contract
     /// @dev This enables the token contract to call `tokensReceived` or `tokenFallback`

@@ -1,12 +1,8 @@
 pragma solidity 0.5.10;
 
-interface Broker {
-    function owner() external returns (address);
-    function isAdmin(address _user) external returns(bool);
-    function markNonce(uint256 _nonce) external;
-}
+import "./BrokerExtension.sol";
 
-contract SpenderList {
+contract SpenderList is BrokerExtension {
     // The constants for EIP-712 are precompiled to reduce contract size,
     // the original values are left here for reference and verification.
     // NOTE: CHAIN_ID and VERIFYING_CONTRACT values must be updated before
@@ -47,9 +43,6 @@ contract SpenderList {
     // ));
     bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
 
-    Broker broker;
-    address brokerAddress;
-
     // A record of whitelisted spenders: spenderContract => isWhitelisted.
     // Spenders are intended to be extension contracts.
     // A user would first manually vet a spender contract then approve it to perform
@@ -68,24 +61,6 @@ contract SpenderList {
 
     constructor() public {
         spenderWhitelist[address(this)] = true;
-    }
-
-    modifier onlyAdmin() {
-        // Error code 1: onlyAdmin, address is not an admin address
-        require(broker.isAdmin(msg.sender), "1");
-        _;
-    }
-
-    modifier onlyOwner() {
-        require(broker.owner() == msg.sender, "Ownable: caller is not the owner");
-        _;
-    }
-
-    function setBroker(address _brokerAddress) external {
-        require(_brokerAddress != address(0));
-        require(brokerAddress == address(0));
-        brokerAddress = _brokerAddress;
-        broker = Broker(_brokerAddress);
     }
 
     /// @notice Whitelists a spender contract
