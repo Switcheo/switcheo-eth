@@ -1,6 +1,6 @@
 pragma solidity 0.5.10;
 
-import "./lib/token/ERC777/ERC777.sol";
+import "../lib/token/ERC777/ERC777.sol";
 
 /**
 * @title ZEUS Coin - Standard ERC777 token for testing

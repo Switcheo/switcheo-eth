@@ -1,8 +1,8 @@
-const { getBroker, getJrc, exchange, validateBalance } = require('../utils')
+const { getBroker, getSpenderList, getJrc, exchange, validateBalance } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
-contract('Test authorizeSpender', async (accounts) => {
-    let broker, jrc
+contract('Test spendFrom', async (accounts) => {
+    let broker, spenderList, jrc
     const user = accounts[1]
     const privateKey = getPrivateKey(user)
     const spender = accounts[2]
@@ -10,6 +10,7 @@ contract('Test authorizeSpender', async (accounts) => {
 
     beforeEach(async () => {
         broker = await getBroker()
+        spenderList = await getSpenderList()
         jrc = await getJrc()
         await jrc.mint(user, 42)
     })
@@ -20,7 +21,7 @@ contract('Test authorizeSpender', async (accounts) => {
             await validateBalance(user, jrc, 42)
             await validateBalance(receiver, jrc, 0)
 
-            await broker.whitelistSpender(spender)
+            await spenderList.whitelistSpender(spender)
             await exchange.authorizeSpender({ user, spender, nonce: 2 }, { privateKey })
             await broker.spendFrom(user, receiver, jrc.address, 42, { from: spender })
 

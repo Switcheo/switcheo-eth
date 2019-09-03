@@ -1,5 +1,6 @@
 const BrokerV2 = artifacts.require('BrokerV2')
-const Scratchpad = artifacts.require('Scratchpad')
+const TokenList = artifacts.require('TokenList')
+const SpenderList = artifacts.require('SpenderList')
 const JRCoin = artifacts.require('JRCoin')
 const SWCoin = artifacts.require('SWCoin')
 const DGTXCoin = artifacts.require('DGTX')
@@ -18,10 +19,11 @@ const { soliditySha3, keccak256 } = web3.utils
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 
-const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR } = require('../constants')
+const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR, ETHER_ADDR } = require('../constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
-async function getScratchpad() { return await Scratchpad.deployed() }
+async function getTokenList() { return await TokenList.deployed() }
+async function getSpenderList() { return await SpenderList.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
 async function getSwc() { return await SWCoin.deployed() }
 async function getDgtx() { return await DGTXCoin.deployed() }
@@ -101,6 +103,7 @@ async function validateBalance(user, assetId, amount) {
 
 async function validateExternalBalance(user, token, amount) {
     user = ensureAddress(user)
+    if (token === ETHER_ADDR) { return await web3.eth.getBalance(user) }
     await assertAsync(token.balanceOf(user), amount)
 }
 
@@ -203,13 +206,13 @@ async function signParameters(types, values, privateKey) {
 }
 
 async function authorizeSpender({ user, spender, nonce }, { privateKey }) {
-    const broker = await getBroker()
+    const spenderList = await getSpenderList()
     const { v, r, s } = await signParameters(
         ['bytes32', 'address', 'address', 'uint256'],
         [TYPEHASHES.AUTHORIZE_SPENDER_TYPEHASH, user, spender, nonce],
         privateKey
     )
-    return await broker.authorizeSpender(user, spender, nonce, v, r, s, false)
+    return await spenderList.authorizeSpender(user, spender, nonce, v, r, s, false)
 }
 
 async function withdraw({ user, receivingAddress, assetId, amount, feeAssetId, feeAmount, nonce }, { privateKey }) {
@@ -299,7 +302,7 @@ function constructTradeData(data) {
                                .or(shl(addressMap[user][feeAssetId], 24))
                                .or(shl(addressMap[operator][feeAssetId], 32))
                                .or(shl(v, 40))
-                               .or(shl(nonce, 48))
+                               .or(shl(nonce, 56))
                                .or(shl(feeAmount, 128))
 
     const dataB = bn(offerAmount).or(shl(wantAmount, 128))
@@ -307,14 +310,9 @@ function constructTradeData(data) {
     return { dataA, dataB }
 }
 
-// `modify` is a callback to change the values sent to the contract,
-// this helps to test validations
-async function trade({ offers, fills, matches, operator }, { privateKeys }, modify) {
-    const broker = await getBroker()
-    const lengths = bn(offers.length).or(shl(fills.length, 8))
-                                    .or(shl(matches.length, 16))
-    const values = [lengths]
-    const hashes = []
+function constructAddressMap({ offers, fills, operator }) {
+    if (fills === undefined) { fills = [] }
+
     const addresses = []
     const addressPairs = []
     const addressMap = {}
@@ -348,22 +346,49 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
         }
     }
 
+    return { addresses, addressMap }
+}
+
+async function signOffer(offer, privateKey) {
+    const { maker, offerAssetId, wantAssetId, feeAssetId,
+            offerAmount, wantAmount, feeAmount, nonce } = offer
+
+    return await signParameters(
+        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
+         'address', 'uint256', 'uint256'],
+        [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
+         feeAssetId, feeAmount, nonce],
+        privateKey
+    )
+}
+
+async function signFill(fill, privateKey) {
+    const { filler, offerAssetId, wantAssetId, feeAssetId,
+            offerAmount, wantAmount, feeAmount, nonce } = fill
+
+    return await signParameters(
+        ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
+         'address', 'uint256', 'uint256'],
+        [TYPEHASHES.FILL_TYPEHASH, filler, offerAssetId, offerAmount, wantAssetId, wantAmount,
+         feeAssetId, feeAmount, nonce],
+        privateKey
+    )
+}
+
+// `modify` is a callback to change the values sent to the contract,
+// this is used to test validations
+async function trade({ offers, fills, matches, operator }, { privateKeys }, modify) {
+    const broker = await getBroker()
+    const lengths = bn(offers.length).or(shl(fills.length, 8))
+                                    .or(shl(matches.length, 16))
+    const values = [lengths]
+    const hashes = []
+    const { addresses, addressMap } = constructAddressMap({ offers, fills, operator })
+
     for (let i = 0; i < offers.length; i++) {
         const offer = offers[i]
-        const { maker, offerAssetId, wantAssetId, feeAssetId,
-                offerAmount, wantAmount, feeAmount, nonce } = offer
-        const privateKey = privateKeys[maker]
-
-        const { v, r, s } = await signParameters(
-            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
-             'address', 'uint256', 'uint256'],
-            [TYPEHASHES.OFFER_TYPEHASH, maker, offerAssetId, offerAmount, wantAssetId, wantAmount,
-             feeAssetId, feeAmount, nonce],
-            privateKey
-        )
-
-        const data = { addressMap, operator, user: maker, offerAssetId, wantAssetId,
-                       feeAssetId, v, nonce, feeAmount, offerAmount, wantAmount }
+        const { v, r, s } = await signOffer(offer, privateKeys[offer.maker])
+        const data = { ...offer, user: offer.maker, addressMap, operator, v }
         const { dataA, dataB } = constructTradeData(data)
 
         values.push(dataA, dataB)
@@ -372,20 +397,8 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
 
     for (let i = 0; i < fills.length; i++) {
         const fill = fills[i]
-        const { filler, offerAssetId, wantAssetId, feeAssetId,
-                offerAmount, wantAmount, feeAmount, nonce } = fill
-        const privateKey = privateKeys[filler]
-
-        const { v, r, s } = await signParameters(
-            ['bytes32', 'address', 'address', 'uint256', 'address', 'uint256',
-             'address', 'uint256', 'uint256'],
-            [TYPEHASHES.FILL_TYPEHASH, filler, offerAssetId, offerAmount, wantAssetId, wantAmount,
-             feeAssetId, feeAmount, nonce],
-            privateKey
-        )
-
-        const data = { addressMap, operator, user: filler, offerAssetId, wantAssetId,
-                       feeAssetId, v, nonce, feeAmount, offerAmount, wantAmount }
+        const { v, r, s } = await signFill(fill, privateKeys[fill.filler])
+        const data = { ...fill, user: fill.filler, addressMap, operator, v }
         const { dataA, dataB } = constructTradeData(data)
 
         values.push(dataA, dataB)
@@ -411,6 +424,39 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
     if (modify !== undefined) { modify({ values, hashes, addresses }) }
 
     return await broker.trade(values, hashes, addresses)
+}
+
+// `modify` is a callback to change the values sent to the contract,
+// this is used to test validations
+async function networkTrade({ offers, matches, operator }, { privateKeys }, modify) {
+    const broker = await getBroker()
+    const lengths = bn(offers.length).or(shl(matches.length, 16))
+    const values = [lengths]
+    const hashes = []
+    const { addresses, addressMap } = constructAddressMap({ offers, operator })
+
+    for (let i = 0; i < offers.length; i++) {
+        const offer = offers[i]
+        const { v, r, s } = await signOffer(offer, privateKeys[offer.maker])
+        const data = { ...offer, user: offer.maker, addressMap, operator, v }
+        const { dataA, dataB } = constructTradeData(data)
+
+        values.push(dataA, dataB)
+        hashes.push(r, s)
+    }
+
+    for (let i = 0; i < matches.length; i++) {
+        const match = matches[i]
+        const value = bn(match.offerIndex).or(shl(match.tradeProvider, 8))
+                                          .or(shl(addressMap[operator][match.surplusAssetId], 16))
+                                          .or(shl(match.data, 24))
+                                          .or(shl(match.takeAmount, 128))
+        values.push(value)
+    }
+
+    if (modify !== undefined) { modify({ values, hashes, addresses }) }
+
+    return await broker.networkTrade(values, hashes, addresses)
 }
 
 function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {
@@ -492,6 +538,7 @@ const exchange = {
     mintAndDeposit,
     depositToken,
     trade,
+    networkTrade,
     cancel,
     adminCancel,
     announceCancel,
@@ -508,11 +555,12 @@ module.exports = {
     shl,
     clone,
     getBroker,
+    getTokenList,
+    getSpenderList,
     getJrc,
     getSwc,
     getDgtx,
     getZeus,
-    getScratchpad,
     printLogs,
     hashSecret,
     validateBalance,

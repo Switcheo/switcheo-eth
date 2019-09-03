@@ -1,6 +1,6 @@
 pragma solidity 0.5.10;
 
-import "./lib/math/SafeMath.sol";
+import "../lib/math/SafeMath.sol";
 
 /**
 * @title SW Coin - Non-standard ERC20 token for testing

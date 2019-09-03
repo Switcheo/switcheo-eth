@@ -1,12 +1,13 @@
-const { getBroker, getDgtx, validateBalance, validateExternalBalance } = require('../utils')
+const { getBroker, getTokenList, getDgtx, validateBalance, validateExternalBalance } = require('../utils')
 
 contract('Test tokenFallback', async (accounts) => {
-    let broker, dgtx
+    let broker, tokenList, dgtx
     const owner = accounts[0]
     const user = accounts[1]
 
     beforeEach(async () => {
         broker = await getBroker()
+        tokenList = await getTokenList()
         dgtx = await getDgtx()
 
         await dgtx.transfer(user, 87, { from: owner })
@@ -17,7 +18,7 @@ contract('Test tokenFallback', async (accounts) => {
             await validateExternalBalance(user, dgtx, 87)
             await validateBalance(user, dgtx, 0)
 
-            await broker.whitelistToken(dgtx.address)
+            await tokenList.whitelistToken(dgtx.address)
             await dgtx.transfer(broker.address, 87, { from: user })
 
             await validateExternalBalance(user, dgtx, 0)

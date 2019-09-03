@@ -2,14 +2,20 @@ pragma solidity 0.5.10;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
-import "./BrokerValidations.sol";
-
-interface ERC20Token {
-    function balanceOf(address account) external view returns (uint256);
-}
+import "./lib/utils/ReentrancyGuard.sol";
+import "./Utils.sol";
 
 interface IERC1820Registry {
     function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
+}
+
+interface TokenList {
+    function validateToken(address assetId) external view;
+}
+
+interface SpenderList {
+    function validateSpender(address spender) external view;
+    function validateSpenderAuthorization(address user, address spender) external view;
 }
 
 /// @title The BrokerV2 contract for Switcheo Exchange
@@ -55,7 +61,7 @@ interface IERC1820Registry {
 /// The only exception is the Ethereum token, which does not have a contract
 /// address, for this reason, the zero address is used to represent the
 /// Ethereum token's ID.
-contract BrokerV2 is Ownable {
+contract BrokerV2 is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
 
     struct WithdrawalAnnouncement {
@@ -98,15 +104,6 @@ contract BrokerV2 is Ownable {
     //     SALT
     // ));
     bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
-
-    // bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
-    //     "AuthorizeSpender(",
-    //         "address user,",
-    //         "address spender,",
-    //         "uint256 nonce",
-    //     ")"
-    // ));
-    bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = 0xe26b1365004fe3cb06fb24dd69b50c8263f0a5a1df21e0a76f4d6184c3515d50;
 
     // bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
     //     "Withdraw(",
@@ -190,6 +187,8 @@ contract BrokerV2 is Ownable {
     AdminState public adminState;
     // All fees will be transferred to the operator address
     address public operator;
+    TokenList public tokenList;
+    SpenderList public spenderList;
 
     // The delay in seconds to complete the respective escape hatch (`slowCancel` / `slowWithdraw`).
     // This gives the off-chain service time to update the off-chain state
@@ -210,22 +209,13 @@ contract BrokerV2 is Ownable {
     mapping(uint256 => uint256) public usedNonces;
     // A mapping of user balances: userAddress => assetId => balance
     mapping(address => mapping(address => uint256)) public balances;
+    mapping(address => uint256) public totalBalances;
     // A mapping of atomic swap states: swapHash => isSwapActive
     mapping(bytes32 => bool) public atomicSwaps;
 
     // A record of admin addresses: userAddress => isAdmin
     mapping(address => bool) public adminAddresses;
-    // A record of whitelisted tokens: tokenAddress => isWhitelisted.
-    // This controls token permission to invoke `tokenFallback` and `tokensReceived` callbacks
-    // on this contract.
-    mapping(address => bool) public tokenWhitelist;
-    // A record of whitelisted spenders: spenderContract => isWhitelisted.
-    // Spenders are intended to be extension contracts.
-    // A user would first manually vet a spender contract then approve it to perform
-     // balance transfers for their address, using the `authorizeSpender` method.
-    mapping(address => bool) public spenderWhitelist;
-    // A record of spender authorizations: userAddress => spenderAddress => isAuthorized
-    mapping(address => mapping(address => bool)) public spenderAuthorizations;
+    address[] public marketDapps;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
     // A mapping of withdrawal announcements: userAddress => assetId => announcementData
@@ -253,14 +243,6 @@ contract BrokerV2 is Ownable {
     // These are used in the `trade` method, they are compacted to save gas costs.
     event Increment(uint256 data);
     event Decrement(uint256 data);
-
-    event AuthorizeSpender(
-        address indexed user,
-        address indexed spender,
-        uint256 nonce
-    );
-
-    event UnauthorizeSpender(address indexed user, address indexed spender);
 
     event TokenFallback(
         address indexed user,
@@ -303,9 +285,11 @@ contract BrokerV2 is Ownable {
     /// The Broker is put into an active state, with maximum exit delays set.
     /// The Broker is also registered as an implementer of ERC777TokensRecipient
     /// through the ERC1820 registry.
-    constructor() public {
+    constructor(address _tokenListAddress, address _spenderListAddress) public {
         adminAddresses[msg.sender] = true;
         operator = msg.sender;
+        tokenList = TokenList(_tokenListAddress);
+        spenderList = SpenderList(_spenderListAddress);
 
         slowWithdrawDelay = MAX_SLOW_WITHDRAW_DELAY;
         slowCancelDelay = MAX_SLOW_CANCEL_DELAY;
@@ -323,18 +307,25 @@ contract BrokerV2 is Ownable {
     }
 
     modifier onlyAdmin() {
-        require(adminAddresses[msg.sender], "Invalid sender");
+        // Error code 1: onlyAdmin, address is not an admin address
+        require(adminAddresses[msg.sender], "1");
         _;
     }
 
     modifier onlyActiveState() {
-        require(state == State.Active, "Invalid state");
+        // Error code 2: onlyActiveState, state is not 'Active'
+        require(state == State.Active, "2");
         _;
     }
 
     modifier onlyEscalatedAdminState() {
-        require(adminState == AdminState.Escalated, "Invalid state");
+        // Error code 3: onlyEscalatedAdminState, adminState is not 'Escalated'
+        require(adminState == AdminState.Escalated, "3");
         _;
+    }
+
+    function isAdmin(address _user) external view returns(bool) {
+        return adminAddresses[_user];
     }
 
     /// @notice Sets tbe Broker's state.
@@ -377,7 +368,8 @@ contract BrokerV2 is Ownable {
     /// This differs from the regular `cancel` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
     function setSlowCancelDelay(uint256 _delay) external onlyOwner {
-        require(_delay <= MAX_SLOW_CANCEL_DELAY, "Invalid delay");
+        // Error code 4: setSlowCancelDelay, slow cancel delay exceeds max allowable delay
+        require(_delay <= MAX_SLOW_CANCEL_DELAY, "4");
         slowCancelDelay = _delay;
     }
 
@@ -388,7 +380,8 @@ contract BrokerV2 is Ownable {
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
     function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
-        require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "Invalid delay");
+        // Error code 5: setSlowWithdrawDelay, slow withdraw delay exceeds max allowable delay
+        require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "5");
         slowWithdrawDelay = _delay;
     }
 
@@ -399,7 +392,8 @@ contract BrokerV2 is Ownable {
     /// @param _admin The address to give admin permissions to
     function addAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
-        require(!adminAddresses[_admin], "Admin already added");
+        // Error code 6: addAdmin, address is already an admin address
+        require(!adminAddresses[_admin], "6");
         adminAddresses[_admin] = true;
     }
 
@@ -407,121 +401,25 @@ contract BrokerV2 is Ownable {
     /// @param _admin The admin address to remove admin permissions from
     function removeAdmin(address _admin) external onlyOwner {
         _validateAddress(_admin);
-        require(adminAddresses[_admin], "Admin not yet added");
+        // Error code 7: removeAdmin, address is not an admin address
+        require(adminAddresses[_admin], "7");
         delete adminAddresses[_admin];
     }
 
-    /// @notice Whitelists a token contract
-    /// @dev This enables the token contract to call `tokensReceived` or `tokenFallback`
-    /// on this contract.
-    /// This layer of management is to prevent misuse of `tokensReceived` and `tokenFallback`
-    /// methods by unvetted tokens.
-    /// @param _assetId The token address to whitelist
-    function whitelistToken(address _assetId) external onlyOwner {
-        _validateAddress(_assetId);
-        require(!tokenWhitelist[_assetId], "Token already whitelisted");
-        tokenWhitelist[_assetId] = true;
+    function addMarketDapp(address _provider) external onlyOwner {
+        _validateAddress(_provider);
+        marketDapps.push(_provider);
     }
 
-    /// @notice Removes a token contract from the token whitelist
-    /// @param _assetId The token address to remove from the token whitelist
-    function unwhitelistToken(address _assetId) external onlyOwner {
-        _validateAddress(_assetId);
-        require(tokenWhitelist[_assetId], "Token not yet whitelisted");
-        delete tokenWhitelist[_assetId];
+    function updateMarketDapp(uint256 _index, address _provider) external onlyOwner {
+        _validateAddress(_provider);
+        require(marketDapps[_index] != address(0));
+        marketDapps[_index] = _provider;
     }
 
-    /// @notice Whitelists a spender contract
-    /// @dev Spender contracts are intended to offer additional functionality
-    /// to the Broker contract, allowing for new contract features to be added without
-    /// having to migrate user funds to a new contract.
-    /// After a spender contract is whitelisted, a user intending to use its
-    /// features must separately authorize the spender contract before it can
-    /// perform balance transfers for the user.
-    /// See `authorizeSpender` and `spendFrom` methods for more details.
-    /// @param _spender The address of the spender contract to whitelist
-    function whitelistSpender(address _spender) external onlyOwner {
-        _validateAddress(_spender);
-        require(!spenderWhitelist[_spender], "Spender already added");
-        spenderWhitelist[_spender] = true;
-    }
-
-    /// @notice Removes a spender contract from the spender whitelist
-    /// @dev Note that removing a spender from the whitelist will not prevent
-    /// a it from transferring balances for users who had previously
-    /// authorized it.
-    /// This is required because the contract owner would otherwise be able to
-    /// cause a user's funds to be locked in the spender contract.
-    /// @param _spender The address of the spender contract to remove from the whitelist
-    function unwhitelistSpender(address _spender) external onlyOwner {
-        _validateAddress(_spender);
-        require(spenderWhitelist[_spender], "Spender not yet added");
-        delete spenderWhitelist[_spender];
-    }
-
-    /// @notice Allows users to authorize a spender contract to perform
-    /// balance transfers for their address
-    /// @dev After a spender contract is authorized, it can call the `spendFrom`
-    /// method for the permitted user's address.
-    /// @param _user The address of the user
-    /// @param _spender The address of the whitelisted spender contract
-    /// @param _nonce An unused nonce to prevent replay attacks
-    /// @param _v The `v` component of the `_user`'s signature
-    /// @param _r The `r` component of the `_user`'s signature
-    /// @param _s The `s` component of the `_user`'s signature
-    /// @param _prefixedSignature Indicates whether the Ethereum signed message
-    /// prefix should be prepended during signature verification
-    function authorizeSpender(
-        address _user,
-        address _spender,
-        uint256 _nonce,
-        uint8 _v,
-        bytes32 _r,
-        bytes32 _s,
-        bool _prefixedSignature
-    )
-        external
-        onlyAdmin
-    {
-        require(spenderWhitelist[_spender], "Invalid spender");
-        _markNonce(_nonce);
-
-        _validateSignature(
-            keccak256(abi.encode(
-                AUTHORIZE_SPENDER_TYPEHASH,
-                _user,
-                _spender,
-                _nonce
-            )),
-            _user,
-            _v,
-            _r,
-            _s,
-            _prefixedSignature
-        );
-        spenderAuthorizations[_user][_spender] = true;
-        emit AuthorizeSpender(_user, _spender, _nonce);
-    }
-
-    /// @notice Allows users to remove authorization for a spender contract to
-    /// perform balance transfers for their address
-    /// @dev This method can only be invoked for spender contracts already removed
-    /// from the whitelist. This is to prevent users from unexpectedly removing
-    /// authorization for a previously authorized spender, as doing so could prevent
-    /// regular operation of the features offerred by the spender contract.
-    /// This function does not require admin permission and is invokable directly by users.
-    /// @param _spender The address of the spender contract
-    function unauthorizeSpender(address _spender) external {
-        require(!spenderWhitelist[_spender], "Spender still active");
-
-        address user = msg.sender;
-        require(
-            spenderAuthorizations[user][_spender],
-            "Spender not yet authorized"
-        );
-
-        delete spenderAuthorizations[user][_spender];
-        emit UnauthorizeSpender(user, _spender);
+    function removeMarketDapp(uint256 _index) external onlyOwner {
+        require(marketDapps[_index] != address(0));
+        delete marketDapps[_index];
     }
 
     /// @notice Performs a balance transfer from one address to another
@@ -529,6 +427,8 @@ contract BrokerV2 is Ownable {
     /// To invoke this method, a spender contract must have been
     /// previously whitelisted and also authorized by the address from which
     /// funds will be deducted.
+    /// Balance events are not emitted by this method, they should be separately
+    /// emitted by the spender contract.
     /// @param _from The address to deduct from
     /// @param _to The address to credit
     /// @param _assetId The asset to transfer
@@ -541,10 +441,7 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(
-            spenderAuthorizations[_from][msg.sender],
-            "Spender not yet approved"
-        );
+        spenderList.validateSpenderAuthorization(_from, msg.sender);
 
         _validateAddress(_to);
 
@@ -552,14 +449,23 @@ contract BrokerV2 is Ownable {
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
     }
 
+    function markNonce(uint256 _nonce) external {
+        spenderList.validateSpender(msg.sender);
+        _markNonce(_nonce);
+    }
+
     /// @notice Deposits ETH into the sender's contract balance
     /// @dev This operation is only usable in an `Active` state
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
     function deposit() external payable onlyActiveState {
-        require(msg.value > 0, "Invalid value");
+        // Error code 15: deposit, msg.value is 0
+        require(msg.value > 0, "15");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
+        totalBalances[ETHER_ADDR] = totalBalances[ETHER_ADDR].add(msg.value);
     }
+
+    function() payable external {}
 
     /// @notice Deposits ERC20 tokens under the `_user`'s balance
     /// @dev Transfers token into the Broker contract using the
@@ -569,6 +475,10 @@ contract BrokerV2 is Ownable {
     /// This method has separate `_amount` and `_expectedAmount` values
     /// to support unconventional token transfers, e.g. tokens which have a
     /// proportion burnt on transfer.
+    /// Whitelisted tokens cannot use this method as it may cause a double
+    /// increment for the user's balance. This is because this method does a
+    /// call to the token's `transferFrom` method, and some tokens have a
+    /// `transferFrom` that later on calls `tokenFallback` or `tokensReceived`.
     /// @param _user The address of the user depositing the tokens
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with
@@ -584,11 +494,8 @@ contract BrokerV2 is Ownable {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
-        require(
-            tokenWhitelist[_assetId] == false,
-            "Whitelisted tokens cannot use this method of transfer"
-        );
         _markNonce(_nonce);
 
         _increaseBalance(
@@ -598,32 +505,13 @@ contract BrokerV2 is Ownable {
             REASON_DEPOSIT,
             _nonce
         );
+        totalBalances[_assetId] = totalBalances[_assetId].add(_expectedAmount);
 
-        _validateContractAddress(_assetId);
-
-        ERC20Token token = ERC20Token(_assetId);
-        uint256 initialBalance = token.balanceOf(address(this));
-
-        // Some tokens have a `transferFrom` which returns a boolean and some do not.
-        // The ERC20Token interface cannot be used here because it requires specifying
-        // an explicit return value, and an EVM exception would be raised when calling
-        // a token with the mismatched return value.
-        bytes memory payload = abi.encodeWithSignature(
-            "transferFrom(address,address,uint256)",
+        Utils.transferTokensIn(
             _user,
-            address(this),
-            _amount
-        );
-        bytes memory returnData = _callContract(_assetId, payload);
-        // Ensure that the asset transfer succeeded
-        _validateTransferResult(returnData);
-
-        uint256 finalBalance = token.balanceOf(address(this));
-        uint256 transferredAmount = finalBalance.sub(initialBalance);
-
-        require(
-            transferredAmount == _expectedAmount,
-            "Invalid transferred amount"
+            _assetId,
+            _amount,
+            _expectedAmount
         );
     }
 
@@ -641,10 +529,12 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyActiveState
+        nonReentrant
     {
         address assetId = msg.sender;
-        require(tokenWhitelist[assetId] == true, "Token not whitelisted");
+        tokenList.validateToken(assetId);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
+        totalBalances[assetId] = totalBalances[assetId].add(_amount);
         emit TokenFallback(_user, assetId, _amount);
     }
 
@@ -666,11 +556,13 @@ contract BrokerV2 is Ownable {
     )
         external
         onlyActiveState
+        nonReentrant
     {
         if (_to != address(this)) { return; }
         address assetId = msg.sender;
-        require(tokenWhitelist[assetId] == true, "Token not whitelisted");
+        tokenList.validateToken(assetId);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
+        totalBalances[assetId] = totalBalances[assetId].add(_amount);
         emit TokensReceived(_user, assetId, _amount);
     }
 
@@ -761,7 +653,7 @@ contract BrokerV2 is Ownable {
     /// bits(16..24): number of matches (numMatches)
     /// bits(24..256): Whether an offer / fill should have the Ethereum signed
     /// message prepended for signature verification. See
-    /// `BrokerValidations._validateTradeSignatures` for more details.
+    /// `Utils._validateTradeSignatures` for more details.
     ///
     /// @param _values[1 + i * 2] First part of offer data for the i'th offer
     /// bits(0..8): Index of the maker's address in _addresses
@@ -821,18 +713,18 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
+        // Cache the operator address to reduce gas costs from storage reads
+        address operatorAddress = operator;
+
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = BrokerValidations.validateTrades(
+        bytes32[] memory hashKeys = Utils.validateTrades(
             _values,
             _hashes,
             _addresses
         );
-
-        // Cache the operator address to reduce gas costs from storage reads
-        address operatorAddress = operator;
 
         // Credit fillers for each fill.wantAmount, and credit the operator
         // for each fill.feeAmount.
@@ -861,6 +753,43 @@ contract BrokerV2 is Ownable {
 
         // Mark all fill nonces as taken in the `usedNonces` mapping.
         _storeFillNonces(_values);
+    }
+
+    function networkTrade(
+        uint256[] calldata _values,
+        bytes32[] calldata _hashes,
+        address[] calldata _addresses
+    )
+        external
+        onlyAdmin
+        onlyActiveState
+        nonReentrant
+    {
+        // Cache the operator address to reduce gas costs from storage reads
+        address operatorAddress = operator;
+
+        // `validateTrades` needs to calculate the hash keys of offers and fills
+        // to verify the signature of the offer / fill.
+        // The calculated hash keys for each offer is return to reduce repeated
+        // computation.
+        bytes32[] memory hashKeys = Utils.validateNetworkTrades(
+            _values,
+            _hashes,
+            _addresses,
+            operatorAddress
+        );
+
+        _creditMakerBalances(_values, _addresses);
+        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
+        _deductMakerBalances(_values, _addresses);
+        _storeOfferData(_values, hashKeys);
+
+        uint256[] memory increments = Utils.performNetworkTrades(
+            _values,
+            _addresses,
+            marketDapps
+        );
+        _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -1031,7 +960,8 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(_maker == msg.sender, "Invalid sender");
+        // Error code 19: announceCancel, invalid msg.sender
+        require(_maker == msg.sender, "19");
 
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1045,9 +975,10 @@ contract BrokerV2 is Ownable {
             _offerNonce
         ));
 
-        require(offers[offerHash] > 0, "Invalid offerHash");
+        // Error code 20: announceCancel, nothing left to cancel
+        require(offers[offerHash] > 0, "20");
 
-        uint256 cancellableAt = now + slowCancelDelay;
+        uint256 cancellableAt = now.add(slowCancelDelay);
         cancellationAnnouncements[offerHash] = cancellableAt;
 
         emit AnnounceCancel(offerHash, cancellableAt);
@@ -1096,11 +1027,14 @@ contract BrokerV2 is Ownable {
         ));
 
         uint256 cancellableAt = cancellationAnnouncements[offerHash];
-        require(cancellableAt != 0, "Invalid announcement");
-        require(now >= cancellableAt, "Insufficient delay");
+        // Error code 21: slowCancel, cancellation was not announced
+        require(cancellableAt != 0, "21");
+        // Error code 22: slowCancel, cancellation delay not yet reached
+        require(now >= cancellableAt, "22");
 
         uint256 availableAmount = offers[offerHash];
-        require(availableAmount > 0, "Offer already cancelled");
+        // Error code 23: slowCancel, nothing left to cancel
+        require(availableAmount > 0, "23");
 
         delete cancellationAnnouncements[offerHash];
         _cancel(
@@ -1223,14 +1157,13 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(
-            _amount > 0 && _amount <= balances[msg.sender][_assetId],
-            "Invalid amount"
-        );
+
+        // Error code 24: announceWithdraw, invalid withdrawal amount
+        require(_amount > 0 && _amount <= balances[msg.sender][_assetId], "24");
 
         WithdrawalAnnouncement storage announcement = withdrawalAnnouncements[msg.sender][_assetId];
 
-        announcement.withdrawableAt = now + slowWithdrawDelay;
+        announcement.withdrawableAt = now.add(slowWithdrawDelay);
         announcement.amount = _amount;
 
         emit AnnounceWithdraw(msg.sender, _assetId, _amount, announcement.withdrawableAt);
@@ -1252,9 +1185,12 @@ contract BrokerV2 is Ownable {
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
-        require(announcement.withdrawableAt != 0, "Invalid announcement");
-        require(now >= announcement.withdrawableAt, "Insufficient delay");
-        require(announcement.amount == _amount, "Invalid amount");
+        // Error code 25: slowWithdraw, withdrawal was not announced
+        require(announcement.withdrawableAt != 0, "25");
+        // Error code 26: slowWithdraw, withdrawal delay not yet reached
+        require(now >= announcement.withdrawableAt, "26");
+        // Error code 27: slowWithdraw, withdrawal amount does not match announced amount
+        require(announcement.amount == _amount, "27");
 
         delete withdrawalAnnouncements[_withdrawer][_assetId];
         _withdraw(
@@ -1297,13 +1233,15 @@ contract BrokerV2 is Ownable {
         onlyAdmin
         onlyActiveState
     {
-        require(_values[0] > 0, "Invalid amount");
-        require(_values[1] > now, "Invalid expiry time");
+        // Error code 28: createSwap, invalid swap amount
+        require(_values[0] > 0, "28");
+        // Error code 29: createSwap, expiry time has already passed
+        require(_values[1] > now, "29");
         _validateAddress(_addresses[1]);
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
-        // require that the swap is not yet active
-        require(!atomicSwaps[swapHash], "Invalid swap");
+        // Error code 30: createSwap, the swap is already active
+        require(!atomicSwaps[swapHash], "30");
 
         _markNonce(_values[3]);
 
@@ -1317,7 +1255,8 @@ contract BrokerV2 is Ownable {
         );
 
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
-            require(_values[2] < _values[0], "Invalid fee amount"); // feeAmount < amount
+            // Error code 31: createSwap, swap.feeAmount exceeds swap.amount
+            require(_values[2] < _values[0], "31"); // feeAmount < amount
         } else {
             _decreaseBalance(
                 _addresses[0], // maker
@@ -1365,11 +1304,10 @@ contract BrokerV2 is Ownable {
         external
     {
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        require(atomicSwaps[swapHash], "Swap is not active");
-        require(
-            sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret,
-            "Invalid preimage"
-        );
+        // Error code 32: executeSwap, swap is not active
+        require(atomicSwaps[swapHash], "32");
+        // Error code 32: executeSwap, hash of preimage does not match hashedSecret
+        require(sha256(abi.encodePacked(sha256(_preimage))) == _hashedSecret, "33");
 
         uint256 takeAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1420,17 +1358,18 @@ contract BrokerV2 is Ownable {
     )
         external
     {
-        require(_values[1] <= now, "Swap not yet expired");
+        // Error code 34: cancelSwap, expiry time has not been reached
+        require(_values[1] <= now, "34");
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
-        require(atomicSwaps[swapHash], "Swap is not active");
+        // Error code 35: cancelSwap, swap is not active
+        require(atomicSwaps[swapHash], "35");
 
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
 
-        require(
-            cancelFeeAmount <= _values[2], // cancelFeeAmount < feeAmount
-            "Invalid cancel fee amount"
-        );
+        // cancelFeeAmount < feeAmount
+        // Error code 36: cancelSwap, cancelFeeAmount exceeds swap.feeAmount
+        require(cancelFeeAmount <= _values[2], "36");
 
         uint256 refundAmount = _values[0];
         if (_addresses[3] == _addresses[2]) { // feeAssetId == assetId
@@ -1464,6 +1403,14 @@ contract BrokerV2 is Ownable {
                 REASON_SWAP_CANCEL_FEE_REFUND,
                 _values[3] // nonce
             );
+        }
+    }
+
+    function claimExcessBalance(address _assetId) external onlyOwner {
+        uint256 externalBalance = Utils.externalBalance(_assetId);
+        uint256 diff = externalBalance.sub(totalBalances[_assetId]);
+        if (diff > 0) {
+            balances[owner][_assetId] = balances[owner][_assetId].add(diff);
         }
     }
 
@@ -1517,15 +1464,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-
-            emit Increment(i << 248 | increment);
-        }
+        _incrementBalances(increments, 1, min, max, _addresses);
     }
 
     /// @dev Credit makers for each amount received through a matched fill.
@@ -1569,15 +1508,7 @@ contract BrokerV2 is Ownable {
             if (max < wantAssetIndex) { max = wantAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-
-            emit Increment(i << 248 | increment);
-        }
+        _incrementBalances(increments, 1, min, max, _addresses);
     }
 
     /// @dev Credit the operator for each offer.feeAmount if the offer has not
@@ -1602,7 +1533,7 @@ contract BrokerV2 is Ownable {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 feeAmount = _values[i] >> 128;
@@ -1623,15 +1554,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 increment = increments[i];
-            if (increment == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
-
-            emit Increment(i << 248 | increment);
-        }
+        _incrementBalances(increments, 1, min, max, _addresses);
     }
 
     /// @dev Deduct tokens from fillers for each fill.offerAmount
@@ -1674,15 +1597,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 decrement = decrements[i];
-            if (decrement == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
-
-            emit Decrement(i << 248 | decrement);
-        }
+        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Deduct tokens from makers for each offer.offerAmount
@@ -1707,7 +1622,7 @@ contract BrokerV2 is Ownable {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
@@ -1728,15 +1643,7 @@ contract BrokerV2 is Ownable {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        for(i = min; i <= max; i++) {
-            uint256 decrement = decrements[i];
-            if (decrement == 0) { continue; }
-
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
-            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
-
-            emit Decrement(i << 248 | decrement);
-        }
+        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Reduce available offer amounts of offers and store the remaining
@@ -1774,12 +1681,13 @@ contract BrokerV2 is Ownable {
 
         // loop offers
         for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 56;
             bool existingOffer = _nonceTaken(nonce);
             bytes32 hashKey = _hashKeys[i];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
-            require(availableAmount > 0, "Invalid availableAmount");
+            // Error code 37: offer's available amount is zero
+            require(availableAmount > 0, "37");
 
             uint256 remainingAmount = availableAmount.sub(decrements[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
@@ -1803,7 +1711,7 @@ contract BrokerV2 is Ownable {
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 48;
+            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
             _markNonce(nonce);
         }
     }
@@ -1824,8 +1732,11 @@ contract BrokerV2 is Ownable {
         private
     {
         uint256 refundAmount = offers[_offerHash];
-        require(refundAmount > 0, "Invalid offerHash");
-        require(refundAmount == _expectedAvailableAmount);
+        // Error code 38: _cancel, there is no offer amount left to cancel
+        require(refundAmount > 0, "38");
+        // Error code 39: _cancel, the remaining offer amount does not match
+        // the expectedAvailableAmount
+        require(refundAmount == _expectedAvailableAmount, "39");
 
         delete offers[_offerHash];
 
@@ -1873,8 +1784,10 @@ contract BrokerV2 is Ownable {
         uint256 _nonce
     )
         private
+        nonReentrant
     {
-        require(_amount > 0, 'Invalid amount');
+        // Error code 40: _withdraw, invalid withdrawal amount
+        require(_amount > 0, "40");
 
         _validateAddress(_receivingAddress);
 
@@ -1885,6 +1798,7 @@ contract BrokerV2 is Ownable {
             REASON_WITHDRAW,
             _nonce
         );
+        totalBalances[_assetId] = totalBalances[_assetId].sub(_amount);
 
         _increaseBalance(
             operator,
@@ -1914,17 +1828,11 @@ contract BrokerV2 is Ownable {
             return;
         }
 
-        _validateContractAddress(_assetId);
-
-        bytes memory payload = abi.encodeWithSignature(
-                                   "transfer(address,uint256)",
-                                   _receivingAddress,
-                                   withdrawAmount
-                               );
-        bytes memory returnData = _callContract(_assetId, payload);
-
-        // Ensure that the asset transfer succeeded
-        _validateTransferResult(returnData);
+        Utils.transferTokensOut(
+            _receivingAddress,
+            _assetId,
+            withdrawAmount
+        );
     }
 
     /// @dev Creates a hash key for a swap using the swap's parameters
@@ -1991,13 +1899,15 @@ contract BrokerV2 is Ownable {
     /// See `_nonceTaken` for details on calculating the corresponding `_nonce` bit.
     /// @param _nonce The nonce to mark
     function _markNonce(uint256 _nonce) private {
-        require(_nonce != 0, "Invalid nonce");
+        // Error code 41: _markNonce, nonce cannot be zero
+        require(_nonce != 0, "41");
 
         uint256 slotData = _nonce.div(256);
         uint256 shiftedBit = 1 << _nonce.mod(256);
         uint256 bits = usedNonces[slotData];
 
-        require(bits & shiftedBit == 0, "Nonce already used");
+        // Error code 42: _markNonce, nonce has already been marked
+        require(bits & shiftedBit == 0, "42");
 
         usedNonces[slotData] = bits | shiftedBit;
     }
@@ -2024,44 +1934,14 @@ contract BrokerV2 is Ownable {
         private
         pure
     {
-        bytes32 eip712Hash = keccak256(abi.encodePacked(
-            "\x19\x01",
-            DOMAIN_SEPARATOR,
-            _hash
-        ));
-
-        if (_prefixed) {
-            bytes32 prefixedHash = keccak256(abi.encodePacked(
-                "\x19Ethereum Signed Message:\n32",
-                eip712Hash
-            ));
-            require(_user == ecrecover(prefixedHash, _v, _r, _s), "Invalid signature");
-        } else {
-            require(_user == ecrecover(eip712Hash, _v, _r, _s), "Invalid signature");
-        }
-    }
-
-    /// @dev A thin wrapper around the native `call` function, to
-    /// validate that the contract `call` must be successful.
-    /// See https://solidity.readthedocs.io/en/v0.5.1/050-breaking-changes.html
-    /// for details on constructing the `_payload`
-    /// @param _contract Address of the contract to call
-    /// @param _payload The data to call the contract with
-    /// @return The data returned from the contract call
-    function _callContract(
-        address _contract,
-        bytes memory _payload
-    )
-        private
-        returns (bytes memory)
-    {
-        bool success;
-        bytes memory returnData;
-
-        (success, returnData) = _contract.call(_payload);
-        require(success, "Contract call failed");
-
-        return returnData;
+        Utils.validateSignature(
+            _hash,
+            _user,
+            _v,
+            _r,
+            _s,
+            _prefixed
+        );
     }
 
     /// @dev A utility method to increase the balance of a user.
@@ -2123,45 +2003,45 @@ contract BrokerV2 is Ownable {
     /// @dev Ensures that `_address` is not the zero address
     /// @param _address The address to check
     function _validateAddress(address _address) private pure {
-        require(
-            _address != address(0),
-            'Invalid address'
-        );
+        Utils.validateAddress(_address);
     }
 
-    /// @dev Ensure that the address is a deployed contract
-    /// @param _contract The address to check
-    function _validateContractAddress(address _contract) private view {
-        assembly {
-            if iszero(extcodesize(_contract)) { revert(0, 0) }
+    function _incrementBalances(
+        uint256[] memory increments,
+        uint256 _static,
+        uint256 _i,
+        uint256 _end,
+        address[] memory _addresses
+    )
+        private
+    {
+        for(_i; _i <= _end; _i++) {
+            uint256 increment = increments[_i];
+            if (increment == 0) { continue; }
+
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
+
+            emit Increment((_i << 248) | (_static << 240) | increment);
         }
     }
 
-    /// @dev Fix for ERC-20 tokens that do not have proper return type
-    /// See: https://github.com/ethereum/solidity/issues/4116
-    /// https://medium.com/loopring-protocol/an-incompatibility-in-smart-contract-threatening-dapp-ecosystem-72b8ca5db4da
-    /// https://github.com/sec-bit/badERC20Fix/blob/master/badERC20Fix.sol
-    /// @param _data The data returned from a transfer call
-    function _validateTransferResult(bytes memory _data) private pure {
-        require(
-            _data.length == 0 ||
-            (_data.length == 32 && _getUint256FromBytes(_data) != 0),
-            "Invalid transfer"
-        );
-    }
-
-    /// @dev Converts data of type `bytes` into its corresponding `uint256` value
-    /// @param _data The data in bytes
-    /// @return The corresponding `uint256` value
-    function _getUint256FromBytes(
-        bytes memory _data
+    function _decrementBalances(
+        uint256[] memory decrements,
+        uint256 _i,
+        uint256 _end,
+        address[] memory _addresses
     )
         private
-        pure
-        returns (uint256)
     {
-        uint256 parsed;
-        assembly { parsed := mload(add(_data, 32)) }
-        return parsed;
+        for(_i; _i <= _end; _i++) {
+            uint256 decrement = decrements[_i];
+            if (decrement == 0) { continue; }
+
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
+            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
+
+            emit Decrement(_i << 248 | decrement);
+        }
     }
 }
