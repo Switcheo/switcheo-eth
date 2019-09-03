@@ -86,11 +86,11 @@ library BrokerUtils {
     /// @param _hashes Hashes from `trade`
     /// @param _addresses Addresses from `trade`
     function validateTrades(
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        address[] calldata _addresses
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
     )
-        external
+        public
         pure
         returns (bytes32[] memory)
     {
@@ -122,12 +122,12 @@ library BrokerUtils {
     }
 
     function validateNetworkTrades(
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        address[] calldata _addresses,
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses,
         address _operator
     )
-        external
+        public
         pure
         returns (bytes32[] memory)
     {
@@ -148,11 +148,11 @@ library BrokerUtils {
     }
 
     function performNetworkTrades(
-        uint256[] calldata _values,
-        address[] calldata _addresses,
-        address[] calldata _marketDapps
+        uint256[] memory _values,
+        address[] memory _addresses,
+        address[] memory _marketDapps
     )
-        external
+        public
         returns (uint256[] memory)
     {
         uint256[] memory increments = new uint256[](_addresses.length / 2);
@@ -225,7 +225,7 @@ library BrokerUtils {
         uint256 _amount,
         uint256 _expectedAmount
     )
-        external
+        public
     {
         _validateContractAddress(_assetId);
 
@@ -257,7 +257,7 @@ library BrokerUtils {
         address _assetId,
         uint256 _amount
     )
-        external
+        public
     {
         _validateContractAddress(_assetId);
 

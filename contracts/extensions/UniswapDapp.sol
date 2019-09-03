@@ -32,11 +32,11 @@ contract UniswapDapp is BrokerExtension {
     }
 
     function tokenReceiver(
-        address[] calldata /* _assetIds */,
-        uint256[] calldata /* _dataValues */,
-        address[] calldata /* _addresses */
+        address[] memory /* _assetIds */,
+        uint256[] memory /* _dataValues */,
+        address[] memory /* _addresses */
     )
-        external
+        public
         view
         returns(address)
     {
@@ -44,12 +44,12 @@ contract UniswapDapp is BrokerExtension {
     }
 
     function trade(
-        address[] calldata _assetIds,
-        uint256[] calldata _dataValues,
-        address[] calldata /* _addresses */,
+        address[] memory _assetIds,
+        uint256[] memory _dataValues,
+        address[] memory /* _addresses */,
         address payable _recipient
     )
-        external
+        public
         payable
     {
         // _dataValues[2] bits(24..56): delay
