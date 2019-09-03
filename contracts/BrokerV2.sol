@@ -474,6 +474,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
     }
 
+    /// @dev This function is needed as market DApps generally send ETH
+    /// using the `<address>.transfer` method.
+    /// It is left empty to avoid issues with the function call running out
+    /// of gas, as some callers set a small limit on how much gas can be
+    /// used by the ETH receiver.
     function() payable external {}
 
     /// @notice Deposits ERC20 tokens under the `_user`'s balance
