@@ -2,7 +2,7 @@ pragma solidity 0.5.10;
 
 import "../lib/math/SafeMath.sol";
 import "./BrokerExtension.sol";
-import "../BrokerUtils.sol";
+import "../Utils.sol";
 
 interface UniswapFactory {
     function getExchange(address token) external view returns (address exchange);
@@ -67,8 +67,8 @@ contract UniswapDapp is BrokerExtension {
 
         UniswapExchange exchange = UniswapExchange(factory.getExchange(_assetIds[0]));
 
-        BrokerUtils.transferTokensIn(msg.sender, _assetIds[0], _dataValues[0], _dataValues[0]);
-        BrokerUtils.approveTokenTransfer(
+        Utils.transferTokensIn(msg.sender, _assetIds[0], _dataValues[0], _dataValues[0]);
+        Utils.approveTokenTransfer(
             _assetIds[0],
             address(exchange),
             _dataValues[0]

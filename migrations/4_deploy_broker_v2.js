@@ -7,15 +7,15 @@ const UniswapDapp = artifacts.require('UniswapDapp')
 const TokenList = artifacts.require('TokenList')
 const SpenderList = artifacts.require('SpenderList')
 
-const BrokerUtils = artifacts.require('BrokerUtils')
+const Utils = artifacts.require('Utils')
 const BrokerV2 = artifacts.require('BrokerV2')
 
 module.exports = function(deployer) {
     deployer.then(async () => {
-        await deployer.deploy(BrokerUtils)
-        await deployer.link(BrokerUtils, BrokerV2)
-        await deployer.link(BrokerUtils, KyberSwapDapp)
-        await deployer.link(BrokerUtils, UniswapDapp)
+        await deployer.deploy(Utils)
+        await deployer.link(Utils, BrokerV2)
+        await deployer.link(Utils, KyberSwapDapp)
+        await deployer.link(Utils, UniswapDapp)
 
         const tokenList = await deployer.deploy(TokenList)
         const spenderList = await deployer.deploy(SpenderList)

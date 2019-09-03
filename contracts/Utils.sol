@@ -17,7 +17,7 @@ interface MarketDapp {
 /// @notice Functions were moved from the BrokerV2 contract into this contract
 /// so that the BrokerV2 contract would not exceed the maximum contract size of
 /// 24 KB.
-library BrokerUtils {
+library Utils {
     using SafeMath for uint256;
 
     // The constants for EIP-712 are precompiled to reduce contract size,

@@ -3,7 +3,7 @@ pragma solidity 0.5.10;
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
 import "./lib/utils/ReentrancyGuard.sol";
-import "./BrokerUtils.sol";
+import "./Utils.sol";
 
 interface IERC1820Registry {
     function setInterfaceImplementer(address account, bytes32 interfaceHash, address implementer) external;
@@ -507,7 +507,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         );
         totalBalances[_assetId] = totalBalances[_assetId].add(_expectedAmount);
 
-        BrokerUtils.transferTokensIn(
+        Utils.transferTokensIn(
             _user,
             _assetId,
             _amount,
@@ -653,7 +653,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(16..24): number of matches (numMatches)
     /// bits(24..256): Whether an offer / fill should have the Ethereum signed
     /// message prepended for signature verification. See
-    /// `BrokerUtils._validateTradeSignatures` for more details.
+    /// `Utils._validateTradeSignatures` for more details.
     ///
     /// @param _values[1 + i * 2] First part of offer data for the i'th offer
     /// bits(0..8): Index of the maker's address in _addresses
@@ -720,7 +720,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = BrokerUtils.validateTrades(
+        bytes32[] memory hashKeys = Utils.validateTrades(
             _values,
             _hashes,
             _addresses
@@ -772,7 +772,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = BrokerUtils.validateNetworkTrades(
+        bytes32[] memory hashKeys = Utils.validateNetworkTrades(
             _values,
             _hashes,
             _addresses,
@@ -784,7 +784,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _deductMakerBalances(_values, _addresses);
         _storeOfferData(_values, hashKeys);
 
-        uint256[] memory increments = BrokerUtils.performNetworkTrades(
+        uint256[] memory increments = Utils.performNetworkTrades(
             _values,
             _addresses,
             marketDapps
@@ -1407,7 +1407,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     }
 
     function claimExcessBalance(address _assetId) external onlyOwner {
-        uint256 externalBalance = BrokerUtils.externalBalance(_assetId);
+        uint256 externalBalance = Utils.externalBalance(_assetId);
         uint256 diff = externalBalance.sub(totalBalances[_assetId]);
         if (diff > 0) {
             balances[owner][_assetId] = balances[owner][_assetId].add(diff);
@@ -1828,7 +1828,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             return;
         }
 
-        BrokerUtils.transferTokensOut(
+        Utils.transferTokensOut(
             _receivingAddress,
             _assetId,
             withdrawAmount

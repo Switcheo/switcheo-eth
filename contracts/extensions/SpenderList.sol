@@ -1,7 +1,6 @@
 pragma solidity 0.5.10;
 
 import "./BrokerExtension.sol";
-import "../BrokerUtils.sol";
 
 contract SpenderList is BrokerExtension {
     // The constants for EIP-712 are precompiled to reduce contract size,

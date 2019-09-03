@@ -2,7 +2,7 @@ pragma solidity 0.5.10;
 
 import "../lib/math/SafeMath.sol";
 import "./BrokerExtension.sol";
-import "../BrokerUtils.sol";
+import "../Utils.sol";
 
 interface KyberNetworkProxy {
     function kyberNetworkContract() external view returns (address);
@@ -53,9 +53,9 @@ contract KyberSwapDapp is BrokerExtension {
         uint256 ethValue = 0;
 
         if (_assetIds[0] != ETHER_ADDR) {
-            BrokerUtils.transferTokensIn(msg.sender, _assetIds[0], _dataValues[0], _dataValues[0]);
+            Utils.transferTokensIn(msg.sender, _assetIds[0], _dataValues[0], _dataValues[0]);
             address kyberNetworkContract = kyberNetworkProxy.kyberNetworkContract();
-            BrokerUtils.approveTokenTransfer(
+            Utils.approveTokenTransfer(
                 _assetIds[0],
                 kyberNetworkContract,
                 _dataValues[0]
