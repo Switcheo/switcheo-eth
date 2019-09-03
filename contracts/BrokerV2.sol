@@ -210,7 +210,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     mapping(uint256 => uint256) public usedNonces;
     // A mapping of user balances: userAddress => assetId => balance
     mapping(address => mapping(address => uint256)) public balances;
-    mapping(address => uint256) public totalBalances;
     // A mapping of atomic swap states: swapHash => isSwapActive
     mapping(bytes32 => bool) public atomicSwaps;
 
@@ -471,7 +470,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Error code 15: deposit, msg.value is 0
         require(msg.value > 0, "15");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
-        totalBalances[ETHER_ADDR] = totalBalances[ETHER_ADDR].add(msg.value);
     }
 
     function() payable external {}
@@ -514,7 +512,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             REASON_DEPOSIT,
             _nonce
         );
-        totalBalances[_assetId] = totalBalances[_assetId].add(_expectedAmount);
 
         Utils.transferTokensIn(
             _user,
@@ -543,7 +540,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address assetId = msg.sender;
         tokenList.validateToken(assetId);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
-        totalBalances[assetId] = totalBalances[assetId].add(_amount);
         emit TokenFallback(_user, assetId, _amount);
     }
 
@@ -571,7 +567,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address assetId = msg.sender;
         tokenList.validateToken(assetId);
         _increaseBalance(_user, assetId, _amount, REASON_DEPOSIT, 0);
-        totalBalances[assetId] = totalBalances[assetId].add(_amount);
         emit TokensReceived(_user, assetId, _amount);
     }
 
@@ -1470,14 +1465,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    function claimExcessBalance(address _assetId) external onlyOwner {
-        uint256 externalBalance = Utils.externalBalance(_assetId);
-        uint256 diff = externalBalance.sub(totalBalances[_assetId]);
-        if (diff > 0) {
-            balances[owner][_assetId] = balances[owner][_assetId].add(diff);
-        }
-    }
-
     /// @dev Credit fillers for each fill.wantAmount,and credit the operator
     /// for each fill.feeAmount. See the `trade` method for param details.
     /// @param _values Values from `trade`
@@ -1876,7 +1863,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             REASON_WITHDRAW,
             _nonce
         );
-        totalBalances[_assetId] = totalBalances[_assetId].sub(_amount);
 
         _increaseBalance(
             operator,
