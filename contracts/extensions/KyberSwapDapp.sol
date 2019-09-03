@@ -9,6 +9,9 @@ interface KyberNetworkProxy {
     function trade(address src, uint256 srcAmount, address dest, address payable destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) external payable returns (uint256);
 }
 
+/// @title The DApp adapter contract for KyberSwap
+/// @author Switcheo Network
+/// @notice This contract allows BrokerV2 offers to be filled by KyberSwap
 contract KyberSwapDapp is BrokerExtension {
     using SafeMath for uint256;
 
@@ -29,6 +32,7 @@ contract KyberSwapDapp is BrokerExtension {
         kyberNetworkProxy = KyberNetworkProxy(_kyberNetworkProxyAddress);
     }
 
+    /// @notice See Utils._performNetworkTrade for method details
     function tokenReceiver(
         address[] memory /* _assetIds */,
         uint256[] memory /* _dataValues */,
@@ -41,6 +45,7 @@ contract KyberSwapDapp is BrokerExtension {
         return address(this);
     }
 
+    /// @notice See Utils._performNetworkTrade for method details
     function trade(
         address[] memory _assetIds,
         uint256[] memory _dataValues,

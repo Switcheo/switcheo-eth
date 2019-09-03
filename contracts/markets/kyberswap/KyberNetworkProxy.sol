@@ -12,7 +12,8 @@ interface ERC20 {
     function decimals() external view returns(uint digits);
 }
 
-// https://github.com/KyberNetwork/smart-contracts/blob/master/contracts/KyberNetworkProxy.sol
+/// @title An adapted version of the KyberNetworkProxy contract for testing
+/// @notice https://github.com/KyberNetwork/smart-contracts/
 contract KyberNetworkProxy {
     using SafeMath for uint256;
 

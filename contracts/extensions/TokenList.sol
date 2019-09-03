@@ -3,6 +3,11 @@ pragma solidity 0.5.10;
 import "./BrokerExtension.sol";
 import "../Utils.sol";
 
+/// @title The TokenList extension for the BrokerV2 contract
+/// @author Switcheo Network
+/// @notice This contract maintains a list of whitelisted tokens.
+/// @dev Whitelisted tokens are permitted to call the `tokenFallback` and
+/// `tokensReceived` methods in the BrokerV2 contract.
 contract TokenList is BrokerExtension {
     // A record of whitelisted tokens: tokenAddress => isWhitelisted.
     // This controls token permission to invoke `tokenFallback` and `tokensReceived` callbacks
@@ -31,6 +36,8 @@ contract TokenList is BrokerExtension {
         delete tokenWhitelist[_assetId];
     }
 
+    /// @notice Validates if a token has been whitelisted
+    /// @param _assetId The token address to validate
     function validateToken(address _assetId) external view {
         require(tokenWhitelist[_assetId]);
     }

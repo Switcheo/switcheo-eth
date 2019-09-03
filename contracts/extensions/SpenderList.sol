@@ -3,38 +3,16 @@ pragma solidity 0.5.10;
 import "./BrokerExtension.sol";
 import "../Utils.sol";
 
+/// @title The SpenderList extension for the BrokerV2 contract
+/// @author Switcheo Network
+/// @notice This contract allows new features to be added to the BrokerV2 contract
+/// through spender contracts, these contracts are able to make fund transfers
+/// on behalf of users.
+/// @dev For security, the spender contract must first be whitelisted and separately
+/// authorized by individual users, before it can transfer the funds of a user.
 contract SpenderList is BrokerExtension {
     // The constants for EIP-712 are precompiled to reduce contract size,
     // the original values are left here for reference and verification.
-    // NOTE: CHAIN_ID and VERIFYING_CONTRACT values must be updated before
-    // mainnet deployment.
-    //
-    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
-    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
-    // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
-    // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
-    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
-    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
-    //     "EIP712Domain(",
-    //         "string name,",
-    //         "string version,",
-    //         "uint256 chainId,",
-    //         "address verifyingContract,",
-    //         "bytes32 salt",
-    //     ")"
-    // ));
-    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
-
-    // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
-    //     EIP712_DOMAIN_TYPEHASH,
-    //     CONTRACT_NAME,
-    //     CONTRACT_VERSION,
-    //     CHAIN_ID,
-    //     VERIFYING_CONTRACT,
-    //     SALT
-    // ));
-    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
-
     // bytes32 public constant AUTHORIZE_SPENDER_TYPEHASH = keccak256(abi.encodePacked(
     //     "AuthorizeSpender(",
     //         "address user,",
@@ -61,6 +39,7 @@ contract SpenderList is BrokerExtension {
     event UnauthorizeSpender(address indexed user, address indexed spender);
 
     constructor() public {
+        // whitelist this contract so that it can call BrokerV2.markNonce
         spenderWhitelist[address(this)] = true;
     }
 
@@ -158,10 +137,15 @@ contract SpenderList is BrokerExtension {
         emit UnauthorizeSpender(user, _spender);
     }
 
+    /// @notice Validates if a spender contract has been whitelisted
+    /// @param _spender The address of the spender contract
     function validateSpender(address _spender) external view {
         require(spenderWhitelist[_spender]);
     }
 
+    /// @notice Validates if a spender contract has been authorized by a user
+    /// @param _user The user of the spender contract
+    /// @param _spender The address of the spender contract
     function validateSpenderAuthorization(address _user, address _spender) external view {
         require(spenderAuthorizations[_user][_spender]);
     }

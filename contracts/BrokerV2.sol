@@ -608,7 +608,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// offer / fill can be split into multiple offers / fills by the off-chain
     /// service.
     ///
-    /// For nonces the maximum value is 2^80, or more than a billion billion (24 zeros).
+    /// For nonces the maximum value is 2^72, or more than a billion billion (21 zeros).
     ///
     /// Offers and fills both encompass information about how much (offerAmount)
     /// of a specified token (offerAssetId) the user wants to offer and
@@ -645,15 +645,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// reason why there cannot be repeated offers. Additionally, to prevent
     /// replay attacks, all fill nonces are required to be unused.
     ///
-    /// @param _values[0] Number of offers, fills, matches, as well as
-    /// data about whether an offer's / fill's signature should have the
-    /// Ethereum signed message prepended for verification
+    /// @param _values[0] Number of offers, fills, matches
     /// bits(0..8): number of offers (numOffers)
     /// bits(8..16): number of fills (numFills)
     /// bits(16..24): number of matches (numMatches)
-    /// bits(24..256): Whether an offer / fill should have the Ethereum signed
-    /// message prepended for signature verification. See
-    /// `Utils._validateTradeSignatures` for more details.
+    /// bits(24..256): must be zero
     ///
     /// @param _values[1 + i * 2] First part of offer data for the i'th offer
     /// bits(0..8): Index of the maker's address in _addresses
@@ -662,7 +658,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(24..32): Index of the maker feeAssetId pair in _addresses
     /// bits(32..40): Index of the operator feeAssetId pair in _addresses
     /// bits(40..48): The `v` component of the maker's signature for this offer
-    /// bits(48..128): The offer nonce to prevent replay attacks
+    /// bits(48..56): Indicates whether the Ethereum signed message
+    /// prefix should be prepended during signature verification
+    /// bits(56..128): The offer nonce to prevent replay attacks
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
     ///
     /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
@@ -676,7 +674,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(24..32): Index of the filler feeAssetId pair in _addresses
     /// bits(32..40): Index of the operator feeAssetId pair in _addresses
     /// bits(40..48): The `v` component of the filler's signature for this fill
-    /// bits(48..128): The fill nonce to prevent replay attacks
+    /// bits(48..56): Indicates whether the Ethereum signed message
+    /// prefix should be prepended during signature verification
+    /// bits(56..128): The fill nonce to prevent replay attacks
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this fill
     ///
     /// @param _values[2 + numOffers * 2 + i * 2] Second part of fill data for the i'th fill
@@ -755,6 +755,57 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _storeFillNonces(_values);
     }
 
+    /// @notice Executes an array of offers against external orders.
+    /// @dev This method accepts an array of "offers" together with
+    /// an array of "matches" to specify the matching between the "offers" and
+    /// external orders.
+    /// The data is bit compacted and formatted in the same way as the `trade` function.
+    ///
+    /// @param _values[0] Number of offers, fills, matches
+    /// bits(0..8): number of offers (numOffers)
+    /// bits(8..16): number of fills, must be zero
+    /// bits(16..24): number of matches (numMatches)
+    /// bits(24..256): must be zero
+    ///
+    /// @param _values[1 + i * 2] First part of offer data for the i'th offer
+    /// bits(0..8): Index of the maker's address in _addresses
+    /// bits(8..16): Index of the maker offerAssetId pair in _addresses
+    /// bits(16..24): Index of the maker wantAssetId pair in _addresses
+    /// bits(24..32): Index of the maker feeAssetId pair in _addresses
+    /// bits(32..40): Index of the operator feeAssetId pair in _addresses
+    /// bits(40..48): The `v` component of the maker's signature for this offer
+    /// bits(48..56): Indicates whether the Ethereum signed message
+    /// prefix should be prepended during signature verification
+    /// bits(56..128): The offer nonce to prevent replay attacks
+    /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
+    ///
+    /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
+    /// bits(0..128): offer.offerAmount, i.e. the number of tokens to offer
+    /// bits(128..256): offer.wantAmount, i.e. the number of tokens to ask for in return
+    ///
+    /// @param _values[1 + numOffers * 2 + i] Data for the i'th match
+    /// bits(0..8): Index of the offerIndex for this match
+    /// bits(8..16): Index of the marketDapp for this match
+    /// bits(16..24): Index of the surplus asset ID for this match, for any excess
+    /// tokens resulting from the trade
+    /// bits(128..256): The number of tokens to take from the matched offer's offerAmount
+    ///
+    /// @param _hashes[i * 2] The `r` component of the maker's / filler's signature
+    /// for the i'th offer / fill
+    ///
+    /// @param _hashes[i * 2 + 1] The `s` component of the maker's / filler's signature
+    /// for the i'th offer / fill
+    ///
+    /// @param _addresses An array of user asset pairs in the form of:
+    /// [
+    ///     user_1_address,
+    ///     asset_1_address,
+    ///     user_1_address,
+    ///     asset_2_address,
+    ///     user_2_address,
+    ///     asset_1_address,
+    ///     ...
+    /// ]
     function networkTrade(
         uint256[] calldata _values,
         bytes32[] calldata _hashes,
@@ -768,8 +819,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
 
-        // `validateTrades` needs to calculate the hash keys of offers and fills
-        // to verify the signature of the offer / fill.
+        // `validateNetworkTrades` needs to calculate the hash keys of offers
+        // to verify the signature of the offer.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
         bytes32[] memory hashKeys = Utils.validateNetworkTrades(
@@ -784,6 +835,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _deductMakerBalances(_values, _addresses);
         _storeOfferData(_values, hashKeys);
 
+        // There may be excess tokens resulting from a trade
+        // Any excess tokens are returned and recorded in `increments`
         uint256[] memory increments = Utils.performNetworkTrades(
             _values,
             _addresses,
@@ -1111,6 +1164,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _nonce
         );
     }
+
     /// @notice Withdraws tokens without requiring the withdrawer's signature
     /// @dev This method is intended to be used in the case of a contract
     /// upgrade or in an emergency. It can only be invoked by an admin and only
@@ -1456,7 +1510,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             // override the operator slot with the actual operator address
             // and set the operator fee asset ID slot to be the fill's feeAssetId
             _addresses[feeAssetIndex * 2] = _operator;
-            _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
+                // a value of address(1) indicates that this value has not been set before
+                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+            } else {
+                // if the value is not address(1) then it must have been previously set
+                // to a value matching the make's feeAssetId
+                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1]);
+            }
 
             // credit fill.feeAmount to operator
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
@@ -1546,7 +1607,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             // override the operator slot with the actual operator address
             // and set the operator fee asset ID slot to be the make's feeAssetId
             _addresses[feeAssetIndex * 2] = _operator;
-            _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
+                // a value of address(1) indicates that this value has not been set before
+                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+            } else {
+                // if the value is not address(1) then it must have been previously set
+                // to a value matching the make's feeAssetId
+                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1]);
+            }
 
             // credit make.feeAmount to operator
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
@@ -2006,8 +2074,27 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         Utils.validateAddress(_address);
     }
 
+    /// @dev A utility method to increase balances of multiple addresses.
+    /// A corressponding `Increment` event will also be emitted.
+    /// @param _increments An array of amounts to increase a user's balance by,
+    /// the corresponding user and assetId is referenced by
+    /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
+    /// @param _static Indicates if the amount was pre-calculated or only known
+    /// at the time the transaction was executed
+    /// @param _i The index to start the increment loop at (inclusive)
+    /// @param _end The index to end the increment loop at (inclusive)
+    /// @param _addresses An array of user asset pairs in the form of:
+    /// [
+    ///     user_1_address,
+    ///     asset_1_address,
+    ///     user_1_address,
+    ///     asset_2_address,
+    ///     user_2_address,
+    ///     asset_1_address,
+    ///     ...
+    /// ]
     function _incrementBalances(
-        uint256[] memory increments,
+        uint256[] memory _increments,
         uint256 _static,
         uint256 _i,
         uint256 _end,
@@ -2016,7 +2103,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
     {
         for(_i; _i <= _end; _i++) {
-            uint256 increment = increments[_i];
+            uint256 increment = _increments[_i];
             if (increment == 0) { continue; }
 
             balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
@@ -2026,8 +2113,25 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
+    /// @dev A utility method to decrease balances of multiple addresses.
+    /// A corressponding `Decrement` event will also be emitted.
+    /// @param _decrements An array of amounts to decrease a user's balance by,
+    /// the corresponding user and assetId is referenced by
+    /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
+    /// @param _i The index to start the increment loop at (inclusive)
+    /// @param _end The index to end the increment loop at (inclusive)
+    /// @param _addresses An array of user asset pairs in the form of:
+    /// [
+    ///     user_1_address,
+    ///     asset_1_address,
+    ///     user_1_address,
+    ///     asset_2_address,
+    ///     user_2_address,
+    ///     asset_1_address,
+    ///     ...
+    /// ]
     function _decrementBalances(
-        uint256[] memory decrements,
+        uint256[] memory _decrements,
         uint256 _i,
         uint256 _end,
         address[] memory _addresses
@@ -2035,7 +2139,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
     {
         for(_i; _i <= _end; _i++) {
-            uint256 decrement = decrements[_i];
+            uint256 decrement = _decrements[_i];
             if (decrement == 0) { continue; }
 
             balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =

@@ -4,10 +4,10 @@ import "./lib/math/SafeMath.sol";
 
 interface ERC20 {
     function balanceOf(address account) external view returns (uint256);
-    function approve(address spender, uint256 value) external returns (bool);
 }
 
 interface MarketDapp {
+    // Returns the address to approve tokens for
     function tokenReceiver(address[] calldata assetIds, uint256[] calldata dataValues, address[] calldata addresses) external view returns(address);
     function trade(address[] calldata assetIds, uint256[] calldata dataValues, address[] calldata addresses, address payable recipient) external payable;
 }
@@ -78,7 +78,6 @@ library Utils {
     bytes32 public constant FILL_TYPEHASH = 0x5f59dbc3412a4575afed909d028055a91a4250ce92235f6790c155a4b2669e99;
 
     address private constant ETHER_ADDR = address(0);
-    address private constant KYBER_ETHER_ADDR = address(0x00eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee);
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
@@ -121,6 +120,12 @@ library Utils {
         );
     }
 
+    /// @dev Validates `BrokerV2.networkTrade` parameters to ensure trade fairness,
+    /// see `BrokerV2.networkTrade` for param details.
+    /// @param _values Values from `networkTrade`
+    /// @param _hashes Hashes from `networkTrade`
+    /// @param _addresses Addresses from `networkTrade`
+    /// @param _operator Address of the `BrokerV2.operator`
     function validateNetworkTrades(
         uint256[] memory _values,
         bytes32[] memory _hashes,
@@ -412,7 +417,7 @@ library Utils {
         return surplusAmount;
     }
 
-    /// @dev Validates that input lengths based on the expected format
+    /// @dev Validates input lengths based on the expected format
     /// detailed in the `trade` method.
     /// @param _values Values from `trade`
     /// @param _hashes Hashes from `trade`
@@ -426,6 +431,8 @@ library Utils {
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
         uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
+
+        require(_values[0] >> 24 == 0);
 
         // It is enforced by other checks that if a fill is present
         // then it must be completely filled so there must be at least one offer
@@ -443,6 +450,10 @@ library Utils {
         require(_hashes.length == (numOffers + numFills) * 2, "49");
     }
 
+    /// @dev Validates input lengths based on the expected format
+    /// detailed in the `networkTrade` method.
+    /// @param _values Values from `networkTrade`
+    /// @param _hashes Hashes from `networkTrade`
     function _validateNetworkTradeInputLengths(
         uint256[] memory _values,
         bytes32[] memory _hashes
@@ -453,6 +464,8 @@ library Utils {
         uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
         uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
         uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
+
+        require(_values[0] >> 24 == 0);
 
         // Error code 65: _validateNetworkTradeInputLengths, invalid trade input lengths
         require(numOffers > 0 && numMatches > 0 && numFills == 0, "65");
@@ -560,6 +573,14 @@ library Utils {
         }
     }
 
+    /// @dev Validate that for every match:
+    /// 1. offerIndexes fall within the range of offers
+    /// 2. _addresses[surplusAssetIndexes * 2] matches the operator address
+    /// 3. takeAmount > 0
+    /// 4. (offer.wantAmount * takeAmount) % offer.offerAmount == 0
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
+    /// @param _operator Address of the `BrokerV2.operator`
     function _validateNetworkMatches(
         uint256[] memory _values,
         address[] memory _addresses,
@@ -656,9 +677,7 @@ library Utils {
     /// @dev Validates that for every offer / fill:
     /// 1. offerAssetId != wantAssetId
     /// 2. offerAmount > 0 && wantAmount > 0
-    /// 3. Specified `operator` address matches the expected `operator` address
-    /// (3) is needed because the operator address in `_addresses` is
-    /// externally set.
+    /// 3. The referenced `operator` address is the zero address
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
     function _validateTradeData(
@@ -702,14 +721,22 @@ library Utils {
 
             // Error code 62: _validateTradeData, invalid operator fee asset ID placeholder
              require(
-                // _addresses[operator fee asset ID index] == address(0)
+                // _addresses[operator fee asset ID index] == address(1)
+                // address(1) is used to differentiate from the ETHER_ADDR which is address(0)
                 // The actual fee asset ID will be read from the filler / maker feeAssetId
-                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(0),
+                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(1),
                 "62"
             );
         }
     }
 
+    /// @dev Validates that for every offer
+    /// 1. offerAssetId != wantAssetId
+    /// 2. offerAmount > 0 && wantAmount > 0
+    /// 3. Specified `operator` address matches the expected `operator` address,
+    /// 4. Specified `operator.feeAssetId` matches the offer's feeAssetId
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
     function _validateOfferData(
         uint256[] memory _values,
         address[] memory _addresses,

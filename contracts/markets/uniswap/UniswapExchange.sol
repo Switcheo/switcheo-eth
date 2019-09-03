@@ -15,6 +15,8 @@ interface Exchange {
     function ethToTokenTransferInput(uint256 minTokens, uint256 deadline, address recipient) external payable returns (uint256);
 }
 
+/// @title An adapted version of the UniswapExchange contract for testing
+/// @notice https://github.com/Uniswap/contracts-vyper
 contract UniswapExchange {
     using SafeMath for uint256;
 

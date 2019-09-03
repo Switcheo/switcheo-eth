@@ -10,8 +10,7 @@ contract BrokerExtension {
     Broker public broker;
 
     modifier onlyAdmin() {
-        // Error code 1: onlyAdmin, address is not an admin address
-        require(broker.isAdmin(msg.sender), "1");
+        require(broker.isAdmin(msg.sender));
         _;
     }
 

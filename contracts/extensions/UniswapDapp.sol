@@ -17,6 +17,9 @@ interface UniswapExchange {
     function tokenToTokenTransferInput(uint256 tokensSold, uint256 minTokensBought, uint256 minEthBought, uint256 deadline, address recipient, address tokenAddr) external returns (uint256 tokensBought);
 }
 
+/// @title The DApp adapter contract for Uniswap
+/// @author Switcheo Network
+/// @notice This contract allows BrokerV2 offers to be filled by Uniswap
 contract UniswapDapp is BrokerExtension {
     using SafeMath for uint256;
 
@@ -31,6 +34,7 @@ contract UniswapDapp is BrokerExtension {
         factory = UniswapFactory(_factoryAddress);
     }
 
+    /// @notice See Utils._performNetworkTrade for method details
     function tokenReceiver(
         address[] memory /* _assetIds */,
         uint256[] memory /* _dataValues */,
@@ -43,6 +47,7 @@ contract UniswapDapp is BrokerExtension {
         return address(this);
     }
 
+    /// @notice See Utils._performNetworkTrade for method details
     function trade(
         address[] memory _assetIds,
         uint256[] memory _dataValues,
