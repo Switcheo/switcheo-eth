@@ -1408,8 +1408,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     function claimExcessBalance(address _assetId) external onlyOwner {
         uint256 externalBalance = BrokerUtils.externalBalance(_assetId);
-        uint256 diff = totalBalances[_assetId].sub(externalBalance);
-        balances[owner][_assetId] = balances[owner][_assetId].add(diff);
+        uint256 diff = externalBalance.sub(totalBalances[_assetId]);
+        if (diff > 0) {
+            balances[owner][_assetId] = balances[owner][_assetId].add(diff);
+        }
     }
 
     /// @dev Credit fillers for each fill.wantAmount,and credit the operator

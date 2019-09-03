@@ -62,6 +62,10 @@ contract KyberNetworkProxy {
         return amountToGive;
     }
 
+    function forwardDeposit(address payable receiver) public payable {
+        receiver.transfer(msg.value);
+    }
+
     function deposit() public payable {}
     function setAmountToGive(uint256 _amount) public { amountToGive = _amount; }
     function setKyberNetworkContract(address _address) public {
