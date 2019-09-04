@@ -27,7 +27,7 @@ library Utils {
     // bytes32 public constant CONTRACT_VERSION = keccak256("2");
     // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
     // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
-    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
+    // bytes32 public constant SALT = keccak256("switcheo-eth-salt");
     // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
     //     "EIP712Domain(",
     //         "string name,",
