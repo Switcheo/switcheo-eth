@@ -10,7 +10,21 @@ const SpenderList = artifacts.require('SpenderList')
 const Utils = artifacts.require('Utils')
 const BrokerV2 = artifacts.require('BrokerV2')
 
-module.exports = function(deployer) {
+async function getKyberNetworkProxyAddress(network) {
+    if (['development', 'ropsten'].includes(network)) {
+        return (await KyberNetworkProxy.deployed()).address
+    }
+    return '0x818E6FECD516Ecc3849DAf6845e3EC868087B755'
+}
+
+async function getUniswapFactoryAddress(network) {
+    if (['development', 'ropsten'].includes(network)) {
+        return (await UniswapFactory.deployed()).address
+    }
+    return '0xc0a47dFe034B400B47bDaD5FecDa2621de6c4d95'
+}
+
+module.exports = function(deployer, network) {
     deployer.then(async () => {
         await deployer.deploy(Utils)
 
@@ -24,8 +38,8 @@ module.exports = function(deployer) {
 
         const tokenList = await deployer.deploy(TokenList)
         const spenderList = await deployer.deploy(SpenderList)
-        const kyberSwapDapp = await deployer.deploy(KyberSwapDapp, (await KyberNetworkProxy.deployed()).address)
-        const uniswapDapp = await deployer.deploy(UniswapDapp, (await UniswapFactory.deployed()).address)
+        const kyberSwapDapp = await deployer.deploy(KyberSwapDapp, await getKyberNetworkProxyAddress())
+        const uniswapDapp = await deployer.deploy(UniswapDapp, await getUniswapFactoryAddress())
 
         const broker = await deployer.deploy(BrokerV2, tokenList.address, spenderList.address)
 
