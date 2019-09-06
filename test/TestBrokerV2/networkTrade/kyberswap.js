@@ -49,7 +49,7 @@ contract('Test networkTrade: KyberSwap', async (accounts) => {
                     offerIndex: 0,
                     surplusAssetId: jrc.address,
                     data: 0, // index of fee-sharing wallet address in _addresses
-                    tradeProvider: 0, // kyberswap
+                    marketDapp: 0, // kyberswap
                     takeAmount: 40
                 }]
 
@@ -110,7 +110,7 @@ contract('Test networkTrade: KyberSwap', async (accounts) => {
                     offerIndex: 0,
                     surplusAssetId: ETHER_ADDR,
                     data: 0, // index of fee-sharing wallet address in _addresses
-                    tradeProvider: 0, // kyberswap
+                    marketDapp: 0, // kyberswap
                     takeAmount: 40
                 }]
 
@@ -181,7 +181,7 @@ contract('Test networkTrade: KyberSwap', async (accounts) => {
                     offerIndex: 0,
                     surplusAssetId: swc.address,
                     data: 0, // index of fee-sharing wallet address in _addresses
-                    tradeProvider: 0, // kyberswap
+                    marketDapp: 0, // kyberswap
                     takeAmount: 40
                 }]
 

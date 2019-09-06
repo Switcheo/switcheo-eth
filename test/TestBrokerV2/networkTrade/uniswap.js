@@ -50,7 +50,7 @@ contract('Test networkTrade: Uniswap', async (accounts) => {
                     offerIndex: 0,
                     surplusAssetId: jrc.address,
                     data: 60, // max execution delay
-                    tradeProvider: 1, // uniswap
+                    marketDapp: 1, // uniswap
                     takeAmount: 40
                 }]
 
@@ -118,7 +118,7 @@ contract('Test networkTrade: Uniswap', async (accounts) => {
                     offerIndex: 0,
                     surplusAssetId: ETHER_ADDR,
                     data: 60, // max execution delay
-                    tradeProvider: 1, // uniswap
+                    marketDapp: 1, // uniswap
                     takeAmount: 40
                 }]
 
@@ -199,7 +199,7 @@ contract('Test networkTrade: Uniswap', async (accounts) => {
                     offerIndex: 0,
                     surplusAssetId: swc.address,
                     data: 60, // max execution delay
-                    tradeProvider: 1, // uniswap
+                    marketDapp: 1, // uniswap
                     takeAmount: 40
                 }]
 

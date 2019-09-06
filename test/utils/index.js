@@ -448,7 +448,7 @@ async function networkTrade({ offers, matches, operator }, { privateKeys }, modi
 
     for (let i = 0; i < matches.length; i++) {
         const match = matches[i]
-        const value = bn(match.offerIndex).or(shl(match.tradeProvider, 8))
+        const value = bn(match.offerIndex).or(shl(match.marketDapp, 8))
                                           .or(shl(addressMap[operator][match.surplusAssetId], 16))
                                           .or(shl(match.data, 24))
                                           .or(shl(match.takeAmount, 128))
