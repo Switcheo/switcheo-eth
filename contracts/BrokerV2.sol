@@ -726,7 +726,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _creditMakerBalances(_values, _addresses);
 
         // Credit the operator for each offer.feeAmount if the offer has not
-        // been recorded through a previous `trade` call.
+        // been recorded through a previous `trade` or `networkTrade` call.
         _creditMakerFeeBalances(_values, _addresses, operatorAddress);
 
         // Deduct tokens from fillers for each fill.offerAmount
@@ -735,7 +735,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // Deduct tokens from makers for each offer.offerAmount
         // and each offer.feeAmount if the offer has not been recorded
-        // through a previous `trade` call.
+        // through a previous `trade` or `networkTrade` call.
         _deductMakerBalances(_values, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
@@ -823,9 +823,21 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             operatorAddress
         );
 
+        // Credit makers for each amount received through a match.
         _creditMakerBalances(_values, _addresses);
+
+        // Credit the operator for each offer.feeAmount if the offer has not
+        // been recorded through a previous `trade` or `networkTrade` call.
         _creditMakerFeeBalances(_values, _addresses, operatorAddress);
+
+        // Deduct tokens from makers for each offer.offerAmount
+        // and each offer.feeAmount if the offer has not been recorded
+        // through a previous `trade` or `networkTrade` call.
         _deductMakerBalances(_values, _addresses);
+
+        // Reduce available offer amounts of offers and store the remaining
+        // offer amount in the `offers` mapping.
+        // Offer nonces will also be marked as taken.
         _storeOfferData(_values, hashKeys);
 
         // There may be excess tokens resulting from a trade
@@ -835,6 +847,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _addresses,
             marketDapps
         );
+
         _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
     }
 
