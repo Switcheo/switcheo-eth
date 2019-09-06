@@ -60,7 +60,7 @@ contract KyberSwapDapp is BrokerExtension {
             Utils.transferTokensIn(msg.sender, _assetIds[0], _dataValues[0], _dataValues[0]);
             Utils.approveTokenTransfer(
                 _assetIds[0],
-                kyberNetworkProxy,
+                address(kyberNetworkProxy),
                 _dataValues[0]
             );
         } else {
