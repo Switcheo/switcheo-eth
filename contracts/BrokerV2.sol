@@ -76,35 +76,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     // The constants for EIP-712 are precompiled to reduce contract size,
     // the original values are left here for reference and verification.
-    // NOTE: CHAIN_ID and VERIFYING_CONTRACT values must be updated before
-    // mainnet deployment.
     //
-    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
-    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
-    // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
-    // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
-    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
-    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
-    //     "EIP712Domain(",
-    //         "string name,",
-    //         "string version,",
-    //         "uint256 chainId,",
-    //         "address verifyingContract,",
-    //         "bytes32 salt",
-    //     ")"
-    // ));
-    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
-
-    // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
-    //     EIP712_DOMAIN_TYPEHASH,
-    //     CONTRACT_NAME,
-    //     CONTRACT_VERSION,
-    //     CHAIN_ID,
-    //     VERIFYING_CONTRACT,
-    //     SALT
-    // ));
-    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
-
     // bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
     //     "Withdraw(",
     //         "address withdrawer,",
