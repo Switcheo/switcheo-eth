@@ -156,6 +156,15 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
     uint256 private constant MAX_SLOW_CANCEL_DELAY = 604800;
 
+    uint256 private constant mask8 = ~(~uint256(0) << 8);
+    uint256 private constant mask16 = ~(~uint256(0) << 16);
+    uint256 private constant mask24 = ~(~uint256(0) << 24);
+    uint256 private constant mask32 = ~(~uint256(0) << 32);
+    uint256 private constant mask40 = ~(~uint256(0) << 40);
+    uint256 private constant mask128 = ~(~uint256(0) << 128);
+    uint256 private constant mask136 = ~(~uint256(0) << 136);
+    uint256 private constant mask144 = ~(~uint256(0) << 144);
+
     State public state;
     AdminState public adminState;
     // All fees will be transferred to the operator address
@@ -873,11 +882,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             OFFER_TYPEHASH,
             _addresses[0], // maker
             _addresses[1], // offerAssetId
-            _values[0] & ~(~uint256(0) << 128), // offerAmount
+            _values[0] & mask128, // offerAmount
             _addresses[2], // wantAssetId
             _values[0] >> 128, // wantAmount
             _addresses[3], // feeAssetId
-            _values[1] & ~(~uint256(0) << 128), // feeAmount
+            _values[1] & mask128, // feeAmount
             _values[2] >> 144 // offerNonce
         ));
 
@@ -891,16 +900,16 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _validateSignature(
             cancelHash,
             _addresses[0], // maker
-            uint8((_values[2] & ~(~uint256(0) << 144)) >> 136), // v
+            uint8((_values[2] & mask144) >> 136), // v
             _hashes[0], // r
             _hashes[1], // s
-            ((_values[2] & ~(~uint256(0) << 136)) >> 128) != 0 // prefixedSignature
+            ((_values[2] & mask136) >> 128) != 0 // prefixedSignature
         );
 
         _cancel(
             _addresses[0], // maker
             offerHash,
-            _values[2] & ~(~uint256(0) << 128), // expectedAvailableAmount
+            _values[2] & mask128, // expectedAvailableAmount
             _addresses[1], // offerAssetId
             _values[2] >> 144, // offerNonce
             _addresses[4], // cancelFeeAssetId
@@ -1461,14 +1470,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
         // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 i = 1 + (_values[0] & mask8) * 2;
         // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
 
         // loop fills
         for(i; i < end; i += 2) {
             // let assetIndex be filler.wantAssetIndex
-            uint256 assetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
+            uint256 assetIndex = (_values[i] & mask24) >> 16;
             uint256 wantAmount = _values[i + 1] >> 128;
 
             // credit fill.wantAmount to filler
@@ -1480,8 +1489,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (feeAmount == 0) { continue; }
 
             // let assetIndex be filler.feeAssetIndex
-            assetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
+            assetIndex = (_values[i] & mask32) >> 24;
+            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
 
             // override the operator slot with the actual operator address
             // and set the operator fee asset ID slot to be the fill's feeAssetId
@@ -1521,24 +1530,24 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         uint256 i = 1;
         // i += numOffers * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        i += (_values[0] & mask8) * 2;
         // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        i += ((_values[0] & mask16) >> 8) * 2;
 
         uint256 end = _values.length;
 
         // loop matches
         for(i; i < end; i++) {
             // match.offerIndex
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 offerIndex = _values[i] & mask8;
             // offer.wantAssetIndex
-            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
 
             // match.takeAmount
             uint256 amount = _values[i] >> 128;
             // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
             amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
-                           .div(_values[2 + offerIndex * 2] & ~(~uint256(0) << 128));
+                           .div(_values[2 + offerIndex * 2] & mask128);
 
             // credit maker for the amount received from the match
             increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
@@ -1567,19 +1576,19 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         uint256 i = 1;
         // i + numOffers * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 end = i + (_values[0] & mask8) * 2;
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
+            uint256 nonce = (_values[i] & mask128) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
             // let assetIndex be maker.feeAssetIndex
-            uint256 assetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 40)) >> 32;
+            uint256 assetIndex = (_values[i] & mask32) >> 24;
+            uint256 feeAssetIndex = (_values[i] & mask40) >> 32;
 
             // override the operator slot with the actual operator address
             // and set the operator fee asset ID slot to be the make's feeAssetId
@@ -1619,14 +1628,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256[] memory decrements = new uint256[](_addresses.length / 2);
 
         // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 i = 1 + (_values[0] & mask8) * 2;
         // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
 
             // deduct fill.offerAmount from filler
             decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
@@ -1637,7 +1646,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (feeAmount == 0) { continue; }
 
             // deduct fill.feeAmount from filler
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
             decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
@@ -1664,15 +1673,15 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         uint256 i = 1;
         // i + numOffers * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 end = i + (_values[0] & mask8) * 2;
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
+            uint256 nonce = (_values[i] & mask128) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
-            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
 
             // deduct make.offerAmount from maker
             decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
@@ -1683,7 +1692,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (feeAmount == 0) { continue; }
 
             // deduct make.feeAmount from maker
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
             decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
             if (min > feeAssetIndex) { min = feeAssetIndex; }
             if (max < feeAssetIndex) { max = feeAssetIndex; }
@@ -1705,33 +1714,33 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
     {
         // Decrements with size numOffers
-        uint256[] memory decrements = new uint256[](_values[0] & ~(~uint256(0) << 8));
+        uint256[] memory decrements = new uint256[](_values[0] & mask8);
 
         uint256 i = 1;
         // i += numOffers * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        i += (_values[0] & mask8) * 2;
         // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        i += ((_values[0] & mask16) >> 8) * 2;
 
         uint256 end = _values.length;
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 offerIndex = _values[i] & mask8;
             uint256 takeAmount = _values[i] >> 128;
             decrements[offerIndex] = decrements[offerIndex].add(takeAmount);
         }
 
         i = 0;
-        end = _values[0] & ~(~uint256(0) << 8); // numOffers
+        end = _values[0] & mask8; // numOffers
 
         // loop offers
         for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 56;
+            uint256 nonce = (_values[i * 2 + 1] & mask128) >> 56;
             bool existingOffer = _nonceTaken(nonce);
             bytes32 hashKey = _hashKeys[i];
 
-            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
+            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & mask128);
             // Error code 31: _storeOfferData, offer's available amount is zero
             require(availableAmount > 0, "31");
 
@@ -1751,13 +1760,13 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _values Values from `trade`
     function _storeFillNonces(uint256[] memory _values) private {
         // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 i = 1 + (_values[0] & mask8) * 2;
         // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
+            uint256 nonce = (_values[i] & mask128) >> 56;
             _markNonce(nonce);
         }
     }
