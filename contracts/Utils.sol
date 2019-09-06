@@ -90,6 +90,15 @@ library Utils {
     uint256 private constant mask56 = ~(~uint256(0) << 56);
     uint256 private constant mask128 = ~(~uint256(0) << 128);
 
+    event Trade(
+        address maker,
+        address taker,
+        address makerGiveAsset,
+        uint256 makerGiveAmount,
+        address fillerGiveAsset,
+        uint256 fillerGiveAmount
+    );
+
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
     /// @param _values Values from `trade`
@@ -101,7 +110,6 @@ library Utils {
         address[] memory _addresses
     )
         public
-        pure
         returns (bytes32[] memory)
     {
         _validateTradeInputLengths(_values, _hashes);
@@ -119,6 +127,8 @@ library Utils {
             _values[0] & mask8, // numOffers
             (_values[0] & mask8) + ((_values[0] & mask16) >> 8) // numOffers + numFills
         );
+
+        _emitTradeEvents(_values, _addresses, new address[](0), false);
 
         // validate signatures of all offers
         return _validateTradeSignatures(
@@ -213,6 +223,8 @@ library Utils {
                 _addresses
             );
         }
+
+        _emitTradeEvents(_values, _addresses, _marketDapps, true);
 
         return increments;
     }
@@ -372,6 +384,56 @@ library Utils {
     function validateAddress(address _address) public pure {
         require(_address != address(0), "Invalid address");
     }
+
+    function _emitTradeEvents(
+        uint256[] memory _values,
+        address[] memory _addresses,
+        address[] memory _marketDapps,
+        bool _forNetworkTrade
+    )
+        private
+    {
+        uint256 i = 1;
+        // i += numOffers * 2
+        i += (_values[0] & mask8) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & mask16) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            uint256[] memory data = new uint256[](7);
+            data[0] = _values[i] & mask8; // match.offerIndex
+            data[1] = _values[1 + data[0] * 2] & mask8; // makerIndex
+            data[2] = (_values[1 + data[0] * 2] & mask16) >> 8; // makerOfferAssetIndex
+            data[3] = (_values[1 + data[0] * 2] & mask24) >> 16; // makerWantAssetIndex
+            data[4] = _values[i] >> 128; // match.takeAmount
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
+            data[5] = data[4].mul(_values[2 + data[0] * 2] >> 128)
+                             .div(_values[2 + data[0] * 2] & mask128);
+            // match.fillIndex for `trade`, marketDappIndex for `networkTrade`
+            data[6] = (_values[i] & mask16) >> 8;
+
+            address filler;
+            if (_forNetworkTrade) {
+                filler = _marketDapps[data[6]];
+            } else {
+                uint256 fillerIndex = (_values[1 + data[6] * 2] & mask8);
+                filler = _addresses[fillerIndex * 2];
+            }
+
+            emit Trade(
+                _addresses[data[1] * 2], // maker
+                filler,
+                _addresses[data[2] * 2 + 1], // makerGiveAsset
+                data[4], // makerGiveAmount
+                _addresses[data[3] * 2 + 1], // fillerGiveAsset
+                data[5] // fillerGiveAmount
+            );
+        }
+    }
+
 
     /// @notice Executes a trade against an external market.
     /// @dev The initial Ether or token balance is compared with the
