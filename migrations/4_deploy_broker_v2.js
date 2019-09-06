@@ -38,8 +38,8 @@ module.exports = function(deployer, network) {
 
         const tokenList = await deployer.deploy(TokenList)
         const spenderList = await deployer.deploy(SpenderList)
-        const kyberSwapDapp = await deployer.deploy(KyberSwapDapp, await getKyberNetworkProxyAddress())
-        const uniswapDapp = await deployer.deploy(UniswapDapp, await getUniswapFactoryAddress())
+        const kyberSwapDapp = await deployer.deploy(KyberSwapDapp, await getKyberNetworkProxyAddress(network))
+        const uniswapDapp = await deployer.deploy(UniswapDapp, await getUniswapFactoryAddress(network))
 
         const broker = await deployer.deploy(BrokerV2, tokenList.address, spenderList.address)
 
