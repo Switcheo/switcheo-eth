@@ -155,54 +155,54 @@ async function kyberswap_tokens_to_tokens() {
     console.log('result', result)
 }
 
-// async function kyberswap_eth_to_tokens() {
-//     const maker = operator
-//
-//     const offers = [{
-//         maker,
-//         offerAssetId: ETHER_ADDR,
-//         offerAmount: formatAmount(1, 17), // 0.1 ETH
-//         wantAssetId: DAI_ADDR,
-//         wantAmount: formatAmount(10, 18), // 10 DAI
-//         feeAssetId: DAI_ADDR,
-//         feeAmount: formatAmount(1, 18), // 1 DAI
-//         nonce: getRandomNonce()
-//     }]
-//     const matches = [{
-//         offerIndex: 0,
-//         surplusAssetId: ETHER_ADDR,
-//         data: 0, // index of fee-sharing wallet address in addresses
-//         tradeProvider: 0, // kyberswap
-//         takeAmount: formatAmount(1, 17) // take 0.1 ETH
-//     }]
-//
-//     const result = await exchange.networkTrade({ offers, matches, operator, gas: '1000000' }, { privateKeys })
-//     console.log('result', result)
-// }
-
 async function kyberswap_eth_to_tokens() {
     const maker = operator
 
     const offers = [{
         maker,
         offerAssetId: ETHER_ADDR,
-        offerAmount: formatAmount(5, 16), // 0.05 ETH
-        wantAssetId: KNC_ADDR,
-        wantAmount: formatAmount(40, 18), // 40 KNC
-        feeAssetId: KNC_ADDR,
-        feeAmount: formatAmount(1, 18), // 1 KNC
+        offerAmount: formatAmount(1, 17), // 0.1 ETH
+        wantAssetId: DAI_ADDR,
+        wantAmount: formatAmount(10, 18), // 10 DAI
+        feeAssetId: DAI_ADDR,
+        feeAmount: formatAmount(1, 18), // 1 DAI
         nonce: getRandomNonce()
     }]
     const matches = [{
         offerIndex: 0,
-        surplusAssetId: KNC_ADDR,
+        surplusAssetId: DAI_ADDR,
         data: 0, // index of fee-sharing wallet address in addresses
         tradeProvider: 0, // kyberswap
-        takeAmount: formatAmount(5, 16) // take 0.05 ETH
+        takeAmount: formatAmount(1, 17) // take 0.1 ETH
     }]
 
     const result = await exchange.networkTrade({ offers, matches, operator, gas: '1000000' }, { privateKeys })
     console.log('result', result)
 }
+
+// async function kyberswap_eth_to_tokens() {
+//     const maker = operator
+//
+//     const offers = [{
+//         maker,
+//         offerAssetId: ETHER_ADDR,
+//         offerAmount: formatAmount(5, 16), // 0.05 ETH
+//         wantAssetId: KNC_ADDR,
+//         wantAmount: formatAmount(40, 18), // 40 KNC
+//         feeAssetId: KNC_ADDR,
+//         feeAmount: formatAmount(1, 18), // 1 KNC
+//         nonce: getRandomNonce()
+//     }]
+//     const matches = [{
+//         offerIndex: 0,
+//         surplusAssetId: KNC_ADDR,
+//         data: 0, // index of fee-sharing wallet address in addresses
+//         tradeProvider: 0, // kyberswap
+//         takeAmount: formatAmount(5, 16) // take 0.05 ETH
+//     }]
+//
+//     const result = await exchange.networkTrade({ offers, matches, operator, gas: '1000000' }, { privateKeys })
+//     console.log('result', result)
+// }
 
 kyberswap_eth_to_tokens()
