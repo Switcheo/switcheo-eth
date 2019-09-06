@@ -1,28 +1,62 @@
-const BrokerV2 = artifacts.require('BrokerV2')
-const TokenList = artifacts.require('TokenList')
-const SpenderList = artifacts.require('SpenderList')
-const JRCoin = artifacts.require('JRCoin')
-const SWCoin = artifacts.require('SWCoin')
-const DGTXCoin = artifacts.require('DGTX')
-const ZEUSCoin = artifacts.require('ZEUS')
+// const BrokerV2 = artifacts.require('BrokerV2')
+// const TokenList = artifacts.require('TokenList')
+// const SpenderList = artifacts.require('SpenderList')
+// const JRCoin = artifacts.require('JRCoin')
+// const SWCoin = artifacts.require('SWCoin')
+// const DGTXCoin = artifacts.require('DGTX')
+// const ZEUSCoin = artifacts.require('ZEUS')
+
+const ERC20 = require('../../build/contracts/ERC20.json')
+const Utils = require('../../build/contracts/Utils.json')
+const BrokerV2 = require('../../build/contracts/BrokerV2.json')
+const KyberSwapDapp = require('../../build/contracts/KyberSwapDapp.json')
+const UniswapDapp = require('../../build/contracts/UniswapDapp.json')
+const TokenList = require('../../build/contracts/TokenList.json')
+const SpenderList = require('../../build/contracts/SpenderList.json')
+const JRCoin = require('../../build/contracts/JRCoin.json')
+const SWCoin = require('../../build/contracts/SWCoin.json')
+const DGTXCoin = require('../../build/contracts/DGTX.json')
+const ZEUSCoin = require('../../build/contracts/ZEUS.json')
 
 const BN = require('bn.js')
 const EthCrypto = require('eth-crypto')
-const { singletons } = require('openzeppelin-test-helpers')
+// const { singletons } = require('openzeppelin-test-helpers')
 const { sha256 } = require('js-sha256')
 
 const Web3 = require('web3')
-const web3 = new Web3(Web3.givenProvider)
+const abiDecoder = require('abi-decoder')
+
+abiDecoder.addABI(ERC20.abi)
+abiDecoder.addABI(Utils.abi)
+abiDecoder.addABI(BrokerV2.abi)
+abiDecoder.addABI(KyberSwapDapp.abi)
+abiDecoder.addABI(UniswapDapp.abi)
+
+function decodeInput(input) {
+    return abiDecoder.decodeMethod(input)
+}
+
+// const web3 = new Web3(Web3.givenProvider)
+const PrivateKeyProvider = require('truffle-privatekey-provider')
+const provider = new PrivateKeyProvider(
+    process.env.controlKey,
+    'https://mainnet.infura.io/v3/' + process.env.infuraKey
+)
+
+const web3 = new Web3(provider)
 
 const { soliditySha3, keccak256 } = web3.utils
 
-const abiDecoder = require('abi-decoder')
-abiDecoder.addABI(BrokerV2.abi)
+// const abiDecoder = require('abi-decoder')
+// abiDecoder.addABI(BrokerV2.abi)
 
 const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR,
         ONE_ADDR, ETHER_ADDR } = require('../constants')
 
-async function getBroker() { return await BrokerV2.deployed() }
+async function getBroker() {
+    return new web3.eth.Contract(BrokerV2.abi, '0x5a86Fd48ADDB990bf06A55fa68331E751Bb19890')
+}
+
 async function getTokenList() { return await TokenList.deployed() }
 async function getSpenderList() { return await SpenderList.deployed() }
 async function getJrc() { return await JRCoin.deployed() }
@@ -30,7 +64,7 @@ async function getSwc() { return await SWCoin.deployed() }
 async function getDgtx() { return await DGTXCoin.deployed() }
 async function getZeus(account) {
     /* eslint-disable new-cap */
-    await singletons.ERC1820Registry(account)
+    // await singletons.ERC1820Registry(account)
     return await ZEUSCoin.new()
 }
 
@@ -429,7 +463,8 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
 
 // `modify` is a callback to change the values sent to the contract,
 // this is used to test validations
-async function networkTrade({ offers, matches, operator }, { privateKeys }, modify) {
+async function networkTrade({ offers, matches, operator, gas }, { privateKeys }, modify) {
+    if (gas === undefined) { gas = '500000' }
     const broker = await getBroker()
     const lengths = bn(offers.length).or(shl(matches.length, 16))
     const values = [lengths]
@@ -457,7 +492,37 @@ async function networkTrade({ offers, matches, operator }, { privateKeys }, modi
 
     if (modify !== undefined) { modify({ values, hashes, addresses }) }
 
-    return await broker.networkTrade(values, hashes, addresses)
+    for (let i = 0; i < values.length; i++) {
+        values[i] = values[i].toString()
+    }
+
+    const sender = operator
+    console.log('sender', sender)
+
+    const contractAddress = broker.options.address
+    const contractMethod = broker.methods.networkTrade(values, hashes, addresses)
+    const nonce = await web3.eth.getTransactionCount(sender)
+
+    const transaction = {
+        to: contractAddress,
+        value: '0',
+        data: contractMethod.encodeABI(),
+        gas: gas.toString(),
+        gasPrice: web3.utils.toWei('20', 'gwei'),
+        nonce: nonce.toString(),
+        chainId: 1
+    }
+
+    const signedTxn = await web3.eth.accounts.signTransaction(transaction, privateKeys[operator])
+    const transactionHash = web3.utils.keccak256(signedTxn.rawTransaction)
+    console.log('transactionHash', transactionHash)
+
+    web3.eth.sendSignedTransaction(signedTxn.rawTransaction)
+    console.log('transaction sent')
+
+    // return { values, hashes, addresses }
+    // return await broker.networkTrade(values, hashes, addresses)
+    // return await broker.methods.networkTrade(values, hashes, addresses).send({ from: operator })
 }
 
 function hashSwap({ maker, taker, assetId, amount, hashedSecret, expiryTime, feeAssetId, feeAmount, nonce }) {
@@ -562,6 +627,7 @@ module.exports = {
     getSwc,
     getDgtx,
     getZeus,
+    decodeInput,
     printLogs,
     hashSecret,
     validateBalance,

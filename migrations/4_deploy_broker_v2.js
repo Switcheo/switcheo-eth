@@ -28,27 +28,28 @@ module.exports = function(deployer, network) {
     deployer.then(async () => {
         await deployer.deploy(Utils)
 
-        await deployer.link(Utils, TokenList)
-        await deployer.link(Utils, SpenderList)
+        // await deployer.link(Utils, TokenList)
+        // await deployer.link(Utils, SpenderList)
 
         await deployer.link(Utils, KyberSwapDapp)
-        await deployer.link(Utils, UniswapDapp)
+        // await deployer.link(Utils, UniswapDapp)
 
-        await deployer.link(Utils, BrokerV2)
+        // await deployer.link(Utils, BrokerV2)
 
-        const tokenList = await deployer.deploy(TokenList)
-        const spenderList = await deployer.deploy(SpenderList)
+        // const tokenList = await deployer.deploy(TokenList)
+        // const spenderList = await deployer.deploy(SpenderList)
         const kyberSwapDapp = await deployer.deploy(KyberSwapDapp, await getKyberNetworkProxyAddress())
-        const uniswapDapp = await deployer.deploy(UniswapDapp, await getUniswapFactoryAddress())
+        // const uniswapDapp = await deployer.deploy(UniswapDapp, await getUniswapFactoryAddress())
+        //
+        // const broker = await deployer.deploy(BrokerV2, tokenList.address, spenderList.address)
+        const broker = await BrokerV2.at('0x5a86Fd48ADDB990bf06A55fa68331E751Bb19890')
 
-        const broker = await deployer.deploy(BrokerV2, tokenList.address, spenderList.address)
-
-        await spenderList.initializeBroker(broker.address)
-        await tokenList.initializeBroker(broker.address)
+        // await spenderList.initializeBroker(broker.address)
+        // await tokenList.initializeBroker(broker.address)
         await kyberSwapDapp.initializeBroker(broker.address)
-        await uniswapDapp.initializeBroker(broker.address)
+        // await uniswapDapp.initializeBroker(broker.address)
 
-        await broker.addMarketDapp(kyberSwapDapp.address)
-        await broker.addMarketDapp(uniswapDapp.address)
+        // await broker.addMarketDapp(kyberSwapDapp.address)
+        await broker.updateMarketDapp(0, kyberSwapDapp.address)
     })
 }

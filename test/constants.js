@@ -7,23 +7,24 @@ const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const ONE_ADDR = '0x0000000000000000000000000000000000000001'
 const ETHER_ADDR = '0x0000000000000000000000000000000000000000'
 
-const DOMAIN_TYPE_HASH = web3.utils.soliditySha3(
-    {
-        type: 'string',
-        value: 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)'
-    }
-)
-
-const CONTRACT_NAME = keccak256('Switcheo Exchange')
-const CONTRACT_VERSION = keccak256('2')
-const CHAIN_ID = 3
-const VERIFYING_CONTRACT = '0x0000000000000000000000000000000000000001'
-const SALT = keccak256('switcheo-eth-eip712-salt')
-
-const DOMAIN_SEPARATOR = keccak256(web3.eth.abi.encodeParameters(
-    ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address', 'bytes32'],
-    [DOMAIN_TYPE_HASH, CONTRACT_NAME, CONTRACT_VERSION, CHAIN_ID, VERIFYING_CONTRACT, SALT]
-))
+// const DOMAIN_TYPE_HASH = web3.utils.soliditySha3(
+//     {
+//         type: 'string',
+//         value: 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)'
+//     }
+// )
+//
+// const CONTRACT_NAME = keccak256('Switcheo Exchange')
+// const CONTRACT_VERSION = keccak256('2')
+// const CHAIN_ID = 3
+// const VERIFYING_CONTRACT = '0x0000000000000000000000000000000000000001'
+// const SALT = keccak256('switcheo-eth-salt')
+//
+// const DOMAIN_SEPARATOR = keccak256(web3.eth.abi.encodeParameters(
+//     ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address', 'bytes32'],
+//     [DOMAIN_TYPE_HASH, CONTRACT_NAME, CONTRACT_VERSION, CHAIN_ID, VERIFYING_CONTRACT, SALT]
+// ))
+const DOMAIN_SEPARATOR = '0x106512c830c1a68e1437c97c971d2f7f258a7a739375b62939414b5b2c4a2da8'
 
 /* eslint-disable max-len */
 TYPEHASHES = {
