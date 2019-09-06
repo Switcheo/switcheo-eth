@@ -121,7 +121,7 @@ contract SpenderList is BrokerExtension {
     /// from the whitelist. This is to prevent users from unexpectedly removing
     /// authorization for a previously authorized spender, as doing so could prevent
     /// regular operation of the features offerred by the spender contract.
-    /// This function does not require admin permission and is invokable directly by users.
+    /// This function does not require admin permission and is invocable directly by users.
     /// @param _spender The address of the spender contract
     function unauthorizeSpender(address _spender) external {
         require(!spenderWhitelist[_spender], "Spender not unlisted");

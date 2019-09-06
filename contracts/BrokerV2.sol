@@ -313,7 +313,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Sets tbe Broker's state.
     /// @dev The two available states are `Active` and `Inactive`.
     /// The `Active` state allows for regular exchange activity,
-    /// while the `Inactive` state prevents the invokation of deposit
+    /// while the `Inactive` state prevents the invocation of deposit
     /// and trading functions.
     /// The `Inactive` state is intended as a means to cease contract operation
     /// in the case of an upgrade or in an emergency.
@@ -323,7 +323,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Sets the Broker's admin state.
     /// @dev The two available states are `Normal` and `Escalated`.
     /// In the `Normal` admin state, the admin methods `adminCancel` and `adminWithdraw`
-    /// are not invokable.
+    /// are not invocable.
     /// The admin state must be set to `Escalated` by the contract owner for these
     /// methods to become usable.
     /// In an `Escalated` admin state, admin addresses would be able to cancel offers
@@ -512,7 +512,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Deposits ERC223 tokens under the `_user`'s balance
     /// @dev ERC223 tokens should invoke this method when tokens are
     /// sent to the Broker contract.
-    /// The invokation will fail unless the token has been previously
+    /// The invocation will fail unless the token has been previously
     /// whitelisted through the `whitelistToken` method.
     /// @param _user The address of the user sending the tokens
     /// @param _amount The amount of tokens transferred to the Broker
@@ -534,7 +534,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Deposits ERC777 tokens under the `_user`'s balance
     /// @dev ERC777 tokens should invoke this method when tokens are
     /// sent to the Broker contract.
-    /// The invokation will fail unless the token has been previously
+    /// The invocation will fail unless the token has been previously
     /// whitelisted through the `whitelistToken` method.
     /// @param _user The address of the user sending the tokens
     /// @param _to The address receiving the tokens
