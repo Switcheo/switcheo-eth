@@ -443,8 +443,8 @@ library Utils {
     /// expected. If the number of tokens received is more than expected than
     /// the excess tokens are transferred to the `BrokerV2.operator`.
     /// @param _assetIds[0] The offerAssetId of the offer
-    /// @param _assetIds[2] The wantAssetId of the offer
-    /// @param _assetIds[3] The surplusAssetId
+    /// @param _assetIds[1] The wantAssetId of the offer
+    /// @param _assetIds[2] The surplusAssetId
     /// @param _dataValues[0] The number of tokens offerred
     /// @param _dataValues[1] The number of tokens expected to be received
     /// @param _dataValues[2] Match data
