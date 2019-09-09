@@ -1,4 +1,5 @@
-const { getBroker, getTokenList, getZeus, validateBalance, validateExternalBalance } = require('../utils')
+const { getBroker, getTokenList, getZeus, validateBalance,
+        validateExternalBalance, assertReversion } = require('../utils')
 
 contract('Test tokensReceived', async (accounts) => {
     let broker, tokenList, zeus
@@ -22,6 +23,21 @@ contract('Test tokensReceived', async (accounts) => {
 
             await validateExternalBalance(user, zeus, 0)
             await validateBalance(user, zeus, 87)
+        })
+    })
+
+    contract('when the token has not been whitelisted', async () => {
+        it('raises an error', async () => {
+            await validateExternalBalance(user, zeus, 87)
+            await validateBalance(user, zeus, 0)
+
+            await assertReversion(
+                zeus.send(broker.address, 87, '0x0', { from: user }),
+                'Invalid token'
+            )
+
+            await validateExternalBalance(user, zeus, 87)
+            await validateBalance(user, zeus, 0)
         })
     })
 })

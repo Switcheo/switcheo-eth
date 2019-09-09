@@ -1,4 +1,5 @@
-const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange, assertAsync } = require('../utils')
+const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange,
+        assertAsync, assertReversion } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
 
 const { PRIVATE_KEYS, getPrivateKey } = require('../wallets')
@@ -42,6 +43,42 @@ contract('Test cancel', async (accounts) => {
             await validateBalance(maker, jrc, 358) // 300 jrc + 60 jrc - 2 jrc
             await validateBalance(operator, jrc, 8) // 6 jrc + 2 jrc
             await assertAsync(broker.offers(offerHash), 0)
+        })
+    })
+
+    contract('when the signature is invalid', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await assertReversion(
+                exchange.cancel({
+                    ...offer,
+                    expectedAvailableAmount: 60,
+                    cancelFeeAssetId: jrc.address,
+                    cancelFeeAmount: 2
+                }, { privateKey: getPrivateKey(operator) }),
+                'Invalid signature'
+            )
+        })
+    })
+
+    contract('when the available amount does not match the expected available amount', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await assertReversion(
+                exchange.cancel({
+                    ...offer,
+                    expectedAvailableAmount: 50,
+                    cancelFeeAssetId: jrc.address,
+                    cancelFeeAmount: 2
+                }, { privateKey }),
+                '33'
+            )
         })
     })
 })

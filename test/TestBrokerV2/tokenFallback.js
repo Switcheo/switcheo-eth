@@ -1,4 +1,5 @@
-const { getBroker, getTokenList, getDgtx, validateBalance, validateExternalBalance } = require('../utils')
+const { getBroker, getTokenList, getDgtx, validateBalance,
+        validateExternalBalance, assertReversion } = require('../utils')
 
 contract('Test tokenFallback', async (accounts) => {
     let broker, tokenList, dgtx
@@ -23,6 +24,21 @@ contract('Test tokenFallback', async (accounts) => {
 
             await validateExternalBalance(user, dgtx, 0)
             await validateBalance(user, dgtx, 87)
+        })
+    })
+
+    contract('when the token has not been whitelisted', async () => {
+        it('raises an error', async () => {
+            await validateExternalBalance(user, dgtx, 87)
+            await validateBalance(user, dgtx, 0)
+
+            await assertReversion(
+                dgtx.transfer(broker.address, 87, { from: user }),
+                'Invalid token'
+            )
+
+            await validateExternalBalance(user, dgtx, 87)
+            await validateBalance(user, dgtx, 0)
         })
     })
 })

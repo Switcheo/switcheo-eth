@@ -1,6 +1,7 @@
 const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange,
-        assertAsync, increaseEvmTime } = require('../utils')
+        assertAsync, increaseEvmTime, assertReversion } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
+const { MAX_SLOW_CANCEL_DELAY } = require('../constants')
 
 const { PRIVATE_KEYS } = require('../wallets')
 
@@ -10,7 +11,7 @@ contract('Test slowCancel', async (accounts) => {
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
-    const announceDelay = 604800
+    const announceDelay = MAX_SLOW_CANCEL_DELAY
 
     beforeEach(async () => {
         broker = await getBroker()
@@ -43,6 +44,37 @@ contract('Test slowCancel', async (accounts) => {
             await validateBalance(maker, jrc, 360) // 300 jrc + 60 jrc
             await validateBalance(operator, jrc, 6) // unchanged
             await assertAsync(broker.offers(offerHash), 0)
+        })
+    })
+
+    contract('when the cancellation was not pre-announced', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await increaseEvmTime(announceDelay)
+
+            await assertReversion(
+                exchange.slowCancel(offer),
+                '13'
+            )
+        })
+    })
+
+    contract('when the cancellation time has not passed', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await exchange.announceCancel(offer, { from: maker })
+            await increaseEvmTime(announceDelay - 10)
+
+            await assertReversion(
+                exchange.slowCancel(offer),
+                '14'
+            )
         })
     })
 })
