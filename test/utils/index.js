@@ -175,6 +175,8 @@ function testEvents(result, logsB) {
     if (result.receipt.logs) { logsA = result.receipt.logs }
     if (result.receipt.rawLogs) { logsA = result.receipt.rawLogs }
     logsA = parseLogs(logsA)
+    // console.log('logsA', logsA)
+    // return
 
     if (logsB.length === 0) {
         throw new Error('logsB is empty')

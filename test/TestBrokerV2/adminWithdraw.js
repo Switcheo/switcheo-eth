@@ -1,7 +1,8 @@
 const { getBroker, getJrc, validateBalance, validateExternalBalance,
-        exchange, assertReversion } = require('../utils')
+        exchange, assertReversion, testEvents } = require('../utils')
+const { REASON_CODES } = require('../constants')
 
-contract('Test emergencyWithdraw', async (accounts) => {
+contract('Test adminWithdraw', async (accounts) => {
     let broker, jrc
     const user = accounts[1]
 
@@ -9,6 +10,33 @@ contract('Test emergencyWithdraw', async (accounts) => {
         broker = await getBroker()
         jrc = await getJrc()
         await jrc.mint(user, 42)
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 3 })
+            await validateBalance(user, jrc, 42)
+
+            await broker.setAdminState(1)
+            const result = await broker.adminWithdraw(user, jrc.address, 40, 4)
+
+            testEvents(result, [
+                'BalanceDecrease',
+                {
+                    user: user,
+                    assetId: jrc.address,
+                    amount: 40,
+                    reason: REASON_CODES.REASON_WITHDRAW,
+                    nonce: 4
+                },
+                'Transfer',
+                {
+                    from: broker.address,
+                    to: user,
+                    value: 40
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {

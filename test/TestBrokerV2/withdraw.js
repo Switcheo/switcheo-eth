@@ -1,6 +1,7 @@
 const { getBroker, getJrc, validateBalance, validateExternalBalance,
-        exchange, assertReversion } = require('../utils')
+        exchange, assertReversion, testEvents } = require('../utils')
 const { getPrivateKey } = require('../wallets')
+const { REASON_CODES } = require('../constants')
 
 contract('Test withdraw', async (accounts) => {
     let broker, jrc
@@ -13,6 +14,49 @@ contract('Test withdraw', async (accounts) => {
         broker = await getBroker()
         jrc = await getJrc()
         await jrc.mint(user, 42)
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 1 })
+            await validateBalance(user, jrc, 42)
+            await validateExternalBalance(receivingAddress, jrc, 0)
+
+            const result = await exchange.withdraw({
+                user,
+                receivingAddress,
+                assetId: jrc,
+                amount: 42,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }, { privateKey })
+
+            testEvents(result, [
+                'BalanceDecrease',
+                {
+                    user: user,
+                    assetId: jrc.address,
+                    amount: 42,
+                    reason: REASON_CODES.REASON_WITHDRAW,
+                    nonce: 2
+                },
+                'BalanceIncrease',
+                {
+                    user: operator,
+                    assetId: jrc.address,
+                    amount: 2,
+                    reason: REASON_CODES.REASON_WITHDRAW_FEE_RECEIVE,
+                    nonce: 2
+                },
+                'Transfer',
+                {
+                    from: broker.address,
+                    to: receivingAddress,
+                    value: 40
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {

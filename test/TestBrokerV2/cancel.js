@@ -1,7 +1,7 @@
 const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange,
-        assertAsync, assertReversion } = require('../utils')
+        assertAsync, assertReversion, testEvents } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
-
+const { REASON_CODES } = require('../constants')
 const { PRIVATE_KEYS, getPrivateKey } = require('../wallets')
 
 contract('Test cancel', async (accounts) => {
@@ -24,6 +24,37 @@ contract('Test cancel', async (accounts) => {
         await exchange.trade(tradeParams, { privateKeys })
         await validateBalance(maker, jrc, 300) // 500 jrc - 100 jrc - 100 jrc
         await validateBalance(operator, jrc, 6) // received 3 jrc + 3 jrc
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            const offer = tradeParams.offers[0]
+            const result = await exchange.cancel({
+                ...offer,
+                expectedAvailableAmount: 60,
+                cancelFeeAssetId: jrc.address,
+                cancelFeeAmount: 2
+            }, { privateKey })
+
+            testEvents(result, [
+                'BalanceIncrease',
+                {
+                    user: maker,
+                    assetId: jrc.address,
+                    amount: 58, // 60 - 2
+                    reason: REASON_CODES.REASON_CANCEL,
+                    nonce: offer.nonce
+                },
+                'BalanceIncrease',
+                {
+                    user: operator,
+                    assetId: jrc.address,
+                    amount: 2,
+                    reason: REASON_CODES.REASON_CANCEL_FEE_RECEIVE,
+                    nonce: offer.nonce
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {
