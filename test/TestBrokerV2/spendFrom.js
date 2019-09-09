@@ -1,4 +1,5 @@
-const { getBroker, getSpenderList, getJrc, exchange, validateBalance } = require('../utils')
+const { getBroker, getSpenderList, getJrc, exchange,
+        validateBalance, assertReversion } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test spendFrom', async (accounts) => {
@@ -27,6 +28,22 @@ contract('Test spendFrom', async (accounts) => {
 
             await validateBalance(user, jrc, 0)
             await validateBalance(receiver, jrc, 42)
+        })
+    })
+
+    contract('when spender has not been authorized', async () => {
+        it('raises an error', async () => {
+            await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 1 })
+            await validateBalance(user, jrc, 42)
+            await validateBalance(receiver, jrc, 0)
+
+            await assertReversion(
+                broker.spendFrom(user, receiver, jrc.address, 42, { from: spender }),
+                'Unauthorized spender'
+            )
+
+            await validateBalance(user, jrc, 42)
+            await validateBalance(receiver, jrc, 0)
         })
     })
 })
