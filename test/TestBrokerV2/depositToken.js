@@ -1,5 +1,5 @@
 const { getBroker, getJrc, validateBalance, validateExternalBalance,
-        assertReversion } = require('../utils')
+        assertReversion, testEvents } = require('../utils')
 
 contract('Test depositToken', async (accounts) => {
     let broker, jrc
@@ -10,6 +10,35 @@ contract('Test depositToken', async (accounts) => {
         jrc = await getJrc()
 
         await jrc.mint(user, 42)
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await jrc.approve(broker.address, 42, { from: user })
+            const result = await broker.depositToken(user, jrc.address, 42, 42, 1)
+            testEvents(result, [
+                'BalanceIncrease',
+                {
+                    user,
+                    assetId: jrc.address,
+                    amount: 42,
+                    reason: 1,
+                    nonce: 1
+                },
+                'Transfer',
+                {
+                    from: user,
+                    to: broker.address,
+                    value: 42
+                },
+                'Approval',
+                {
+                    owner: user,
+                    spender: broker.address,
+                    value: 0
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {

@@ -10,19 +10,17 @@ contract('Test deposit', async (accounts) => {
     })
 
     contract('test event emission', async () => {
-        it('emits a BalanceIncrease event', async () => {
+        it('emits events', async () => {
             const amount = web3.utils.toWei('1', 'ether')
             const result = await broker.deposit({ from: user, value: amount })
             testEvents(result, [
+                'BalanceIncrease',
                 {
-                    name: 'BalanceIncrease',
-                    args: {
-                        user,
-                        assetId: ETHER_ADDR,
-                        amount,
-                        reason: REASON_CODES.REASON_DEPOSIT,
-                        nonce: 0
-                    }
+                    user,
+                    assetId: ETHER_ADDR,
+                    amount,
+                    reason: REASON_CODES.REASON_DEPOSIT,
+                    nonce: 0
                 }
             ])
         })

@@ -470,10 +470,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// This method has separate `_amount` and `_expectedAmount` values
     /// to support unconventional token transfers, e.g. tokens which have a
     /// proportion burnt on transfer.
-    /// Whitelisted tokens cannot use this method as it may cause a double
-    /// increment for the user's balance. This is because this method does a
-    /// call to the token's `transferFrom` method, and some tokens have a
-    /// `transferFrom` that later on calls `tokenFallback` or `tokensReceived`.
     /// @param _user The address of the user depositing the tokens
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with

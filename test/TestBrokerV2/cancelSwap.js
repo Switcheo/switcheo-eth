@@ -71,7 +71,7 @@ contract('Test cancelSwap', async (accounts) => {
             }
             await exchange.createSwap(swap, { privateKey })
 
-            await increaseEvmTime(599)
+            await increaseEvmTime(20)
             await assertReversion(
                 exchange.cancelSwap({ ...swap, cancelFeeAmount: 2 }),
                 '26'

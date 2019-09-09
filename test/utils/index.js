@@ -181,14 +181,17 @@ function testEvents(result, logsB) {
     }
 
     assert.equal(
-        logsA.length,
+        logsA.length * 2,
         logsB.length,
-        'some events are not being tested'
+        'log length mismatch'
     )
 
     for (let i = 0; i < logsA.length; i++) {
         const logA = logsA[i]
-        const logB = logsB[i]
+        const logB = {
+            name: logsB[i * 2],
+            args: logsB[i * 2 + 1]
+        }
 
         assert.equal(
             logA.event,
@@ -206,13 +209,22 @@ function testEvents(result, logsB) {
             const argA = logA.args[key]
             const argB = argsB[key]
             if (argA === undefined) {
-                throw new Error('value for ' + key + ' is undefined')
+                throw new Error('value for ' + argB.name + '.' + key + ' is undefined')
             }
-            assert.equal(
-                argA.toString().toLowerCase(),
-                argB.toString().toLowerCase(),
-                'value for ' + key + ' is ' + argB
-            )
+
+            if (argA === null) {
+                assert.equal(
+                    argA,
+                    argB,
+                    'value for ' + key + ' is :' + argA + ', expected: ' + argB
+                )
+            } else {
+                assert.equal(
+                    argA.toString().toLowerCase(),
+                    argB.toString().toLowerCase(),
+                    'value for ' + key + ' is :' + argA + ', expected: ' + argB
+                )
+            }
         }
     }
 }
