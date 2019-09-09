@@ -208,7 +208,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address indexed user,
         address indexed assetId,
         uint256 amount,
-        uint256 indexed reason,
+        uint256 reason,
         uint256 nonce
     );
 
@@ -217,7 +217,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address indexed user,
         address indexed assetId,
         uint256 amount,
-        uint256 indexed reason,
+        uint256 reason,
         uint256 nonce
     );
 

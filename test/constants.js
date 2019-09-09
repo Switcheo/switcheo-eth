@@ -29,7 +29,7 @@ const DOMAIN_SEPARATOR = keccak256(web3.eth.abi.encodeParameters(
 ))
 
 /* eslint-disable max-len */
-TYPEHASHES = {
+const TYPEHASHES = {
     AUTHORIZE_SPENDER_TYPEHASH: soliditySha3({
         type: 'string',
         value: 'AuthorizeSpender(address user,address spender,uint256 nonce)'
@@ -56,6 +56,9 @@ TYPEHASHES = {
     })
 }
 
+const REASON_CODES = {
+    REASON_DEPOSIT: 0x01
+}
 
 module.exports = {
     ZERO_ADDR,
@@ -64,5 +67,6 @@ module.exports = {
     MAX_SLOW_CANCEL_DELAY,
     MAX_SLOW_WITHDRAW_DELAY,
     DOMAIN_SEPARATOR,
-    TYPEHASHES
+    TYPEHASHES,
+    REASON_CODES
 }

@@ -1,4 +1,5 @@
 const BrokerV2 = artifacts.require('BrokerV2')
+const ERC777 = artifacts.require('ERC777')
 const TokenList = artifacts.require('TokenList')
 const SpenderList = artifacts.require('SpenderList')
 const JRCoin = artifacts.require('JRCoin')
@@ -18,6 +19,8 @@ const { soliditySha3, keccak256 } = web3.utils
 
 const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
+abiDecoder.addABI(DGTXCoin.abi)
+abiDecoder.addABI(ERC777.abi)
 
 const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR,
         ONE_ADDR, ETHER_ADDR } = require('../constants')
@@ -154,7 +157,7 @@ function hashSecret(secret) {
     return '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
 }
 
-function decodeReceiptLogs(receiptLogs) {
+function parseLogs(receiptLogs) {
     const logs = abiDecoder.decodeLogs(receiptLogs)
     const decodedLogs = []
     for (const log of logs) {
@@ -165,6 +168,53 @@ function decodeReceiptLogs(receiptLogs) {
         decodedLogs.push(decodedLog)
     }
     return decodedLogs
+}
+
+function testEvents(result, logsB) {
+    let logsA
+    if (result.receipt.logs) { logsA = result.receipt.logs }
+    if (result.receipt.rawLogs) { logsA = result.receipt.rawLogs }
+    logsA = parseLogs(logsA)
+
+    if (logsB.length === 0) {
+        throw new Error('logsB is empty')
+    }
+
+    assert.equal(
+        logsA.length,
+        logsB.length,
+        'some events are not being tested'
+    )
+
+    for (let i = 0; i < logsA.length; i++) {
+        const logA = logsA[i]
+        const logB = logsB[i]
+
+        assert.equal(
+            logA.event,
+            logB.name,
+            'event type is ' + logB.name
+        )
+
+        const argsB = logB.args
+        if (Object.keys(argsB).length === 0) {
+            throw new Error('argsB is empty')
+        }
+
+        /* eslint-disable guard-for-in */
+        for (const key in argsB) {
+            const argA = logA.args[key]
+            const argB = argsB[key]
+            if (argA === undefined) {
+                throw new Error('value for ' + key + ' is undefined')
+            }
+            assert.equal(
+                argA.toString().toLowerCase(),
+                argB.toString().toLowerCase(),
+                'value for ' + key + ' is ' + argB
+            )
+        }
+    }
 }
 
 async function depositToken({ user, token, amount, expectedAmount, nonce }) {
@@ -577,11 +627,12 @@ module.exports = {
     validateExternalBalance,
     assertAsync,
     assertReversion,
+    testEvents,
     testValidation,
     testOnlyOwnerModifier,
     getEvmTime,
     increaseEvmTime,
-    decodeReceiptLogs,
+    parseLogs,
     hashSwap,
     hashOffer,
     exchange
