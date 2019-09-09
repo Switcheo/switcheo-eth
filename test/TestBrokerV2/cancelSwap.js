@@ -1,5 +1,5 @@
 const { getBroker, getJrc, validateBalance, getEvmTime, increaseEvmTime,
-        hashSecret, hashSwap, exchange, assertAsync } = require('../utils')
+        hashSecret, hashSwap, exchange, assertAsync, assertReversion } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test cancelSwap', async (accounts) => {
@@ -50,6 +50,86 @@ contract('Test cancelSwap', async (accounts) => {
             await validateBalance(taker, jrc, 0)
             await validateBalance(operator, jrc, 2)
             await assertAsync(broker.atomicSwaps(swapHash), false)
+        })
+    })
+
+    contract('when the swap expiry time has not passed', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 5,
+                nonce: 2
+            }
+            await exchange.createSwap(swap, { privateKey })
+
+            await increaseEvmTime(599)
+            await assertReversion(
+                exchange.cancelSwap({ ...swap, cancelFeeAmount: 2 }),
+                '26'
+            )
+        })
+    })
+
+    contract('when the swap has already been cancelled', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 5,
+                nonce: 2
+            }
+            await exchange.createSwap(swap, { privateKey })
+
+            await increaseEvmTime(601)
+            await exchange.cancelSwap({ ...swap, cancelFeeAmount: 2 })
+
+            await assertReversion(
+                exchange.cancelSwap({ ...swap, cancelFeeAmount: 2 }),
+                '27'
+            )
+        })
+    })
+
+    contract('when the cancel fee amount exceeds the fee amount', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 5,
+                nonce: 2
+            }
+            await exchange.createSwap(swap, { privateKey })
+
+            await increaseEvmTime(601)
+            await assertReversion(
+                exchange.cancelSwap({ ...swap, cancelFeeAmount: 6 }),
+                '28'
+            )
         })
     })
 })

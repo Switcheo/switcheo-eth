@@ -1,5 +1,5 @@
 const { getBroker, getJrc, validateBalance, getEvmTime, hashSecret, hashSwap,
-        exchange, assertAsync } = require('../utils')
+        exchange, assertAsync, assertReversion } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test createSwap', async (accounts) => {
@@ -40,6 +40,143 @@ contract('Test createSwap', async (accounts) => {
 
             await validateBalance(maker, jrc, 32)
             await assertAsync(broker.atomicSwaps(swapHash), true)
+        })
+    })
+
+    contract('when the swap amount is 0', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+            await validateBalance(maker, jrc, 42)
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 0,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }
+            const swapHash = hashSwap(swap)
+            await assertAsync(broker.atomicSwaps(swapHash), false)
+
+            await assertReversion(
+                exchange.createSwap(swap, { privateKey }),
+                '20'
+            )
+
+            await validateBalance(maker, jrc, 42)
+            await assertAsync(broker.atomicSwaps(swapHash), false)
+        })
+    })
+
+    contract('when the swap expriy time has passed', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) - 10
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+            await validateBalance(maker, jrc, 42)
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }
+            const swapHash = hashSwap(swap)
+            await assertAsync(broker.atomicSwaps(swapHash), false)
+
+            await assertReversion(
+                exchange.createSwap(swap, { privateKey }),
+                '21'
+            )
+
+            await validateBalance(maker, jrc, 42)
+            await assertAsync(broker.atomicSwaps(swapHash), false)
+        })
+    })
+
+    contract('when the swap is already active', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }
+
+            await exchange.createSwap(swap, { privateKey })
+
+            await assertReversion(
+                exchange.createSwap(swap, { privateKey }),
+                '22'
+            )
+        })
+    })
+
+    contract('when the nonce has already been used', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }
+
+            await exchange.createSwap(swap, { privateKey })
+
+            swap.amount = 12
+            await assertReversion(
+                exchange.createSwap(swap, { privateKey }),
+                '36'
+            )
+        })
+    })
+
+    contract('when the fee amount exceeds the swap amount', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 2,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 3,
+                nonce: 2
+            }
+
+            await assertReversion(
+                exchange.createSwap(swap, { privateKey }),
+                '23'
+            )
         })
     })
 })

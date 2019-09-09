@@ -1,5 +1,5 @@
 const { getBroker, getJrc, validateBalance, getEvmTime, hashSecret, hashSwap,
-        exchange, assertAsync } = require('../utils')
+        exchange, assertAsync, assertReversion } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test executeSwap', async (accounts) => {
@@ -50,6 +50,59 @@ contract('Test executeSwap', async (accounts) => {
             await validateBalance(taker, jrc, 8)
             await validateBalance(operator, jrc, 2)
             await assertAsync(broker.atomicSwaps(swapHash), false)
+        })
+    })
+
+    contract('when the swap has already been executed', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }
+
+            await exchange.createSwap(swap, { privateKey })
+            await exchange.executeSwap({ ...swap, secret })
+
+            await assertReversion(
+                exchange.executeSwap({ ...swap, secret }),
+                '24'
+            )
+        })
+    })
+
+    contract('when the hash of the preimage does not match the hash secret', async () => {
+        it('raises an error', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 2,
+                nonce: 2
+            }
+
+            await exchange.createSwap(swap, { privateKey })
+
+            await assertReversion(
+                exchange.executeSwap({ ...swap, secret: '123' }),
+                '25'
+            )
         })
     })
 })

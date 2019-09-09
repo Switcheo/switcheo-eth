@@ -64,6 +64,35 @@ contract('Test cancel', async (accounts) => {
         })
     })
 
+    contract('when the offer has already been cancelled', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await exchange.cancel({
+                ...offer,
+                expectedAvailableAmount: 60,
+                cancelFeeAssetId: jrc.address,
+                cancelFeeAmount: 2
+            }, { privateKey })
+
+            await validateBalance(maker, jrc, 358) // 300 jrc + 60 jrc - 2 jrc
+            await validateBalance(operator, jrc, 8) // 6 jrc + 2 jrc
+            await assertAsync(broker.offers(offerHash), 0)
+
+            await assertReversion(
+                exchange.cancel({
+                    ...offer,
+                    expectedAvailableAmount: 60,
+                    cancelFeeAssetId: jrc.address,
+                    cancelFeeAmount: 2
+                }, { privateKey }),
+                '32'
+            )
+        })
+    })
+
     contract('when the available amount does not match the expected available amount', async () => {
         it('raises an error', async () => {
             const offer = tradeParams.offers[0]
