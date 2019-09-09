@@ -123,18 +123,27 @@ async function assertReversion(promise, errorMessage) {
     try {
         await promise
     } catch (error) {
-        const revertFound = error.message.search('revert') >= 0
-        assert(revertFound, `Expected "revert", got ${error} instead`)
         if (errorMessage !== undefined) {
             const messageFound = error.message.search(errorMessage) >= 0
             assert(messageFound, `Expected "${errorMessage}", got ${error} instead`)
+        } else {
+            const revertFound = error.message.search('revert') >= 0
+            assert(revertFound, `Expected "revert", got ${error} instead`)
         }
         return
     }
     assert.fail('Expected an EVM revert but no error was encountered')
 }
 
-async function testValidation(method, params, fail, pass, errorMessage) {
+async function testOnlyOwnerModifier(method, { params, owner, nonOwner }) {
+    await testValidation(method, 'Ownable: caller is not the owner', {
+        params,
+        fail: { from: nonOwner },
+        pass: { from: owner }
+    })
+}
+
+async function testValidation(method, errorMessage, { params, fail, pass }) {
     if (!Array.isArray(fail)) { fail = [fail] }
     if (!Array.isArray(pass)) { pass = [pass] }
     await assertReversion(method(...[...params, ...fail]), errorMessage)
@@ -569,6 +578,7 @@ module.exports = {
     assertAsync,
     assertReversion,
     testValidation,
+    testOnlyOwnerModifier,
     getEvmTime,
     increaseEvmTime,
     decodeReceiptLogs,

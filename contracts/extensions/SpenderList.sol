@@ -96,6 +96,8 @@ contract SpenderList is BrokerExtension {
         onlyAdmin
     {
         require(spenderWhitelist[_spender], "Spender not whitelisted");
+        require(!spenderAuthorizations[_user][_spender], "Spender already authorized");
+
         broker.markNonce(_nonce);
 
         Utils.validateSignature(

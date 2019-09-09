@@ -1,4 +1,5 @@
-const { getBroker, getJrc, getSwc, bn, shl, clone, exchange, testValidation } = require('../../utils')
+const { getBroker, getJrc, getSwc, bn, shl, clone, exchange,
+        assertReversion } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
 const { PRIVATE_KEYS } = require('../../wallets')
@@ -26,9 +27,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when numOffers is 0', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) },
-                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ values }) => { values[0] = bn(0).or(shl(2, 8)).or(shl(2, 16)) }
+                ),
                 'Invalid trade input'
             )
         })
@@ -36,9 +40,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when numFills is 0', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
-                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
+                ),
                 'Invalid trade input'
             )
         })
@@ -46,9 +53,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when numMatches is 0', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
-                ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(2, 16)) },
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
+                ),
                 'Invalid trade input'
             )
         })
@@ -56,9 +66,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when _values.length does not match number of offers and fills', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values }) => { values.push(1) },
-                () => { /* no op */ },
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ values }) => { values.push(1) },
+                ),
                 'Invalid _values.length'
             )
         })
@@ -66,9 +79,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when _hashes.length does not match number of offers and fills', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ hashes }) => { hashes.push(ZERO_ADDR) },
-                () => { /* no op */ },
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ hashes }) => { hashes.push(ZERO_ADDR) },
+                ),
                 'Invalid _hashes.length'
             )
         })
@@ -79,9 +95,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.offers[0].nonce = 4
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid offer nonces'
             )
         })
@@ -92,9 +110,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.offers[0].nonce = 20
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid offer nonces'
             )
         })
@@ -105,9 +125,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].offerIndex = 2
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid match.offerIndex'
             )
         })
@@ -118,9 +140,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].fillIndex = 1
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid match.fillIndex'
             )
         })
@@ -131,9 +155,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].fillIndex = 4
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid match.fillIndex'
             )
         })
@@ -144,9 +170,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.offers[1].offerAssetId = ETHER_ADDR
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'offer.offerAssetId does not match fill.wantAssetId'
             )
         })
@@ -157,9 +185,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.offers[1].wantAssetId = ETHER_ADDR
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'offer.wantAssetId does not match fill.offerAssetId'
             )
         })
@@ -167,14 +197,14 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when a match has non-zero bits in bits(16..128)', async () => {
         it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.matches[1].takeAmount = 0
-
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ values }) => {
-                    values[values.length - 1] = values[values.length - 1].or(shl(1, 16))
-                },
-                [],
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ values }) => {
+                        values[values.length - 1] = values[values.length - 1].or(shl(1, 16))
+                    }
+                ),
                 'Invalid match data'
             )
         })
@@ -185,9 +215,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].takeAmount = 0
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid match.takeAmount'
             )
         })
@@ -198,9 +230,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.offers[1].wantAmount = 33
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid amounts'
             )
         })
@@ -211,9 +245,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].takeAmount = 20
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid fills'
             )
         })
@@ -221,8 +257,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when offer signatures are not valid', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ hashes }) => { hashes[3] = ZERO_ADDR }, [],
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ hashes }) => { hashes[3] = ZERO_ADDR }
+                ),
                 'Invalid signature'
             )
         })
@@ -230,8 +270,12 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when fill signatures are not valid', async () => {
         it('raises an error', async () => {
-            await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-                ({ hashes }) => { hashes[7] = ZERO_ADDR }, [],
+            await assertReversion(
+                exchange.trade(
+                    tradeParams,
+                    { privateKeys },
+                    ({ hashes }) => { hashes[7] = ZERO_ADDR }
+                ),
                 'Invalid signature'
             )
         })
@@ -243,9 +287,11 @@ contract('Test trade: general validations', async (accounts) => {
             editedTradeParams.offers[1].wantAssetId = jrc.address
             editedTradeParams.fills[1].offerAssetId = jrc.address
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid trade assets'
             )
         })
@@ -261,9 +307,11 @@ contract('Test trade: general validations', async (accounts) => {
                 { offerIndex: 1, fillIndex: 4, takeAmount: 40 }
             ]
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid trade amounts'
             )
         })
@@ -279,9 +327,11 @@ contract('Test trade: general validations', async (accounts) => {
                 { offerIndex: 1, fillIndex: 4, takeAmount: 40 }
             ]
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid trade amounts'
             )
         })
@@ -289,16 +339,19 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when the operator address is not set to address(0)', async () => {
        it('raises an error', async () => {
-           await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-               ({ addresses }) => {
-                   for (let i = 0; i < addresses.length; i += 2) {
-                       if (addresses[i] == ZERO_ADDR) {
-                           addresses[i] = operator
-                           break
+           await assertReversion(
+               exchange.trade(
+                   tradeParams,
+                   { privateKeys },
+                   ({ addresses }) => {
+                       for (let i = 0; i < addresses.length; i += 2) {
+                           if (addresses[i] == ZERO_ADDR) {
+                               addresses[i] = operator
+                               break
+                           }
                        }
                    }
-               },
-               [],
+               ),
                'Invalid operator address placeholder'
            )
        })
@@ -306,16 +359,19 @@ contract('Test trade: general validations', async (accounts) => {
 
     contract('when the operator\'s fee asset ID is not set to address(1)', async () => {
        it('raises an error', async () => {
-           await testValidation(exchange.trade, [tradeParams, { privateKeys }],
-               ({ addresses }) => {
-                   for (let i = 0; i < addresses.length; i += 2) {
-                       if (addresses[i] == ZERO_ADDR) {
-                           addresses[i + 1] = jrc.address
-                           break
+           await assertReversion(
+               exchange.trade(
+                   tradeParams,
+                   { privateKeys },
+                   ({ addresses }) => {
+                       for (let i = 0; i < addresses.length; i += 2) {
+                           if (addresses[i] == ZERO_ADDR) {
+                               addresses[i + 1] = jrc.address
+                               break
+                           }
                        }
                    }
-               },
-               [],
+               ),
                'Invalid operator fee asset ID placeholder'
            )
        })
@@ -329,10 +385,12 @@ contract('Test trade: general validations', async (accounts) => {
             // nonce 1 has already been used by a deposit transaction
             // so the nonce will be found to be taken and the contract will
             // use offers[offerHash] as the availableAmount
-            // this will be 0, causing an error to be thrown
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            // this will be 0, causing error 31 to be thrown
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 '31'
             )
         })
@@ -342,9 +400,11 @@ contract('Test trade: general validations', async (accounts) => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.offers[1].nonce = editedTradeParams.fills[0].nonce
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 '36'
             )
         })
@@ -355,9 +415,11 @@ contract('Test trade: general validations', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.fills[0].nonce = 6
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 '36'
             )
         })
