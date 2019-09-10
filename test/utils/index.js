@@ -218,7 +218,7 @@ function testEvents(result, logsB) {
                 assert.equal(
                     argA,
                     argB,
-                    'value for ' + key + ' is :' + argA + ', expected: ' + argB
+                    'value for ' + key + ' is: ' + argA + ', expected: ' + argB
                 )
             } else {
                 assert.equal(

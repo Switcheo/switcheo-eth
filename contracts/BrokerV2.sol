@@ -1253,12 +1253,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _withdrawer,
             _withdrawer,
             _assetId,
-            announcement.amount,
+            _amount,
             address(0),
             0,
             0
         );
-        emit SlowWithdraw(_withdrawer, _assetId, announcement.amount);
+        emit SlowWithdraw(_withdrawer, _assetId, _amount);
     }
 
     /// @notice Locks a user's balances for the first part of an atomic swap

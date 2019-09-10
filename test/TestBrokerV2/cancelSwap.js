@@ -1,6 +1,7 @@
 const { getBroker, getJrc, validateBalance, getEvmTime, increaseEvmTime,
-        hashSecret, hashSwap, exchange, assertAsync, assertReversion } = require('../utils')
+        hashSecret, hashSwap, exchange, assertAsync, assertReversion, testEvents } = require('../utils')
 const { getPrivateKey } = require('../wallets')
+const { REASON_CODES } = require('../constants')
 
 contract('Test cancelSwap', async (accounts) => {
     let broker, jrc
@@ -14,6 +15,46 @@ contract('Test cancelSwap', async (accounts) => {
         broker = await getBroker()
         jrc = await getJrc()
         await jrc.mint(maker, 42)
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            const expiryTime = (await getEvmTime()) + 600
+            await exchange.depositToken({ user: maker, token: jrc, amount: 42, nonce: 1 })
+
+            const swap = {
+                maker,
+                taker,
+                assetId: jrc,
+                amount: 10,
+                hashedSecret: hashSecret(secret),
+                expiryTime,
+                feeAssetId: jrc,
+                feeAmount: 5,
+                nonce: 2
+            }
+            await exchange.createSwap(swap, { privateKey })
+            await increaseEvmTime(601)
+            const result = await exchange.cancelSwap({ ...swap, cancelFeeAmount: 2 })
+
+            testEvents(result, [
+                'BalanceIncrease',
+                {
+                    user: maker,
+                    assetId: jrc.address,
+                    amount: 8, // 10 - 2
+                    reason: REASON_CODES.REASON_SWAP_CANCEL_RECEIVE,
+                    nonce: 2
+                },
+                {
+                    user: operator,
+                    assetId: jrc.address,
+                    amount: 2,
+                    reason: REASON_CODES.REASON_SWAP_CANCEL_FEE_RECEIVE,
+                    nonce: 2
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {

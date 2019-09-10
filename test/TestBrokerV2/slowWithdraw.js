@@ -1,6 +1,6 @@
 const { getBroker, getJrc, validateBalance, validateExternalBalance,
-        increaseEvmTime, exchange, assertReversion } = require('../utils')
-const { MAX_SLOW_WITHDRAW_DELAY } = require('../constants')
+        increaseEvmTime, exchange, assertReversion, testEvents } = require('../utils')
+const { MAX_SLOW_WITHDRAW_DELAY, REASON_CODES } = require('../constants')
 
 contract('Test slowWithdraw', async (accounts) => {
     let broker, jrc
@@ -11,6 +11,38 @@ contract('Test slowWithdraw', async (accounts) => {
         broker = await getBroker()
         jrc = await getJrc()
         await jrc.mint(user, 42)
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await exchange.depositToken({ user, token: jrc, amount: 42, nonce: 3 })
+            await broker.announceWithdraw(jrc.address, 42, { from: user })
+            await increaseEvmTime(announceDelay)
+            const result = await broker.slowWithdraw(user, jrc.address, 42, { from: user })
+
+            testEvents(result, [
+                'BalanceDecrease',
+                {
+                    user: user,
+                    assetId: jrc.address,
+                    amount: 42,
+                    reason: REASON_CODES.REASON_WITHDRAW,
+                    nonce: 0
+                },
+                'Transfer',
+                {
+                    from: broker.address,
+                    to: user,
+                    value: 42
+                },
+                'SlowWithdraw',
+                {
+                    withdrawer: user,
+                    assetId: jrc.address,
+                    amount: 42
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {
