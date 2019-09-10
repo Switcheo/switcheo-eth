@@ -1,3 +1,4 @@
+const Utils = artifacts.require('Utils')
 const BrokerV2 = artifacts.require('BrokerV2')
 const ERC777 = artifacts.require('ERC777')
 const TokenList = artifacts.require('TokenList')
@@ -18,6 +19,7 @@ const web3 = new Web3(Web3.givenProvider)
 const { soliditySha3, keccak256 } = web3.utils
 
 const abiDecoder = require('abi-decoder')
+abiDecoder.addABI(Utils.abi)
 abiDecoder.addABI(BrokerV2.abi)
 abiDecoder.addABI(DGTXCoin.abi)
 abiDecoder.addABI(ERC777.abi)
@@ -38,8 +40,15 @@ async function getZeus(account) {
     return await ZEUSCoin.new()
 }
 
-function bn(value) { return new BN(value) }
+function bn(value, base) { return new BN(value, base) }
 function shl(value, n) { return bn(value).shln(n) }
+
+function getSubBits(value, start, end) {
+    const str = bn(value).toString(2, 256)
+                         .substring(256 - end, 256 - start)
+
+    return bn(str, 2)
+}
 
 function clone(obj) { return JSON.parse(JSON.stringify(obj)) }
 
@@ -158,11 +167,16 @@ function hashSecret(secret) {
     return '0x' + sha256(web3.utils.hexToBytes('0x' + sha256(secret)))
 }
 
+async function parseInvocation(result) {
+    const transaction = await web3.eth.getTransaction(result.receipt.transactionHash)
+    return abiDecoder.decodeMethod(transaction.input)
+}
+
 function parseLogs(receiptLogs) {
     const logs = abiDecoder.decodeLogs(receiptLogs)
     const decodedLogs = []
     for (const log of logs) {
-        const decodedLog = { event: log.name, args: {} }
+        const decodedLog = { name: log.name, args: {} }
         for (const event of log.events) {
             decodedLog.args[event.name] = event.value
         }
@@ -171,7 +185,153 @@ function parseLogs(receiptLogs) {
     return decodedLogs
 }
 
-function testEvents(result, logsB) {
+async function reconstructTradeAddresses(values, addresses) {
+    const broker = await getBroker()
+    const operator = await broker.operator()
+
+    // set the operator address as it was previously overwritten as address(0)
+    for (let i = 0; i < addresses.length / 2; i++) {
+        if (addresses[i * 2] === ZERO_ADDR) { addresses[i * 2] = operator }
+    }
+
+    const lengths = values[0]
+    const numOffers = getSubBits(lengths, 0, 8).toNumber()
+    const numFills = getSubBits(lengths, 8, 16).toNumber()
+
+    // set the operate fee asset ID as it was previously overwritten as address(1)
+    for (let i = 0; i < numOffers + numFills; i++) {
+        const data = values[1 + i * 2]
+        const feeAssetIndexA = getSubBits(data, 24, 32)
+        const feeAssetIndexB = getSubBits(data, 32, 40)
+        addresses[feeAssetIndexB * 2 + 1] = addresses[feeAssetIndexA * 2 + 1]
+    }
+}
+
+async function parseTradeEvents(result) {
+    const invocation = await parseInvocation(result)
+    const nonces = []
+    const values = invocation.params[0].value
+    const addresses = invocation.params[2].value
+    await reconstructTradeAddresses(values, addresses)
+    const lengths = values[0]
+    const numOffers = getSubBits(lengths, 0, 8).toNumber()
+    const numFills = getSubBits(lengths, 8, 16).toNumber()
+
+    for (let i = 0; i < numOffers + numFills; i++) {
+        const data = values[1 + i * 2]
+        const nonce = getSubBits(data, 56, 128)
+        nonces.push(nonce.toString())
+    }
+
+    let logs
+    if (result.receipt.logs) { logs = result.receipt.logs }
+    if (result.receipt.rawLogs) { logs = result.receipt.rawLogs }
+    logs = parseLogs(logs)
+
+    const balanceChanges = []
+    const dynamicIncrements = []
+
+    for (let i = 0; i < logs.length; i++) {
+        const log = logs[i]
+        if (['Increment', 'Decrement'].includes(log.name)) {
+            const { data } = log.args
+            const index = getSubBits(data, 248, 256).toNumber()
+            const dynamic = getSubBits(data, 240, 248).toString() === '0'
+            const amount = getSubBits(data, 0, 240)
+            const user = addresses[index * 2]
+            const assetId = addresses[index * 2 + 1]
+
+            if (log.name === 'Increment' && dynamic) {
+                const str = [user, assetId, amount.toString()].join(',')
+                dynamicIncrements.push(str)
+                continue
+            }
+
+            balanceChanges.push({
+                type: log.name,
+                user,
+                assetId,
+                amount,
+                dynamic
+            })
+        }
+    }
+
+    const balanceMap = {}
+
+    for (let i = 0; i < balanceChanges.length; i++) {
+        const { type, user, assetId, amount } = balanceChanges[i]
+        if (balanceMap[user] === undefined) { balanceMap[user] = {} }
+        if (balanceMap[user][assetId] === undefined) {
+            balanceMap[user][assetId] = { type, amount: bn(0) }
+        }
+
+        if (type === balanceMap[user][assetId].type) {
+            balanceMap[user][assetId].amount = balanceMap[user][assetId].amount.add(amount)
+            continue
+        }
+
+        if (balanceMap[user][assetId].amount.gte(amount)) {
+            balanceMap[user][assetId].amount = balanceMap[user][assetId].amount.sub(amount)
+            continue
+        }
+
+        // flip the type
+        balanceMap[user][assetId].type = type
+        balanceMap[user][assetId].amount = amount.sub(balanceMap[user][assetId].amount)
+    }
+
+    const increments = []
+    const decrements = []
+    for (const user in balanceMap) {
+        for (const assetId in balanceMap[user]) {
+            const { type, amount } = balanceMap[user][assetId]
+            const str = [user, assetId, amount.toString()].join(',')
+            if (type === 'Increment') {
+                increments.push(str)
+            } else {
+                decrements.push(str)
+            }
+        }
+    }
+
+    return { nonces, increments, decrements, dynamicIncrements }
+}
+
+function constructTradeEventsKey(logs) {
+    const { nonces, increments, decrements, dynamicIncrements } = logs
+
+    const str = [
+        'nonces',
+        '[',
+        nonces.map((nonce) => nonce.toString()).sort().join(','),
+        '],',
+        'increments',
+        '[',
+        increments.map((str) => str.toLowerCase()).sort().join(','),
+        '],',
+        'decrements',
+        '[',
+        decrements.map((str) => str.toLowerCase()).sort().join(','),
+        '],',
+        'dynamic_increments',
+        '[',
+        dynamicIncrements.map((str) => str.toLowerCase()).sort().join(','),
+        ']'
+    ].join('')
+
+    return sha256(str)
+}
+
+async function testTradeEvents(result, logsB) {
+    const logsA = await parseTradeEvents(result)
+    const keyA = constructTradeEventsKey(logsA)
+    const keyB = constructTradeEventsKey(logsB)
+
+    assert.equal(keyA, keyB, 'Trade events mismatch')
+}
+
+function testEvents(result, logsB, { start, end }) {
     let logsA
     if (result.receipt.logs) { logsA = result.receipt.logs }
     if (result.receipt.rawLogs) { logsA = result.receipt.rawLogs }
@@ -182,6 +342,8 @@ function testEvents(result, logsB) {
     if (logsB.length === 0) {
         throw new Error('logsB is empty')
     }
+
+    logsA = logsA.slice(start, end)
 
     assert.equal(
         logsA.length * 2,
@@ -197,7 +359,7 @@ function testEvents(result, logsB) {
         }
 
         assert.equal(
-            logA.event,
+            logA.name,
             logB.name,
             'event type is ' + logB.name
         )
@@ -207,7 +369,6 @@ function testEvents(result, logsB) {
             throw new Error('argsB is empty')
         }
 
-        /* eslint-disable guard-for-in */
         for (const key in argsB) {
             const argA = logA.args[key]
             const argB = argsB[key]
@@ -643,6 +804,7 @@ module.exports = {
     assertAsync,
     assertReversion,
     testEvents,
+    testTradeEvents,
     testValidation,
     testOnlyOwnerModifier,
     getEvmTime,

@@ -1,5 +1,5 @@
 const { getBroker, getJrc, getSwc, shl, validateBalance, hashOffer,
-        exchange, assertAsync } = require('../../utils')
+        exchange, assertAsync, testTradeEvents, testEvents } = require('../../utils')
 
 const { getTradeParams } = require('../../utils/getTradeParams')
 
@@ -16,6 +16,51 @@ contract('Test trade: batch', async (accounts) => {
         broker = await getBroker()
         jrc = await getJrc()
         swc = await getSwc()
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await exchange.mintAndDeposit({ user: maker, token: jrc, amount: 500, nonce: 1 })
+            await exchange.mintAndDeposit({ user: filler, token: swc, amount: 300, nonce: 2 })
+
+            const tradeParams = await getTradeParams(accounts)
+            const result = await exchange.trade(tradeParams, { privateKeys })
+
+            testTradeEvents(result, {
+                nonces: [3, 4, 5, 6],
+                increments: [
+                    [maker, swc.address, 40].join(','),
+                    [filler, jrc.address, 74].join(','),
+                    [operator, jrc.address, 6].join(',')
+                ],
+                decrements: [
+                    [maker, jrc.address, 200].join(','),
+                    [filler, swc.address, 40].join(',')
+                ],
+                dynamicIncrements: []
+            })
+
+            testEvents(result, [
+                'Trade',
+                {
+                    maker,
+                    taker: filler,
+                    makerGiveAsset: jrc.address,
+                    makerGiveAmount: 40,
+                    fillerGiveAsset: swc.address,
+                    fillerGiveAmount: 20
+                },
+                'Trade',
+                {
+                    maker,
+                    taker: filler,
+                    makerGiveAsset: jrc.address,
+                    makerGiveAmount: 40,
+                    fillerGiveAsset: swc.address,
+                    fillerGiveAmount: 20
+                }
+            ], { start: 0, end: 2 })
+        })
     })
 
     contract('when parameters are valid', async () => {
