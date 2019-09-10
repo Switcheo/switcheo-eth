@@ -26,7 +26,7 @@ contract('Test trade: batch', async (accounts) => {
             const tradeParams = await getTradeParams(accounts)
             const result = await exchange.trade(tradeParams, { privateKeys })
 
-            testTradeEvents(result, {
+            await testTradeEvents(result, {
                 nonces: [3, 4, 5, 6],
                 increments: [
                     [maker, swc.address, 40].join(','),

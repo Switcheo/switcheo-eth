@@ -41,7 +41,7 @@ contract('Test networkTrade: Uniswap', async (accounts) => {
             }]
             const result = await exchange.networkTrade({ offers, matches, operator }, { privateKeys })
 
-            testTradeEvents(result, {
+            await testTradeEvents(result, {
                 nonces: [3],
                 increments: [
                     [maker, jrc.address, 73].join(','),

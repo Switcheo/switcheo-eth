@@ -865,12 +865,9 @@ library Utils {
         pure
     {
         // numOffers
-        uint256 i = _values[0] & mask8;
-        // numOffers + numFills
-        uint256 end = (_values[0] & mask8) +
-                      ((_values[0] & mask16) >> 8);
+        uint256 end = _values[0] & mask8;
 
-        for (i; i < end; i++) {
+        for (uint256 i = 0; i < end; i++) {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
             uint256 feeAssetIndex = ((dataA & mask40) >> 32) * 2;

@@ -53,31 +53,24 @@ function getSubBits(value, start, end) {
 function clone(obj) { return JSON.parse(JSON.stringify(obj)) }
 
 function printLogs(result, events) {
-    const { logs } = result.receipt
+    let logs
+    if (result.receipt.logs) { logs = result.receipt.logs }
+    if (result.receipt.rawLogs) { logs = result.receipt.rawLogs }
+    logs = parseLogs(logs)
+    console.log('logs', logs)
 
     for (let i = 0; i < logs.length; i++) {
         const log = logs[i]
         let print = false
         for (let j = 0; j < events.length; j++) {
-            if (log.event === events[j]) {
+            if (log.name === events[j]) {
                 print = true
                 break
             }
         }
 
         if (print) {
-            const values = {}
-            for (const key in log.args) {
-                if (key === '__length__') { continue }
-                if (key === '0') { continue }
-                if (!isNaN(parseInt(key))) { continue }
-
-                values[key] = log.args[key]
-                if (values[key].toString !== undefined) {
-                    values[key] = values[key].toString()
-                }
-            }
-            console.log('log', log.event, values)
+            console.log('log', log.name, log.args)
         }
     }
 }

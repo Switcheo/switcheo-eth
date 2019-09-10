@@ -44,7 +44,7 @@ contract('Test trade: general validations', async (accounts) => {
                 exchange.trade(
                     tradeParams,
                     { privateKeys },
-                    ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) },
+                    ({ values }) => { values[0] = bn(2).or(shl(0, 8)).or(shl(2, 16)) }
                 ),
                 'Invalid trade input'
             )
@@ -57,7 +57,7 @@ contract('Test trade: general validations', async (accounts) => {
                 exchange.trade(
                     tradeParams,
                     { privateKeys },
-                    ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) },
+                    ({ values }) => { values[0] = bn(2).or(shl(2, 8)).or(shl(0, 16)) }
                 ),
                 'Invalid trade input'
             )
