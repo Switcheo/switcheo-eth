@@ -21,6 +21,7 @@ const abiDecoder = require('abi-decoder')
 abiDecoder.addABI(BrokerV2.abi)
 abiDecoder.addABI(DGTXCoin.abi)
 abiDecoder.addABI(ERC777.abi)
+abiDecoder.addABI(SpenderList.abi)
 
 const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR,
         ONE_ADDR, ETHER_ADDR } = require('../constants')

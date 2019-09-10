@@ -46,6 +46,7 @@ contract('Test cancelSwap', async (accounts) => {
                     reason: REASON_CODES.REASON_SWAP_CANCEL_RECEIVE,
                     nonce: 2
                 },
+                'BalanceIncrease',
                 {
                     user: operator,
                     assetId: jrc.address,

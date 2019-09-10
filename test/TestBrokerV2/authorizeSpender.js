@@ -1,4 +1,4 @@
-const { getSpenderList, exchange, assertReversion } = require('../utils')
+const { getSpenderList, exchange, assertReversion, testEvents } = require('../utils')
 const { getPrivateKey } = require('../wallets')
 
 contract('Test authorizeSpender', async (accounts) => {
@@ -9,6 +9,22 @@ contract('Test authorizeSpender', async (accounts) => {
 
     beforeEach(async () => {
         spenderList = await getSpenderList()
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await spenderList.whitelistSpender(spender)
+            const result = await exchange.authorizeSpender({ user, spender, nonce: 1 }, { privateKey })
+
+            testEvents(result, [
+                'AuthorizeSpender',
+                {
+                    user,
+                    spender,
+                    nonce: 1
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {
