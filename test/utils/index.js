@@ -299,7 +299,7 @@ async function parseTradeEvents(result) {
 }
 
 function constructTradeEventsKey(logs) {
-    const { nonces, increments, decrements, dynamicIncrements } = logs
+    const { nonces, increments, decrements } = logs
 
     const str = [
         'nonces',
@@ -313,10 +313,6 @@ function constructTradeEventsKey(logs) {
         'decrements',
         '[',
         decrements.map((str) => str.toLowerCase()).sort().join(','),
-        '],',
-        'dynamic_increments',
-        '[',
-        dynamicIncrements.map((str) => str.toLowerCase()).sort().join(','),
         ']'
     ].join('')
 
@@ -329,9 +325,21 @@ async function testTradeEvents(result, logsB) {
     const keyB = constructTradeEventsKey(logsB)
 
     assert.equal(keyA, keyB, 'Trade events mismatch')
+
+    const dynamicIncrementsA = logsA.dynamicIncrements
+                                    .map((str) => str.toLowerCase())
+                                    .sort()
+                                    .join(',')
+
+    const dynamicIncrementsB = logsA.dynamicIncrements
+                                    .map((str) => str.toLowerCase())
+                                    .sort()
+                                    .join(',')
+
+    assert.equal(dynamicIncrementsA, dynamicIncrementsB, 'Dynamic increments mismatch')
 }
 
-function testEvents(result, logsB, { start, end }) {
+function testEvents(result, logsB, { start, end } = {}) {
     let logsA
     if (result.receipt.logs) { logsA = result.receipt.logs }
     if (result.receipt.rawLogs) { logsA = result.receipt.rawLogs }
@@ -343,7 +351,9 @@ function testEvents(result, logsB, { start, end }) {
         throw new Error('logsB is empty')
     }
 
-    logsA = logsA.slice(start, end)
+    if (start !== undefined && end !== undefined) {
+        logsA = logsA.slice(start, end)
+    }
 
     assert.equal(
         logsA.length * 2,

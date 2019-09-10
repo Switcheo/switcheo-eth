@@ -1,5 +1,5 @@
 const { getJrc, getSwc, getBroker, exchange, validateBalance, validateExternalBalance,
-        hashOffer, assertAsync } = require('../../utils')
+        hashOffer, assertAsync, testTradeEvents } = require('../../utils')
 const { getKyberSwapExchange, fundKyberSwapExchange } = require('../../utils/kyberswapUtils')
 const { ETHER_ADDR } = require('../../constants')
 const { PRIVATE_KEYS } = require('../../wallets')
@@ -15,6 +15,46 @@ contract('Test networkTrade: KyberSwap', async (accounts) => {
         jrc = await getJrc()
         swc = await getSwc()
         kyberExchange = await getKyberSwapExchange()
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            await broker.deposit({ from: maker, value: 60 })
+            await fundKyberSwapExchange(jrc, 300, 100, operator)
+            const offers = [{
+                maker,
+                offerAssetId: ETHER_ADDR,
+                offerAmount: 50,
+                wantAssetId: jrc.address,
+                wantAmount: 100,
+                feeAssetId: jrc.address,
+                feeAmount: 7,
+                nonce: 3
+            }]
+            const matches = [{
+                offerIndex: 0,
+                surplusAssetId: jrc.address,
+                data: 0, // index of fee-sharing wallet address in _addresses
+                marketDapp: 0, // kyberswap
+                takeAmount: 40
+            }]
+            await kyberExchange.setAmountToGive(85)
+            const result = await exchange.networkTrade({ offers, matches, operator }, { privateKeys })
+
+            testTradeEvents(result, {
+                nonces: [3],
+                increments: [
+                    [maker, jrc.address, 73].join(','),
+                    [operator, jrc.address, 7].join(',')
+                ],
+                decrements: [
+                    [maker, ETHER_ADDR, 50].join(',')
+                ],
+                dynamicIncrements: [
+                    [operator, jrc.address, 5].join(',')
+                ]
+            })
+        })
     })
 
     contract('when ETH is sold for tokens', async () => {
