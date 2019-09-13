@@ -445,6 +445,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _markNonce(_nonce);
     }
 
+    function nonceTaken(uint256 _nonce) external view returns (bool) {
+        return _nonceTaken(_nonce);
+    }
+
     /// @notice Deposits ETH into the sender's contract balance
     /// @dev This operation is only usable in an `Active` state
     /// to prevent this contract from receiving ETH in the case that its
