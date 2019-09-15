@@ -651,8 +651,8 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
         values.push(value)
     }
 
-    // zero out operator addresses and asset IDs as these will overwritten by
-    // the contract
+    // zero out operator addresses and asset IDs as these will be overwritten
+    // by the contract
     for (let i = 0; i < addresses.length; i += 2) {
         if (addresses[i] === operator) {
             addresses[i] = ZERO_ADDR
