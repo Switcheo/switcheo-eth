@@ -321,7 +321,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// The `Inactive` state is intended as a means to cease contract operation
     /// in the case of an upgrade or in an emergency.
     /// @param _state The state to transition the contract into
-    function setState(State _state) external onlyOwner { state = _state; }
+    function setState(State _state) external onlyOwner nonReentrant { state = _state; }
 
     /// @notice Sets the Broker's admin state.
     /// @dev The two available states are `Normal` and `Escalated`.
@@ -336,12 +336,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// It is set separately from the `Inactive` state so that it is possible
     /// to use admin functions without affecting regular operations.
     /// @param _state The admin state to transition the contract into
-    function setAdminState(AdminState _state) external onlyOwner { adminState = _state; }
+    function setAdminState(AdminState _state) external onlyOwner nonReentrant { adminState = _state; }
 
     /// @notice Sets the operator address.
     /// @dev All fees will be transferred to the operator address.
     /// @param _operator The address to set as the operator
-    function setOperator(address _operator) external onlyOwner {
+    function setOperator(address _operator) external onlyOwner nonReentrant {
         _validateAddress(operator);
         operator = _operator;
     }
@@ -352,7 +352,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// before the state is separately updated by the user.
     /// This differs from the regular `cancel` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
-    function setSlowCancelDelay(uint256 _delay) external onlyOwner {
+    function setSlowCancelDelay(uint256 _delay) external onlyOwner nonReentrant {
         // Error code 4: setSlowCancelDelay, slow cancel delay exceeds max allowable delay
         require(_delay <= MAX_SLOW_CANCEL_DELAY, "4");
         slowCancelDelay = _delay;
@@ -364,7 +364,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// before the state is separately updated by the user.
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
-    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
+    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner nonReentrant {
         // Error code 5: setSlowWithdrawDelay, slow withdraw delay exceeds max allowable delay
         require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "5");
         slowWithdrawDelay = _delay;
@@ -375,7 +375,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// of the Broker contract, and to perform special functions such as
     /// `adminCancel` and `adminWithdraw`.
     /// @param _admin The address to give admin permissions to
-    function addAdmin(address _admin) external onlyOwner {
+    function addAdmin(address _admin) external onlyOwner nonReentrant {
         _validateAddress(_admin);
         // Error code 6: addAdmin, address is already an admin address
         require(!adminAddresses[_admin], "6");
@@ -384,7 +384,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Removes admin permissons for the specified address.
     /// @param _admin The admin address to remove admin permissions from
-    function removeAdmin(address _admin) external onlyOwner {
+    function removeAdmin(address _admin) external onlyOwner nonReentrant {
         _validateAddress(_admin);
         // Error code 7: removeAdmin, address is not an admin address
         require(adminAddresses[_admin], "7");
@@ -393,7 +393,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Adds a market DApp to be used in `networkTrade`
     /// @param _dapp Address of the market DApp
-    function addMarketDapp(address _dapp) external onlyOwner {
+    function addMarketDapp(address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
         marketDapps.push(_dapp);
     }
@@ -401,7 +401,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Updates a market DApp to be used in `networkTrade`
     /// @param _index Index of the market DApp to update
     /// @param _dapp The new address of the market DApp
-    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner {
+    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
         // Error code 8: updateMarketDapp, _index does not refer to a DApp address
         require(marketDapps[_index] != address(0), "8");
@@ -410,7 +410,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Removes a market DApp
     /// @param _index Index of the market DApp to remove
-    function removeMarketDapp(uint256 _index) external onlyOwner {
+    function removeMarketDapp(uint256 _index) external onlyOwner nonReentrant {
         // Error code 9: removeMarketDapp, _index does not refer to a DApp address
         require(marketDapps[_index] != address(0), "9");
         delete marketDapps[_index];
@@ -434,6 +434,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
         spenderList.validateSpenderAuthorization(_from, msg.sender);
 
@@ -443,7 +444,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
     }
 
-    function markNonce(uint256 _nonce) external {
+    function markNonce(uint256 _nonce) external nonReentrant {
         spenderList.validateSpender(msg.sender);
         _markNonce(_nonce);
     }
@@ -456,7 +457,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @dev This operation is only usable in an `Active` state
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
-    function deposit() external payable onlyActiveState {
+    function deposit() external payable onlyActiveState nonReentrant {
         // Error code 10: deposit, msg.value is 0
         require(msg.value > 0, "10");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
@@ -481,7 +482,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with
     /// @param _expectedAmount The final amount expected to be received by this contract
-    /// @param _nonce An unused nonce for balance tracking
+    /// @param _nonce A nonce used for event tracking
     function depositToken(
         address _user,
         address _assetId,
@@ -494,8 +495,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         onlyActiveState
         nonReentrant
     {
-        _markNonce(_nonce);
-
         _increaseBalance(
             _user,
             _assetId,
@@ -707,6 +706,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
@@ -721,25 +721,36 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _addresses
         );
 
+        uint256[] memory balanceChanges = new uint256[](_addresses.length / 2);
+
         // Credit fillers for each fill.wantAmount, and credit the operator
         // for each fill.feeAmount.
-        _creditFillBalances(_values, _addresses, operatorAddress);
+        Utils.creditFillBalances(balanceChanges, _values, _addresses, operatorAddress);
+        _incrementBalances(balanceChanges, _addresses, 1);
 
         // Credit makers for each amount received through a matched fill.
-        _creditMakerBalances(_values, _addresses);
+        balanceChanges = new uint256[](_addresses.length / 2);
+        Utils.creditMakerBalances(balanceChanges, _values, _addresses);
+        _incrementBalances(balanceChanges, _addresses, 1);
 
         // Credit the operator for each offer.feeAmount if the offer has not
         // been recorded through a previous `trade` or `networkTrade` call.
-        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
+        balanceChanges = new uint256[](_addresses.length / 2);
+        _creditMakerFeeBalances(balanceChanges, _values, _addresses, operatorAddress);
+        _incrementBalances(balanceChanges, _addresses, 1);
 
         // Deduct tokens from fillers for each fill.offerAmount
         // and each fill.feeAmount.
-        _deductFillBalances(_values, _addresses);
+        balanceChanges = new uint256[](_addresses.length / 2);
+        Utils.deductFillBalances(balanceChanges, _values, _addresses);
+        _decrementBalances(balanceChanges, _addresses);
 
         // Deduct tokens from makers for each offer.offerAmount
         // and each offer.feeAmount if the offer has not been recorded
         // through a previous `trade` or `networkTrade` call.
-        _deductMakerBalances(_values, _addresses);
+        balanceChanges = new uint256[](_addresses.length / 2);
+        _deductMakerBalances(balanceChanges, _values, _addresses);
+        _decrementBalances(balanceChanges, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
@@ -826,17 +837,24 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             operatorAddress
         );
 
+        uint256[] memory balanceChanges = new uint256[](_addresses.length / 2);
+
         // Credit makers for each amount received through a match.
-        _creditMakerBalances(_values, _addresses);
+        Utils.creditMakerBalances(balanceChanges, _values, _addresses);
+        _incrementBalances(balanceChanges, _addresses, 1);
 
         // Credit the operator for each offer.feeAmount if the offer has not
         // been recorded through a previous `trade` or `networkTrade` call.
-        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
+        balanceChanges = new uint256[](_addresses.length / 2);
+        _creditMakerFeeBalances(balanceChanges, _values, _addresses, operatorAddress);
+        _incrementBalances(balanceChanges, _addresses, 1);
 
         // Deduct tokens from makers for each offer.offerAmount
         // and each offer.feeAmount if the offer has not been recorded
         // through a previous `trade` or `networkTrade` call.
-        _deductMakerBalances(_values, _addresses);
+        balanceChanges = new uint256[](_addresses.length / 2);
+        _deductMakerBalances(balanceChanges, _values, _addresses);
+        _decrementBalances(balanceChanges, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
@@ -851,7 +869,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             marketDapps
         );
 
-        _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
+        _incrementBalances(increments, _addresses, 0);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -893,33 +911,17 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
         onlyAdmin
+        nonReentrant
     {
-        bytes32 offerHash = keccak256(abi.encode(
-            OFFER_TYPEHASH,
-            _addresses[0], // maker
-            _addresses[1], // offerAssetId
-            _values[0] & mask128, // offerAmount
-            _addresses[2], // wantAssetId
-            _values[0] >> 128, // wantAmount
-            _addresses[3], // feeAssetId
-            _values[1] & mask128, // feeAmount
-            _values[2] >> 144 // offerNonce
-        ));
+        _validateSignatureForCancel(
+            _values,
+            _hashes,
+            _addresses
+        );
 
-        bytes32 cancelHash = keccak256(abi.encode(
-            CANCEL_TYPEHASH,
-            offerHash,
-            _addresses[4],
-            _values[1] >> 128
-        ));
-
-        _validateSignature(
-            cancelHash,
-            _addresses[0], // maker
-            uint8((_values[2] & mask144) >> 136), // v
-            _hashes[0], // r
-            _hashes[1], // s
-            ((_values[2] & mask136) >> 128) != 0 // prefixedSignature
+        bytes32 offerHash = _hashOffer(
+            _values,
+            _addresses
         );
 
         _cancel(
@@ -968,6 +970,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyEscalatedAdminState
+        nonReentrant
     {
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1021,6 +1024,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _offerNonce
     )
         external
+        nonReentrant
     {
         // Error code 11: announceCancel, invalid msg.sender
         require(_maker == msg.sender, "11");
@@ -1075,6 +1079,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _offerNonce
     )
         external
+        nonReentrant
     {
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1142,6 +1147,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
         onlyAdmin
+        nonReentrant
     {
         _markNonce(_nonce);
 
@@ -1193,6 +1199,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyEscalatedAdminState
+        nonReentrant
     {
         _markNonce(_nonce);
 
@@ -1219,6 +1226,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
 
         // Error code 16: announceWithdraw, invalid withdrawal amount
@@ -1245,6 +1253,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
@@ -1295,6 +1304,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Error code 20: createSwap, invalid swap amount
         require(_values[0] > 0, "20");
@@ -1365,6 +1375,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         bytes calldata _preimage
     )
         external
+        nonReentrant
     {
         // Error code 37: swap secret length exceeded
         require(_preimage.length < MAX_SWAP_SECRET_LENGTH, "37");
@@ -1423,6 +1434,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _cancelFeeAmount
     )
         external
+        nonReentrant
     {
         // Error code 26: cancelSwap, expiry time has not been reached
         require(_values[1] <= now, "26");
@@ -1472,127 +1484,20 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
-    /// for each fill.feeAmount. See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    /// @param _operator Address of the operator
-    function _creditFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses,
-        address _operator
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & mask8) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            // let assetIndex be filler.wantAssetIndex
-            uint256 assetIndex = (_values[i] & mask24) >> 16;
-            uint256 wantAmount = _values[i + 1] >> 128;
-
-            // credit fill.wantAmount to filler
-            increments[assetIndex] = increments[assetIndex].add(wantAmount);
-            if (min > assetIndex) { min = assetIndex; }
-            if (max < assetIndex) { max = assetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // let assetIndex be filler.feeAssetIndex
-            assetIndex = (_values[i] & mask32) >> 24;
-            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
-
-            // override the operator slot with the actual operator address
-            // and set the operator fee asset ID slot to be the fill's feeAssetId
-            _addresses[feeAssetIndex * 2] = _operator;
-            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
-                // a value of address(1) indicates that this value has not been set before
-                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
-            } else {
-                // if the value is not address(1) then it must have been previously set
-                // to a value matching the make's feeAssetId
-                // Error code 29: _creditFillBalances, invalid operator feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "29");
-            }
-
-            // credit fill.feeAmount to operator
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        _incrementBalances(increments, 1, min, max, _addresses);
-    }
-
-    /// @dev Credit makers for each amount received through a matched fill.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _creditMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i += numOffers * 2
-        i += (_values[0] & mask8) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & mask16) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for(i; i < end; i++) {
-            // match.offerIndex
-            uint256 offerIndex = _values[i] & mask8;
-            // offer.wantAssetIndex
-            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
-
-            // match.takeAmount
-            uint256 amount = _values[i] >> 128;
-            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
-            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
-                           .div(_values[2 + offerIndex * 2] & mask128);
-
-            // credit maker for the amount received from the match
-            increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
-            if (min > wantAssetIndex) { min = wantAssetIndex; }
-            if (max < wantAssetIndex) { max = wantAssetIndex; }
-        }
-
-        _incrementBalances(increments, 1, min, max, _addresses);
-    }
-
     /// @dev Credit the operator for each offer.feeAmount if the offer has not
     /// been recorded through a previous `trade` call.
     /// See the `trade` method for param details.
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
     function _creditMakerFeeBalances(
+        uint256[] memory _increments,
         uint256[] memory _values,
         address[] memory _addresses,
         address _operator
     )
-        private
+        public
+        view
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
         uint256 i = 1;
         // i + numOffers * 2
         uint256 end = i + (_values[0] & mask8) * 2;
@@ -1623,55 +1528,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             }
 
             // credit make.feeAmount to operator
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
+            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
         }
-
-        _incrementBalances(increments, 1, min, max, _addresses);
-    }
-
-    /// @dev Deduct tokens from fillers for each fill.offerAmount
-    /// and each fill.feeAmount.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _deductFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory decrements = new uint256[](_addresses.length / 2);
-
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & mask8) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
-            uint256 offerAmount = _values[i + 1] & mask128;
-
-            // deduct fill.offerAmount from filler
-            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct fill.feeAmount from filler
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Deduct tokens from makers for each offer.offerAmount
@@ -1681,15 +1539,13 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
     function _deductMakerBalances(
+        uint256[] memory _decrements,
         uint256[] memory _values,
         address[] memory _addresses
     )
-        private
+        public
+        view
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory decrements = new uint256[](_addresses.length / 2);
-
         uint256 i = 1;
         // i + numOffers * 2
         uint256 end = i + (_values[0] & mask8) * 2;
@@ -1703,21 +1559,15 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             uint256 offerAmount = _values[i + 1] & mask128;
 
             // deduct make.offerAmount from maker
-            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
+            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
             // deduct make.feeAmount from maker
             uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
+            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
         }
-
-        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Reduce available offer amounts of offers and store the remaining
@@ -1788,6 +1638,57 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             uint256 nonce = (_values[i] & mask128) >> 56;
             _markNonce(nonce);
         }
+    }
+
+    function _hashOffer(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _addresses[0], // maker
+            _addresses[1], // offerAssetId
+            _values[0] & mask128, // offerAmount
+            _addresses[2], // wantAssetId
+            _values[0] >> 128, // wantAmount
+            _addresses[3], // feeAssetId
+            _values[1] & mask128, // feeAmount
+            _values[2] >> 144 // offerNonce
+        ));
+    }
+
+    function _validateSignatureForCancel(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
+    )
+        private
+        pure
+    {
+        bytes32 offerHash = _hashOffer(
+            _values,
+            _addresses
+        );
+
+        bytes32 cancelHash = keccak256(abi.encode(
+            CANCEL_TYPEHASH,
+            offerHash,
+            _addresses[4],
+            _values[1] >> 128
+        ));
+
+        _validateSignature(
+            cancelHash,
+            _addresses[0], // maker
+            uint8((_values[2] & mask144) >> 136), // v
+            _hashes[0], // r
+            _hashes[1], // s
+            ((_values[2] & mask136) >> 128) != 0 // prefixedSignature
+        );
     }
 
     /// @dev The actual cancellation logic shared by `cancel`, `adminCancel`,
@@ -2084,11 +1985,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _increments An array of amounts to increase a user's balance by,
     /// the corresponding user and assetId is referenced by
     /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
-    /// @param _static Indicates if the amount was pre-calculated or only known
-    /// at the time the transaction was executed
-    /// @param _i The index to start the increment loop at (inclusive)
-    /// @param _end The index to end the increment loop at (inclusive)
     /// @param _addresses An array of user asset pairs in the form of:
+    /// at the time the transaction was executed
     /// [
     ///     user_1_address,
     ///     asset_1_address,
@@ -2098,23 +1996,23 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     asset_1_address,
     ///     ...
     /// ]
+    /// @param _static Indicates if the amount was pre-calculated or only known
     function _incrementBalances(
         uint256[] memory _increments,
-        uint256 _static,
-        uint256 _i,
-        uint256 _end,
-        address[] memory _addresses
+        address[] memory _addresses,
+        uint256 _static
     )
         private
     {
-        for(_i; _i <= _end; _i++) {
-            uint256 increment = _increments[_i];
+        uint256 end = _increments.length;
+        for(uint256 i = 0; i < end; i++) {
+            uint256 increment = _increments[i];
             if (increment == 0) { continue; }
 
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
 
-            emit Increment((_i << 248) | (_static << 240) | increment);
+            emit Increment((i << 248) | (_static << 240) | increment);
         }
     }
 
@@ -2123,8 +2021,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _decrements An array of amounts to decrease a user's balance by,
     /// the corresponding user and assetId is referenced by
     /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
-    /// @param _i The index to start the increment loop at (inclusive)
-    /// @param _end The index to end the increment loop at (inclusive)
     /// @param _addresses An array of user asset pairs in the form of:
     /// [
     ///     user_1_address,
@@ -2137,20 +2033,19 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// ]
     function _decrementBalances(
         uint256[] memory _decrements,
-        uint256 _i,
-        uint256 _end,
         address[] memory _addresses
     )
         private
     {
-        for(_i; _i <= _end; _i++) {
-            uint256 decrement = _decrements[_i];
+        uint256 end = _decrements.length;
+        for(uint256 i = 0; i <= end; i++) {
+            uint256 decrement = _decrements[i];
             if (decrement == 0) { continue; }
 
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
 
-            emit Decrement(_i << 248 | decrement);
+            emit Decrement(i << 248 | decrement);
         }
     }
 }

@@ -100,6 +100,132 @@ library Utils {
         uint256 fillerGiveAmount
     );
 
+    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
+    /// for each fill.feeAmount. See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
+    /// @param _operator Address of the operator
+    function creditFillBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values,
+        address[] memory _addresses,
+        address _operator
+    )
+        public
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            // let assetIndex be filler.wantAssetIndex
+            uint256 assetIndex = (_values[i] & mask24) >> 16;
+            uint256 wantAmount = _values[i + 1] >> 128;
+
+            // credit fill.wantAmount to filler
+            _increments[assetIndex] = _increments[assetIndex].add(wantAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // let assetIndex be filler.feeAssetIndex
+            assetIndex = (_values[i] & mask32) >> 24;
+            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
+
+            // override the operator slot with the actual operator address
+            // and set the operator fee asset ID slot to be the fill's feeAssetId
+            _addresses[feeAssetIndex * 2] = _operator;
+            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
+                // a value of address(1) indicates that this value has not been set before
+                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
+            } else {
+                // if the value is not address(1) then it must have been previously set
+                // to a value matching the make's feeAssetId
+                // Error code 29: _creditFillBalances, invalid operator feeAssetId
+                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "29");
+            }
+
+            // credit fill.feeAmount to operator
+            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Credit makers for each amount received through a matched fill.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
+    function creditMakerBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        public
+        pure
+    {
+        uint256 i = 1;
+        // i += numOffers * 2
+        i += (_values[0] & mask8) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & mask16) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            // match.offerIndex
+            uint256 offerIndex = _values[i] & mask8;
+            // offer.wantAssetIndex
+            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+
+            // match.takeAmount
+            uint256 amount = _values[i] >> 128;
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
+            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
+                           .div(_values[2 + offerIndex * 2] & mask128);
+
+            // credit maker for the amount received from the match
+            _increments[wantAssetIndex] = _increments[wantAssetIndex].add(amount);
+        }
+    }
+
+    /// @dev Deduct tokens from fillers for each fill.offerAmount
+    /// and each fill.feeAmount.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    /// @param _addresses Addresses from `trade`
+    function deductFillBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        public
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct fill.offerAmount from filler
+            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct fill.feeAmount from filler
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+        }
+    }
+
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
     /// @param _values Values from `trade`
