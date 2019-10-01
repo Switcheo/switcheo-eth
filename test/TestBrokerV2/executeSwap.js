@@ -9,7 +9,7 @@ contract('Test executeSwap', async (accounts) => {
     const maker = accounts[1]
     const taker = accounts[2]
     const privateKey = getPrivateKey(maker)
-    const secret = 'highly-classified'
+    const secret = '79863f597f584e08ae9e34eeea2c134979863f597f584e08ae9e34eeea2c1349'
 
     beforeEach(async () => {
         broker = await getBroker()

@@ -132,6 +132,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // compatibility
     address private constant ETHER_ADDR = address(0);
 
+    // The maximum length of swap secret values
+    uint256 private constant MAX_SWAP_SECRET_LENGTH = 200;
+
     // Reason codes are used by the off-chain coordinator to track balance changes
     uint256 private constant REASON_DEPOSIT = 0x01;
 
@@ -1363,6 +1366,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
     {
+        // Error code 37: swap secret length exceeded
+        require(_preimage.length < MAX_SWAP_SECRET_LENGTH, "37");
+
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
         // Error code 24: executeSwap, swap is not active
         require(atomicSwaps[swapHash], "24");
