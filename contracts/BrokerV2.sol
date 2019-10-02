@@ -474,7 +474,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with
     /// @param _expectedAmount The final amount expected to be received by this contract
-    /// @param _nonce An unused nonce for balance tracking
+    /// @param _nonce A nonce for balance tracking, emitted in the BalanceIncrease event
     function depositToken(
         address _user,
         address _assetId,
@@ -487,8 +487,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         onlyActiveState
         nonReentrant
     {
-        _markNonce(_nonce);
-
         _increaseBalance(
             _user,
             _assetId,

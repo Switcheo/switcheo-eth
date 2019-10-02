@@ -79,7 +79,7 @@ contract('Test trade: batch', async (accounts) => {
             await validateBalance(operator, jrc, 0)
             await validateBalance(operator, swc, 0)
 
-            await assertAsync(broker.usedNonces(0), shl(1, 1).or(shl(1, 2)))
+            await assertAsync(broker.usedNonces(0), 0)
 
             await exchange.trade(tradeParams, { privateKeys })
 
@@ -92,9 +92,7 @@ contract('Test trade: batch', async (accounts) => {
 
             await assertAsync(
                 broker.usedNonces(0),
-                shl(1, 1).or(shl(1, 2))
-                         .or(shl(1, 3))
-                         .or(shl(1, 4))
+                shl(1, 3).or(shl(1, 4))
                          .or(shl(1, 5))
                          .or(shl(1, 6))
             )

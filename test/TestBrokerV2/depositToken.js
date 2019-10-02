@@ -51,17 +51,6 @@ contract('Test depositToken', async (accounts) => {
         })
     })
 
-    contract('when the nonce has been used before', async () => {
-        it('raises an error', async () => {
-            await jrc.approve(broker.address, 42, { from: user })
-            await broker.depositToken(user, jrc.address, 42, 42, 1)
-            await assertReversion(
-                broker.depositToken(user, jrc.address, 42, 42, 1),
-                '36'
-            )
-        })
-    })
-
     contract('when the transferred amount does not match the expected amount', async () => {
         it('raises an error', async () => {
             await jrc.approve(broker.address, 42, { from: user })

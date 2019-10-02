@@ -336,25 +336,6 @@ contract('Test trade: general validations', async (accounts) => {
         })
     })
 
-    contract('when an offer.nonce is already used', async () => {
-        it('raises an error', async () => {
-            const editedTradeParams = clone(tradeParams)
-            editedTradeParams.offers[0].nonce = 1
-
-            // nonce 1 has already been used by a deposit transaction
-            // so the nonce will be found to be taken and the contract will
-            // use offers[offerHash] as the availableAmount
-            // this will be 0, causing error 31 to be thrown
-            await assertReversion(
-                exchange.trade(
-                    editedTradeParams,
-                    { privateKeys }
-                ),
-                '31'
-            )
-        })
-    })
-
     contract('when an offer.nonce is the same as a fill.nonce', async () => {
         it('raises an error', async () => {
             const editedTradeParams = clone(tradeParams)
