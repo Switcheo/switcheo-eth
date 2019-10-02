@@ -157,7 +157,6 @@ contract('Test networkTrade: KyberSwap', async (accounts) => {
                 const offerHash = hashOffer(offers[0])
                 await assertAsync(broker.offers(offerHash), 0)
 
-
                 // manually set the amount of eth to be given
                 await kyberExchange.setAmountToGive(11)
                 const result = await exchange.networkTrade({ offers, matches, operator }, { privateKeys })

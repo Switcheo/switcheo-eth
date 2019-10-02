@@ -102,6 +102,13 @@ async function validateBalance(user, assetId, amount) {
     assertEqual(balance, amount)
 }
 
+async function printBalance(user, assetId) {
+    assetId = ensureAddress(assetId)
+    const broker = await getBroker()
+    const balance = await broker.balances(user, assetId)
+    console.log('balance', user, assetId, balance.toString())
+}
+
 async function validateExternalBalance(user, token, amount) {
     user = ensureAddress(user)
     if (token === ETHER_ADDR) { return await web3.eth.getBalance(user) }
@@ -765,6 +772,7 @@ module.exports = {
     printLogs,
     hashSecret,
     validateBalance,
+    printBalance,
     validateExternalBalance,
     assertAsync,
     assertReversion,

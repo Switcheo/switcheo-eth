@@ -765,7 +765,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(40..48): The `v` component of the maker's signature for this offer
     /// bits(48..56): Indicates whether the Ethereum signed message
     /// prefix should be prepended during signature verification
-    /// bits(56..128): The offer nonce to prevent replay attacks
+    /// bits(56..120): The offer nonce to prevent replay attacks
+    /// bits(120..128): Space to indicate whether the offer nonce has been marked before
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
     ///
     /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
@@ -810,6 +811,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address operatorAddress = operator;
         uint256[] memory statements = new uint256[](_addresses.length / 2);
 
+        _setNonceStates(_values);
+
         // `validateNetworkTrades` needs to calculate the hash keys of offers
         // to verify the signature of the offer.
         // The calculated hash keys for each offer is return to reduce repeated
@@ -833,6 +836,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Offer nonces will also be marked as taken.
         _storeOfferData(_values, _hashes);
 
+        statements = new uint256[](_addresses.length / 2);
         // There may be excess tokens resulting from a trade
         // Any excess tokens are returned and recorded in `increments`
         statements = Utils.performNetworkTrades(
@@ -841,7 +845,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _addresses,
             marketDapps
         );
-
         _incrementBalances(statements, _addresses, 0);
     }
 
@@ -1472,7 +1475,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         for(i; i < end; i += 2) {
             uint256 nonce = (_values[i] & mask120) >> 56;
             // Error code 38: Invalid nonce space
-            require((_values[i] & mask128) >> 120 == 0, "38");
+            require(((_values[i] & mask128) >> 120) == 0, "38");
 
             if (_nonceTaken(nonce)) {
                 _values[i] = _values[i] | (uint256(1) << 120);

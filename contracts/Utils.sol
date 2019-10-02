@@ -89,6 +89,7 @@ library Utils {
     uint256 private constant mask40 = ~(~uint256(0) << 40);
     uint256 private constant mask48 = ~(~uint256(0) << 48);
     uint256 private constant mask56 = ~(~uint256(0) << 56);
+    uint256 private constant mask120 = ~(~uint256(0) << 120);
     uint256 private constant mask128 = ~(~uint256(0) << 128);
 
     event Trade(
@@ -150,177 +151,6 @@ library Utils {
     {
         _deductMakerBalances(_decrements, _values);
         return _decrements;
-    }
-
-    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
-    /// for each fill.feeAmount. See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    function _creditFillBalances(
-        uint256[] memory _increments,
-        uint256[] memory _values
-    )
-        private
-        pure
-    {
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & mask8) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            // let assetIndex be filler.wantAssetIndex
-            uint256 assetIndex = (_values[i] & mask24) >> 16;
-            uint256 wantAmount = _values[i + 1] >> 128;
-
-            // credit fill.wantAmount to filler
-            _increments[assetIndex] = _increments[assetIndex].add(wantAmount);
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // let assetIndex be filler.feeAssetIndex
-            assetIndex = (_values[i] & mask32) >> 24;
-            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
-
-            // credit fill.feeAmount to operator
-            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
-        }
-    }
-
-    /// @dev Credit makers for each amount received through a matched fill.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    function _creditMakerBalances(
-        uint256[] memory _increments,
-        uint256[] memory _values
-    )
-        private
-        pure
-    {
-        uint256 i = 1;
-        // i += numOffers * 2
-        i += (_values[0] & mask8) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & mask16) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for(i; i < end; i++) {
-            // match.offerIndex
-            uint256 offerIndex = _values[i] & mask8;
-            // offer.wantAssetIndex
-            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
-
-            // match.takeAmount
-            uint256 amount = _values[i] >> 128;
-            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
-            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
-                           .div(_values[2 + offerIndex * 2] & mask128);
-
-            // credit maker for the amount received from the match
-            _increments[wantAssetIndex] = _increments[wantAssetIndex].add(amount);
-        }
-    }
-
-    /// @dev Credit the operator for each offer.feeAmount if the offer has not
-    /// been recorded through a previous `trade` call.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    function _creditMakerFeeBalances(
-        uint256[] memory _increments,
-        uint256[] memory _values
-    )
-        private
-        pure
-    {
-        uint256 i = 1;
-        // i + numOffers * 2
-        uint256 end = i + (_values[0] & mask8) * 2;
-
-        // loop offers
-        for(i; i < end; i += 2) {
-            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
-            if (nonceTaken) { continue; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            uint256 feeAssetIndex = (_values[i] & mask40) >> 32;
-
-            // credit make.feeAmount to operator
-            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
-        }
-    }
-
-    /// @dev Deduct tokens from fillers for each fill.offerAmount
-    /// and each fill.feeAmount.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    function _deductFillBalances(
-        uint256[] memory _decrements,
-        uint256[] memory _values
-    )
-        private
-        pure
-    {
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & mask8) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
-            uint256 offerAmount = _values[i + 1] & mask128;
-
-            // deduct fill.offerAmount from filler
-            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct fill.feeAmount from filler
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
-        }
-    }
-
-    /// @dev Deduct tokens from makers for each offer.offerAmount
-    /// and each offer.feeAmount if the offer has not been recorded
-    /// through a previous `trade` call.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    function _deductMakerBalances(
-        uint256[] memory _decrements,
-        uint256[] memory _values
-    )
-        private
-        pure
-    {
-        uint256 i = 1;
-        // i + numOffers * 2
-        uint256 end = i + (_values[0] & mask8) * 2;
-
-        // loop offers
-        for(i; i < end; i += 2) {
-            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
-            if (nonceTaken) { continue; }
-
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
-            uint256 offerAmount = _values[i + 1] & mask128;
-
-            // deduct make.offerAmount from maker
-            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct make.feeAmount from maker
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
-        }
     }
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
@@ -614,6 +444,177 @@ library Utils {
         require(_address != address(0), "Invalid address");
     }
 
+    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
+    /// for each fill.feeAmount. See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditFillBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            // let assetIndex be filler.wantAssetIndex
+            uint256 assetIndex = (_values[i] & mask24) >> 16;
+            uint256 wantAmount = _values[i + 1] >> 128;
+
+            // credit fill.wantAmount to filler
+            _increments[assetIndex] = _increments[assetIndex].add(wantAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // let assetIndex be filler.feeAssetIndex
+            assetIndex = (_values[i] & mask32) >> 24;
+            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
+
+            // credit fill.feeAmount to operator
+            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Credit makers for each amount received through a matched fill.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditMakerBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i += numOffers * 2
+        i += (_values[0] & mask8) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & mask16) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            // match.offerIndex
+            uint256 offerIndex = _values[i] & mask8;
+            // offer.wantAssetIndex
+            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+
+            // match.takeAmount
+            uint256 amount = _values[i] >> 128;
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
+            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
+                           .div(_values[2 + offerIndex * 2] & mask128);
+
+            // credit maker for the amount received from the match
+            _increments[wantAssetIndex] = _increments[wantAssetIndex].add(amount);
+        }
+    }
+
+    /// @dev Credit the operator for each offer.feeAmount if the offer has not
+    /// been recorded through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditMakerFeeBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i + numOffers * 2
+        uint256 end = i + (_values[0] & mask8) * 2;
+
+        // loop offers
+        for(i; i < end; i += 2) {
+            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
+            if (nonceTaken) { continue; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = (_values[i] & mask40) >> 32;
+
+            // credit make.feeAmount to operator
+            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Deduct tokens from fillers for each fill.offerAmount
+    /// and each fill.feeAmount.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _deductFillBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct fill.offerAmount from filler
+            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct fill.feeAmount from filler
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Deduct tokens from makers for each offer.offerAmount
+    /// and each offer.feeAmount if the offer has not been recorded
+    /// through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _deductMakerBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i + numOffers * 2
+        uint256 end = i + (_values[0] & mask8) * 2;
+
+        // loop offers
+        for(i; i < end; i += 2) {
+            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
+            if (nonceTaken) { continue; }
+
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct make.offerAmount from maker
+            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct make.feeAmount from maker
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+        }
+    }
+
     function _emitTradeEvents(
         uint256[] memory _values,
         address[] memory _addresses,
@@ -855,7 +856,7 @@ library Utils {
         uint256 prevNonce;
 
         for(uint256 i = 0; i < numOffers; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & mask128) >> 56;
+            uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
 
             if (i == 0) {
                 // Set the value of the first nonce
@@ -1107,7 +1108,7 @@ library Utils {
                 dataB >> 128, // wantAmount
                 _addresses[((dataA & mask32) >> 24) * 2 + 1], // feeAssetId
                 dataA >> 128, // feeAmount
-                (dataA & mask128) >> 56 // nonce
+                (dataA & mask120) >> 56 // nonce
             ));
 
             bool prefixedSignature = ((dataA & mask56) >> 48) != 0;
