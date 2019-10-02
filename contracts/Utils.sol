@@ -64,6 +64,15 @@ library Utils {
     // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
 
+    // bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Cancel(",
+    //         "bytes32 offerHash,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //     ")"
+    // ));
+    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
+
     // bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
     //     "Fill(",
     //         "address filler,",
@@ -91,6 +100,8 @@ library Utils {
     uint256 private constant mask56 = ~(~uint256(0) << 56);
     uint256 private constant mask120 = ~(~uint256(0) << 120);
     uint256 private constant mask128 = ~(~uint256(0) << 128);
+    uint256 private constant mask136 = ~(~uint256(0) << 136);
+    uint256 private constant mask144 = ~(~uint256(0) << 144);
 
     event Trade(
         address maker,
@@ -286,6 +297,54 @@ library Utils {
         _emitTradeEvents(_values, _addresses, _marketDapps, true);
 
         return _increments;
+    }
+
+    function validateCancel(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
+    )
+        public
+        pure
+    {
+        bytes32 offerHash = hashOffer(_values, _addresses);
+
+        bytes32 cancelHash = keccak256(abi.encode(
+            CANCEL_TYPEHASH,
+            offerHash,
+            _addresses[4],
+            _values[1] >> 128
+        ));
+
+        validateSignature(
+            cancelHash,
+            _addresses[0], // maker
+            uint8((_values[2] & mask144) >> 136), // v
+            _hashes[0], // r
+            _hashes[1], // s
+            ((_values[2] & mask136) >> 128) != 0 // prefixedSignature
+        );
+    }
+
+    function hashOffer(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        public
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _addresses[0], // maker
+            _addresses[1], // offerAssetId
+            _values[0] & mask128, // offerAmount
+            _addresses[2], // wantAssetId
+            _values[0] >> 128, // wantAmount
+            _addresses[3], // feeAssetId
+            _values[1] & mask128, // feeAmount
+            _values[2] >> 144 // offerNonce
+        ));
     }
 
     /// @notice Approves a token transfer

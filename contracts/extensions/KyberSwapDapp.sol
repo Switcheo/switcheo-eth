@@ -27,6 +27,7 @@ contract KyberSwapDapp is BrokerExtension {
     )
         external
         onlyOwner
+        nonReentrant
     {
         kyberNetworkProxy = KyberNetworkProxy(_kyberNetworkProxyAddress);
     }
@@ -53,6 +54,7 @@ contract KyberSwapDapp is BrokerExtension {
     )
         public
         payable
+        nonReentrant
     {
         uint256 ethValue = 0;
 

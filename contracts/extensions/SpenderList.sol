@@ -52,7 +52,7 @@ contract SpenderList is BrokerExtension {
     /// perform balance transfers for the user.
     /// See `authorizeSpender` and `spendFrom` methods for more details.
     /// @param _spender The address of the spender contract to whitelist
-    function whitelistSpender(address _spender) external onlyOwner {
+    function whitelistSpender(address _spender) external onlyOwner nonReentrant {
         Utils.validateAddress(_spender);
         require(!spenderWhitelist[_spender], "Spender already whitelisted");
         spenderWhitelist[_spender] = true;
@@ -65,7 +65,7 @@ contract SpenderList is BrokerExtension {
     /// This is required because the contract owner would otherwise be able to
     /// cause a user's funds to be locked in the spender contract.
     /// @param _spender The address of the spender contract to remove from the whitelist
-    function unwhitelistSpender(address _spender) external onlyOwner {
+    function unwhitelistSpender(address _spender) external onlyOwner nonReentrant {
         Utils.validateAddress(_spender);
         require(spenderWhitelist[_spender], "Spender not whitelisted");
         delete spenderWhitelist[_spender];
@@ -94,6 +94,7 @@ contract SpenderList is BrokerExtension {
     )
         external
         onlyAdmin
+        nonReentrant
     {
         require(spenderWhitelist[_spender], "Spender not whitelisted");
         require(!spenderAuthorizations[_user][_spender], "Spender already authorized");
@@ -125,7 +126,7 @@ contract SpenderList is BrokerExtension {
     /// regular operation of the features offerred by the spender contract.
     /// This function does not require admin permission and is invocable directly by users.
     /// @param _spender The address of the spender contract
-    function unauthorizeSpender(address _spender) external {
+    function unauthorizeSpender(address _spender) external nonReentrant {
         require(!spenderWhitelist[_spender], "Spender not unlisted");
 
         address user = msg.sender;

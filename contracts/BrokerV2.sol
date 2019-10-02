@@ -104,15 +104,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
 
-    // bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
-    //     "Cancel(",
-    //         "bytes32 offerHash,",
-    //         "address feeAssetId,",
-    //         "uint256 feeAmount,",
-    //     ")"
-    // ));
-    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
-
     // bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
     //     "Swap(",
     //         "address maker,",
@@ -322,7 +313,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// The `Inactive` state is intended as a means to cease contract operation
     /// in the case of an upgrade or in an emergency.
     /// @param _state The state to transition the contract into
-    function setState(State _state) external onlyOwner { state = _state; }
+    function setState(State _state) external onlyOwner nonReentrant { state = _state; }
 
     /// @notice Sets the Broker's admin state.
     /// @dev The two available states are `Normal` and `Escalated`.
@@ -337,12 +328,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// It is set separately from the `Inactive` state so that it is possible
     /// to use admin functions without affecting regular operations.
     /// @param _state The admin state to transition the contract into
-    function setAdminState(AdminState _state) external onlyOwner { adminState = _state; }
+    function setAdminState(AdminState _state) external onlyOwner nonReentrant { adminState = _state; }
 
     /// @notice Sets the operator address.
     /// @dev All fees will be transferred to the operator address.
     /// @param _operator The address to set as the operator
-    function setOperator(address _operator) external onlyOwner {
+    function setOperator(address _operator) external onlyOwner nonReentrant {
         _validateAddress(operator);
         operator = _operator;
     }
@@ -353,7 +344,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// before the state is separately updated by the user.
     /// This differs from the regular `cancel` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
-    function setSlowCancelDelay(uint256 _delay) external onlyOwner {
+    function setSlowCancelDelay(uint256 _delay) external onlyOwner nonReentrant {
         // Error code 4: setSlowCancelDelay, slow cancel delay exceeds max allowable delay
         require(_delay <= MAX_SLOW_CANCEL_DELAY, "4");
         slowCancelDelay = _delay;
@@ -365,7 +356,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// before the state is separately updated by the user.
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
-    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
+    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner nonReentrant {
         // Error code 5: setSlowWithdrawDelay, slow withdraw delay exceeds max allowable delay
         require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "5");
         slowWithdrawDelay = _delay;
@@ -376,7 +367,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// of the Broker contract, and to perform special functions such as
     /// `adminCancel` and `adminWithdraw`.
     /// @param _admin The address to give admin permissions to
-    function addAdmin(address _admin) external onlyOwner {
+    function addAdmin(address _admin) external onlyOwner nonReentrant {
         _validateAddress(_admin);
         // Error code 6: addAdmin, address is already an admin address
         require(!adminAddresses[_admin], "6");
@@ -385,7 +376,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Removes admin permissons for the specified address.
     /// @param _admin The admin address to remove admin permissions from
-    function removeAdmin(address _admin) external onlyOwner {
+    function removeAdmin(address _admin) external onlyOwner nonReentrant {
         _validateAddress(_admin);
         // Error code 7: removeAdmin, address is not an admin address
         require(adminAddresses[_admin], "7");
@@ -394,7 +385,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Adds a market DApp to be used in `networkTrade`
     /// @param _dapp Address of the market DApp
-    function addMarketDapp(address _dapp) external onlyOwner {
+    function addMarketDapp(address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
         marketDapps.push(_dapp);
     }
@@ -402,7 +393,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Updates a market DApp to be used in `networkTrade`
     /// @param _index Index of the market DApp to update
     /// @param _dapp The new address of the market DApp
-    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner {
+    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
         // Error code 8: updateMarketDapp, _index does not refer to a DApp address
         require(marketDapps[_index] != address(0), "8");
@@ -411,7 +402,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Removes a market DApp
     /// @param _index Index of the market DApp to remove
-    function removeMarketDapp(uint256 _index) external onlyOwner {
+    function removeMarketDapp(uint256 _index) external onlyOwner nonReentrant {
         // Error code 9: removeMarketDapp, _index does not refer to a DApp address
         require(marketDapps[_index] != address(0), "9");
         delete marketDapps[_index];
@@ -435,6 +426,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
         spenderList.validateSpenderAuthorization(_from, msg.sender);
 
@@ -444,7 +436,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
     }
 
-    function markNonce(uint256 _nonce) external {
+    function markNonce(uint256 _nonce) external nonReentrant {
         spenderList.validateSpender(msg.sender);
         _markNonce(_nonce);
     }
@@ -457,7 +449,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @dev This operation is only usable in an `Active` state
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
-    function deposit() external payable onlyActiveState {
+    function deposit() external payable onlyActiveState nonReentrant {
         // Error code 10: deposit, msg.value is 0
         require(msg.value > 0, "10");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
@@ -710,6 +702,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         public
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
@@ -887,35 +880,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
         onlyAdmin
+        nonReentrant
     {
-        bytes32 offerHash = keccak256(abi.encode(
-            OFFER_TYPEHASH,
-            _addresses[0], // maker
-            _addresses[1], // offerAssetId
-            _values[0] & mask128, // offerAmount
-            _addresses[2], // wantAssetId
-            _values[0] >> 128, // wantAmount
-            _addresses[3], // feeAssetId
-            _values[1] & mask128, // feeAmount
-            _values[2] >> 144 // offerNonce
-        ));
-
-        bytes32 cancelHash = keccak256(abi.encode(
-            CANCEL_TYPEHASH,
-            offerHash,
-            _addresses[4],
-            _values[1] >> 128
-        ));
-
-        _validateSignature(
-            cancelHash,
-            _addresses[0], // maker
-            uint8((_values[2] & mask144) >> 136), // v
-            _hashes[0], // r
-            _hashes[1], // s
-            ((_values[2] & mask136) >> 128) != 0 // prefixedSignature
-        );
-
+        Utils.validateCancel(_values, _hashes, _addresses);
+        bytes32 offerHash = Utils.hashOffer(_values, _addresses);
         _cancel(
             _addresses[0], // maker
             offerHash,
@@ -962,6 +930,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyEscalatedAdminState
+        nonReentrant
     {
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1015,6 +984,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _offerNonce
     )
         external
+        nonReentrant
     {
         // Error code 11: announceCancel, invalid msg.sender
         require(_maker == msg.sender, "11");
@@ -1069,6 +1039,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _offerNonce
     )
         external
+        nonReentrant
     {
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1136,6 +1107,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
         onlyAdmin
+        nonReentrant
     {
         _markNonce(_nonce);
 
@@ -1187,6 +1159,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyEscalatedAdminState
+        nonReentrant
     {
         _markNonce(_nonce);
 
@@ -1213,6 +1186,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
 
         // Error code 16: announceWithdraw, invalid withdrawal amount
@@ -1239,6 +1213,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
@@ -1289,6 +1264,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Error code 20: createSwap, invalid swap amount
         require(_values[0] > 0, "20");
@@ -1359,9 +1335,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         bytes calldata _preimage
     )
         external
+        nonReentrant
     {
         // Error code 37: swap secret length exceeded
-        require(_preimage.length < MAX_SWAP_SECRET_LENGTH, "37");
+        require(_preimage.length <= MAX_SWAP_SECRET_LENGTH, "37");
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
         // Error code 24: executeSwap, swap is not active
@@ -1417,6 +1394,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _cancelFeeAmount
     )
         external
+        nonReentrant
     {
         // Error code 26: cancelSwap, expiry time has not been reached
         require(_values[1] <= now, "26");
@@ -1621,7 +1599,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _nonce
     )
         private
-        nonReentrant
     {
         // Error code 34: _withdraw, invalid withdrawal amount
         require(_amount > 0, "34");
