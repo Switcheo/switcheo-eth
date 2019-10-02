@@ -133,7 +133,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     address private constant ETHER_ADDR = address(0);
 
     // The maximum length of swap secret values
-    uint256 private constant MAX_SWAP_SECRET_LENGTH = 200;
+    uint256 private constant MAX_SWAP_SECRET_LENGTH = 64;
 
     // Reason codes are used by the off-chain coordinator to track balance changes
     uint256 private constant REASON_DEPOSIT = 0x01;
