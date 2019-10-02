@@ -1270,6 +1270,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         require(_values[1] > now, "21");
         _validateAddress(_addresses[1]);
 
+        // Error code 39: createSwap, swap maker cannot be the swap taker
+        require(_addresses[0] != _addresses[1], "39");
+
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
         // Error code 22: createSwap, the swap is already active
         require(!atomicSwaps[swapHash], "22");

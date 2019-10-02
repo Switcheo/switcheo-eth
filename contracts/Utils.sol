@@ -749,6 +749,7 @@ library Utils {
         returns (uint256)
     {
         uint256 dappIndex = (_dataValues[2] & mask16) >> 8;
+        validateAddress(_marketDapps[dappIndex]);
         MarketDapp marketDapp = MarketDapp(_marketDapps[dappIndex]);
 
         uint256[] memory funds = new uint256[](6);
@@ -965,6 +966,12 @@ library Utils {
             uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & mask24) >> 16;
 
             require(
+                _addresses[_values[1 + offerIndex * 2] & mask8] !=
+                _addresses[_values[1 + fillIndex * 2] & mask8],
+                "offer.maker cannot be the same as fill.filler"
+            );
+
+            require(
                 _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
                 "offer.offerAssetId does not match fill.wantAssetId"
             );
@@ -1101,8 +1108,9 @@ library Utils {
         private
         pure
     {
-        // numOffers
-        uint256 end = _values[0] & mask8;
+        // numOffers + numFills
+        uint256 end = (_values[0] & mask8) +
+                      ((_values[0] & mask16) >> 8);
 
         for (uint256 i = 0; i < end; i++) {
             uint256 dataA = _values[i * 2 + 1];
