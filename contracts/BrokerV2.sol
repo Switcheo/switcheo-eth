@@ -715,6 +715,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address operatorAddress = operator;
         uint256[] memory statements = new uint256[](_addresses.length / 2);
 
+        _setNonceStates(_values);
+
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
         // The calculated hash keys for each offer is returned to reduce repeated
@@ -726,26 +728,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             operatorAddress
         );
 
-        // Credit fillers for each fill.wantAmount, and credit the operator
-        // for each fill.feeAmount.
-        statements = Utils.creditFillBalances(statements, _values);
+        statements = Utils.calculateTradeIncrements(statements, _values);
         _incrementBalances(statements, _addresses, 1);
 
-        // Credit makers for each amount received through a matched fill.
-        _creditMakerBalances(_values, _addresses);
-
-        // Credit the operator for each offer.feeAmount if the offer has not
-        // been recorded through a previous `trade` or `networkTrade` call.
-        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
-
-        // Deduct tokens from fillers for each fill.offerAmount
-        // and each fill.feeAmount.
-        _deductFillBalances(_values, _addresses);
-
-        // Deduct tokens from makers for each offer.offerAmount
-        // and each offer.feeAmount if the offer has not been recorded
-        // through a previous `trade` or `networkTrade` call.
-        _deductMakerBalances(_values, _addresses);
+        statements = new uint256[](_addresses.length / 2);
+        statements = Utils.calculateTradeDecrements(statements, _values);
+        _decrementBalances(statements, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
@@ -820,6 +808,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
+        uint256[] memory statements = new uint256[](_addresses.length / 2);
 
         // `validateNetworkTrades` needs to calculate the hash keys of offers
         // to verify the signature of the offer.
@@ -832,17 +821,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             operatorAddress
         );
 
-        // Credit makers for each amount received through a match.
-        _creditMakerBalances(_values, _addresses);
+        statements = Utils.calculateNetworkTradeIncrements(statements, _values);
+        _incrementBalances(statements, _addresses, 1);
 
-        // Credit the operator for each offer.feeAmount if the offer has not
-        // been recorded through a previous `trade` or `networkTrade` call.
-        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
-
-        // Deduct tokens from makers for each offer.offerAmount
-        // and each offer.feeAmount if the offer has not been recorded
-        // through a previous `trade` or `networkTrade` call.
-        _deductMakerBalances(_values, _addresses);
+        statements = new uint256[](_addresses.length / 2);
+        statements = Utils.calculateNetworkTradeDecrements(statements, _values);
+        _decrementBalances(statements, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
@@ -851,13 +835,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // There may be excess tokens resulting from a trade
         // Any excess tokens are returned and recorded in `increments`
-        uint256[] memory increments = Utils.performNetworkTrades(
+        statements = Utils.performNetworkTrades(
+            statements,
             _values,
             _addresses,
             marketDapps
         );
 
-        _incrementBalances(increments, _addresses, 0);
+        _incrementBalances(statements, _addresses, 0);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -1478,60 +1463,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Credit makers for each amount received through a matched fill.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _creditMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i += numOffers * 2
-        i += (_values[0] & mask8) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & mask16) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for(i; i < end; i++) {
-            // match.offerIndex
-            uint256 offerIndex = _values[i] & mask8;
-            // offer.wantAssetIndex
-            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
-
-            // match.takeAmount
-            uint256 amount = _values[i] >> 128;
-            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
-            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
-                           .div(_values[2 + offerIndex * 2] & mask128);
-
-            // credit maker for the amount received from the match
-            increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
-        }
-
-        _incrementBalances(increments, _addresses, 1);
-    }
-
-    /// @dev Credit the operator for each offer.feeAmount if the offer has not
-    /// been recorded through a previous `trade` call.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _creditMakerFeeBalances(
-        uint256[] memory _values,
-        address[] memory _addresses,
-        address _operator
-    )
-        private
-    {
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
+    function _setNonceStates(uint256[] memory _values) private view {
         uint256 i = 1;
         // i + numOffers * 2
         uint256 end = i + (_values[0] & mask8) * 2;
@@ -1539,110 +1471,13 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // loop offers
         for(i; i < end; i += 2) {
             uint256 nonce = (_values[i] & mask120) >> 56;
-            if (_nonceTaken(nonce)) { continue; }
+            // Error code 38: Invalid nonce space
+            require((_values[i] & mask128) >> 120 == 0, "38");
 
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // let assetIndex be maker.feeAssetIndex
-            uint256 assetIndex = (_values[i] & mask32) >> 24;
-            uint256 feeAssetIndex = (_values[i] & mask40) >> 32;
-
-            // override the operator slot with the actual operator address
-            // and set the operator fee asset ID slot to be the make's feeAssetId
-            _addresses[feeAssetIndex * 2] = _operator;
-            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
-                // a value of address(1) indicates that this value has not been set before
-                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
-            } else {
-                // if the value is not address(1) then it must have been previously set
-                // to a value matching the make's feeAssetId
-                // Error code 30: _creditMakerFeeBalances, invalid operator feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "30");
+            if (_nonceTaken(nonce)) {
+                _values[i] = _values[i] | (uint256(1) << 120);
             }
-
-            // credit make.feeAmount to operator
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
         }
-
-        _incrementBalances(increments, _addresses, 1);
-    }
-
-    /// @dev Deduct tokens from fillers for each fill.offerAmount
-    /// and each fill.feeAmount.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _deductFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256[] memory decrements = new uint256[](_addresses.length / 2);
-
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & mask8) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
-            uint256 offerAmount = _values[i + 1] & mask128;
-
-            // deduct fill.offerAmount from filler
-            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct fill.feeAmount from filler
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-        }
-
-        _decrementBalances(decrements, _addresses);
-    }
-
-    /// @dev Deduct tokens from makers for each offer.offerAmount
-    /// and each offer.feeAmount if the offer has not been recorded
-    /// through a previous `trade` call.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _deductMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256[] memory decrements = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i + numOffers * 2
-        uint256 end = i + (_values[0] & mask8) * 2;
-
-        // loop offers
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask120) >> 56;
-            if (_nonceTaken(nonce)) { continue; }
-
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
-            uint256 offerAmount = _values[i + 1] & mask128;
-
-            // deduct make.offerAmount from maker
-            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct make.feeAmount from maker
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-        }
-
-        _decrementBalances(decrements, _addresses);
     }
 
     /// @dev Reduce available offer amounts of offers and store the remaining
@@ -1658,7 +1493,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         private
     {
         // Decrements with size numOffers
-        uint256[] memory decrements = new uint256[](_values[0] & mask8);
+        uint256[] memory takenAmounts = new uint256[](_values[0] & mask8);
 
         uint256 i = 1;
         // i += numOffers * 2
@@ -1672,7 +1507,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         for (i; i < end; i++) {
             uint256 offerIndex = _values[i] & mask8;
             uint256 takeAmount = _values[i] >> 128;
-            decrements[offerIndex] = decrements[offerIndex].add(takeAmount);
+            takenAmounts[offerIndex] = takenAmounts[offerIndex].add(takeAmount);
         }
 
         i = 0;
@@ -1688,7 +1523,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             // Error code 31: _storeOfferData, offer's available amount is zero
             require(availableAmount > 0, "31");
 
-            uint256 remainingAmount = availableAmount.sub(decrements[i]);
+            uint256 remainingAmount = availableAmount.sub(takenAmounts[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
 

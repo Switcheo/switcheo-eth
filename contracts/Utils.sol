@@ -100,16 +100,67 @@ library Utils {
         uint256 fillerGiveAmount
     );
 
-    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
-    /// for each fill.feeAmount. See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    function creditFillBalances(
+    function calculateTradeIncrements(
         uint256[] memory _increments,
         uint256[] memory _values
     )
         public
         pure
         returns (uint256[] memory)
+    {
+        _creditFillBalances(_increments, _values);
+        _creditMakerBalances(_increments, _values);
+        _creditMakerFeeBalances(_increments, _values);
+        return _increments;
+    }
+
+    function calculateTradeDecrements(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        _deductFillBalances(_decrements, _values);
+        _deductMakerBalances(_decrements, _values);
+        return _decrements;
+    }
+
+    function calculateNetworkTradeIncrements(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        _creditMakerBalances(_increments, _values);
+        _creditMakerFeeBalances(_increments, _values);
+        return _increments;
+    }
+
+    function calculateNetworkTradeDecrements(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        _deductMakerBalances(_decrements, _values);
+        return _decrements;
+    }
+
+    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
+    /// for each fill.feeAmount. See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditFillBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
     {
         // 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & mask8) * 2;
@@ -135,8 +186,141 @@ library Utils {
             // credit fill.feeAmount to operator
             _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
         }
+    }
 
-        return _increments;
+    /// @dev Credit makers for each amount received through a matched fill.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditMakerBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i += numOffers * 2
+        i += (_values[0] & mask8) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & mask16) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            // match.offerIndex
+            uint256 offerIndex = _values[i] & mask8;
+            // offer.wantAssetIndex
+            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+
+            // match.takeAmount
+            uint256 amount = _values[i] >> 128;
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
+            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
+                           .div(_values[2 + offerIndex * 2] & mask128);
+
+            // credit maker for the amount received from the match
+            _increments[wantAssetIndex] = _increments[wantAssetIndex].add(amount);
+        }
+    }
+
+    /// @dev Credit the operator for each offer.feeAmount if the offer has not
+    /// been recorded through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditMakerFeeBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i + numOffers * 2
+        uint256 end = i + (_values[0] & mask8) * 2;
+
+        // loop offers
+        for(i; i < end; i += 2) {
+            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
+            if (nonceTaken) { continue; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 feeAssetIndex = (_values[i] & mask40) >> 32;
+
+            // credit make.feeAmount to operator
+            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Deduct tokens from fillers for each fill.offerAmount
+    /// and each fill.feeAmount.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _deductFillBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct fill.offerAmount from filler
+            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct fill.feeAmount from filler
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Deduct tokens from makers for each offer.offerAmount
+    /// and each offer.feeAmount if the offer has not been recorded
+    /// through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _deductMakerBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i + numOffers * 2
+        uint256 end = i + (_values[0] & mask8) * 2;
+
+        // loop offers
+        for(i; i < end; i += 2) {
+            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
+            if (nonceTaken) { continue; }
+
+            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct make.offerAmount from maker
+            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct make.feeAmount from maker
+            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+        }
     }
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
@@ -224,6 +408,7 @@ library Utils {
     /// @param _addresses Addresses from `networkTrade`
     /// @param _marketDapps See `BrokerV2.marketDapps`
     function performNetworkTrades(
+        uint256[] memory _increments,
         uint256[] memory _values,
         address[] memory _addresses,
         address[] memory _marketDapps
@@ -231,7 +416,6 @@ library Utils {
         public
         returns (uint256[] memory)
     {
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
         // i = 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & mask8) * 2;
         uint256 end = _values.length;
@@ -261,7 +445,7 @@ library Utils {
             dataValues[1] = data[8]; // the propotionate wantAmount of the offer
             dataValues[2] = data[0]; // match data
 
-            increments[data[2]] = _performNetworkTrade(
+            _increments[data[2]] = _performNetworkTrade(
                 assetIds,
                 dataValues,
                 _marketDapps,
@@ -271,7 +455,7 @@ library Utils {
 
         _emitTradeEvents(_values, _addresses, _marketDapps, true);
 
-        return increments;
+        return _increments;
     }
 
     /// @notice Approves a token transfer
