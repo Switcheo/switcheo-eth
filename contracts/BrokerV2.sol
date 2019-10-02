@@ -164,6 +164,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     uint256 private constant mask24 = ~(~uint256(0) << 24);
     uint256 private constant mask32 = ~(~uint256(0) << 32);
     uint256 private constant mask40 = ~(~uint256(0) << 40);
+    uint256 private constant mask120 = ~(~uint256(0) << 120);
     uint256 private constant mask128 = ~(~uint256(0) << 128);
     uint256 private constant mask136 = ~(~uint256(0) << 136);
     uint256 private constant mask144 = ~(~uint256(0) << 144);
@@ -655,7 +656,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(40..48): The `v` component of the maker's signature for this offer
     /// bits(48..56): Indicates whether the Ethereum signed message
     /// prefix should be prepended during signature verification
-    /// bits(56..128): The offer nonce to prevent replay attacks
+    /// bits(56..120): The offer nonce to prevent replay attacks
+    /// bits(120..128): Space to indicate whether the offer nonce has been marked before
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
     ///
     /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
@@ -671,7 +673,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(40..48): The `v` component of the filler's signature for this fill
     /// bits(48..56): Indicates whether the Ethereum signed message
     /// prefix should be prepended during signature verification
-    /// bits(56..128): The fill nonce to prevent replay attacks
+    /// bits(56..120): The fill nonce to prevent replay attacks
+    /// bits(120..128): Left empty to match the offer values format
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this fill
     ///
     /// @param _values[2 + numOffers * 2 + i * 2] Second part of fill data for the i'th fill
@@ -710,6 +713,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
+        uint256[] memory statements = new uint256[](_addresses.length / 2);
 
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
@@ -718,12 +722,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _hashes = Utils.validateTrades(
             _values,
             _hashes,
-            _addresses
+            _addresses,
+            operatorAddress
         );
 
         // Credit fillers for each fill.wantAmount, and credit the operator
         // for each fill.feeAmount.
-        _creditFillBalances(_values, _addresses, operatorAddress);
+        statements = Utils.creditFillBalances(statements, _values);
+        _incrementBalances(statements, _addresses, 1);
 
         // Credit makers for each amount received through a matched fill.
         _creditMakerBalances(_values, _addresses);
@@ -1472,61 +1478,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
-    /// for each fill.feeAmount. See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    /// @param _operator Address of the operator
-    function _creditFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses,
-        address _operator
-    )
-        private
-    {
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & mask8) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            // let assetIndex be filler.wantAssetIndex
-            uint256 assetIndex = (_values[i] & mask24) >> 16;
-            uint256 wantAmount = _values[i + 1] >> 128;
-
-            // credit fill.wantAmount to filler
-            increments[assetIndex] = increments[assetIndex].add(wantAmount);
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // let assetIndex be filler.feeAssetIndex
-            assetIndex = (_values[i] & mask32) >> 24;
-            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
-
-            // override the operator slot with the actual operator address
-            // and set the operator fee asset ID slot to be the fill's feeAssetId
-            _addresses[feeAssetIndex * 2] = _operator;
-            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
-                // a value of address(1) indicates that this value has not been set before
-                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
-            } else {
-                // if the value is not address(1) then it must have been previously set
-                // to a value matching the make's feeAssetId
-                // Error code 29: _creditFillBalances, invalid operator feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "29");
-            }
-
-            // credit fill.feeAmount to operator
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-        }
-
-        _incrementBalances(increments, _addresses, 1);
-    }
-
     /// @dev Credit makers for each amount received through a matched fill.
     /// See the `trade` method for param details.
     /// @param _values Values from `trade`
@@ -1587,7 +1538,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask128) >> 56;
+            uint256 nonce = (_values[i] & mask120) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 feeAmount = _values[i] >> 128;
@@ -1674,7 +1625,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask128) >> 56;
+            uint256 nonce = (_values[i] & mask120) >> 56;
             if (_nonceTaken(nonce)) { continue; }
 
             uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
@@ -1729,7 +1680,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & mask128) >> 56;
+            uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
             bool existingOffer = _nonceTaken(nonce);
             bytes32 hashKey = _hashes[i * 2];
 
@@ -1759,7 +1710,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask128) >> 56;
+            uint256 nonce = (_values[i] & mask120) >> 56;
             _markNonce(nonce);
         }
     }

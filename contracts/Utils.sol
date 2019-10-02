@@ -100,6 +100,45 @@ library Utils {
         uint256 fillerGiveAmount
     );
 
+    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
+    /// for each fill.feeAmount. See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function creditFillBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            // let assetIndex be filler.wantAssetIndex
+            uint256 assetIndex = (_values[i] & mask24) >> 16;
+            uint256 wantAmount = _values[i + 1] >> 128;
+
+            // credit fill.wantAmount to filler
+            _increments[assetIndex] = _increments[assetIndex].add(wantAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // let assetIndex be filler.feeAssetIndex
+            assetIndex = (_values[i] & mask32) >> 24;
+            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
+
+            // credit fill.feeAmount to operator
+            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+        }
+
+        return _increments;
+    }
+
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
     /// @param _values Values from `trade`
@@ -108,7 +147,8 @@ library Utils {
     function validateTrades(
         uint256[] memory _values,
         bytes32[] memory _hashes,
-        address[] memory _addresses
+        address[] memory _addresses,
+        address _operator
     )
         public
         returns (bytes32[] memory)
@@ -117,7 +157,7 @@ library Utils {
         _validateUniqueOffers(_values);
         _validateMatches(_values, _addresses);
         _validateFillAmounts(_values);
-        _validateTradeData(_values, _addresses);
+        _validateTradeData(_values, _addresses, _operator);
 
         // validate signatures of all fills
         _validateTradeSignatures(
@@ -163,7 +203,7 @@ library Utils {
         _validateNetworkTradeInputLengths(_values, _hashes);
         _validateUniqueOffers(_values);
         _validateNetworkMatches(_values, _addresses, _operator);
-        _validateOfferData(_values, _addresses, _operator);
+        _validateTradeData(_values, _addresses, _operator);
 
         // validate signatures of all offers
         _validateTradeSignatures(
@@ -802,58 +842,6 @@ library Utils {
         }
     }
 
-    /// @dev Validates that for every offer / fill:
-    /// 1. offerAssetId != wantAssetId
-    /// 2. offerAmount > 0 && wantAmount > 0
-    /// 3. The referenced `operator` address is the zero address
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _validateTradeData(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-        pure
-    {
-        // numOffers + numFills
-        uint256 end = (_values[0] & mask8) +
-                      ((_values[0] & mask16) >> 8);
-
-        for (uint256 i = 0; i < end; i++) {
-            uint256 dataA = _values[i * 2 + 1];
-            uint256 dataB = _values[i * 2 + 2];
-
-            require(
-                // offerAssetId != wantAssetId
-                _addresses[((dataA & mask16) >> 8) * 2 + 1] !=
-                _addresses[((dataA & mask24) >> 16) * 2 + 1],
-                "Invalid trade assets"
-            );
-
-            require(
-                // offerAmount > 0 && wantAmount > 0
-                (dataB & mask128) > 0 && (dataB >> 128) > 0,
-                "Invalid trade amounts"
-            );
-
-             require(
-                // _addresses[operator address index] == address(0)
-                // The actual operator address will be read directly from
-                // the contract's storage
-                _addresses[((dataA & mask40) >> 32) * 2] == address(0),
-                "Invalid operator address placeholder"
-            );
-
-             require(
-                // _addresses[operator fee asset ID index] == address(1)
-                // address(1) is used to differentiate from the ETHER_ADDR which is address(0)
-                // The actual fee asset ID will be read from the filler / maker feeAssetId
-                _addresses[((dataA & mask40) >> 32) * 2 + 1] == address(1),
-                "Invalid operator fee asset ID placeholder"
-            );
-        }
-    }
-
     /// @dev Validates that for every offer
     /// 1. offerAssetId != wantAssetId
     /// 2. offerAmount > 0 && wantAmount > 0
@@ -861,7 +849,7 @@ library Utils {
     /// 4. Specified `operator.feeAssetId` matches the offer's feeAssetId
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
-    function _validateOfferData(
+    function _validateTradeData(
         uint256[] memory _values,
         address[] memory _addresses,
         address _operator

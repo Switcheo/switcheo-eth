@@ -26,7 +26,7 @@ abiDecoder.addABI(ERC777.abi)
 abiDecoder.addABI(SpenderList.abi)
 
 const { DOMAIN_SEPARATOR, TYPEHASHES, ZERO_ADDR,
-        ONE_ADDR, ETHER_ADDR } = require('../constants')
+        ETHER_ADDR } = require('../constants')
 
 async function getBroker() { return await BrokerV2.deployed() }
 async function getTokenList() { return await TokenList.deployed() }
@@ -172,34 +172,11 @@ function parseLogs(receiptLogs) {
     return decodedLogs
 }
 
-async function reconstructTradeAddresses(values, addresses) {
-    const broker = await getBroker()
-    const operator = await broker.operator()
-
-    // set the operator address as it was previously overwritten as address(0)
-    for (let i = 0; i < addresses.length / 2; i++) {
-        if (addresses[i * 2] === ZERO_ADDR) { addresses[i * 2] = operator }
-    }
-
-    const lengths = values[0]
-    const numOffers = getSubBits(lengths, 0, 8).toNumber()
-    const numFills = getSubBits(lengths, 8, 16).toNumber()
-
-    // set the operate fee asset ID as it was previously overwritten as address(1)
-    for (let i = 0; i < numOffers + numFills; i++) {
-        const data = values[1 + i * 2]
-        const feeAssetIndexA = getSubBits(data, 24, 32)
-        const feeAssetIndexB = getSubBits(data, 32, 40)
-        addresses[feeAssetIndexB * 2 + 1] = addresses[feeAssetIndexA * 2 + 1]
-    }
-}
-
 async function parseTradeEvents(result) {
     const invocation = await parseInvocation(result)
     const nonces = []
     const values = invocation.params[0].value
     const addresses = invocation.params[2].value
-    await reconstructTradeAddresses(values, addresses)
     const lengths = values[0]
     const numOffers = getSubBits(lengths, 0, 8).toNumber()
     const numFills = getSubBits(lengths, 8, 16).toNumber()
@@ -643,15 +620,6 @@ async function trade({ offers, fills, matches, operator }, { privateKeys }, modi
         const value = bn(match.offerIndex).or(shl(match.fillIndex, 8))
                                          .or(shl(match.takeAmount, 128))
         values.push(value)
-    }
-
-    // zero out operator addresses and asset IDs as these will be overwritten
-    // by the contract
-    for (let i = 0; i < addresses.length; i += 2) {
-        if (addresses[i] === operator) {
-            addresses[i] = ZERO_ADDR
-            addresses[i + 1] = ONE_ADDR
-        }
     }
 
     if (modify !== undefined) { modify({ values, hashes, addresses }) }
