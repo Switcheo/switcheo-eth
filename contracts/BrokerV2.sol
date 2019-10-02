@@ -1484,8 +1484,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         private
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
         // 1 + numOffers * 2
@@ -1501,8 +1499,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
             // credit fill.wantAmount to filler
             increments[assetIndex] = increments[assetIndex].add(wantAmount);
-            if (min > assetIndex) { min = assetIndex; }
-            if (max < assetIndex) { max = assetIndex; }
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
@@ -1526,8 +1522,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
             // credit fill.feeAmount to operator
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
         _incrementBalances(increments, _addresses, 1);
@@ -1543,8 +1537,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         private
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
@@ -1570,8 +1562,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
             // credit maker for the amount received from the match
             increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
-            if (min > wantAssetIndex) { min = wantAssetIndex; }
-            if (max < wantAssetIndex) { max = wantAssetIndex; }
         }
 
         _incrementBalances(increments, _addresses, 1);
@@ -1589,8 +1579,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         private
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
         uint256[] memory increments = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
@@ -1624,8 +1612,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
             // credit make.feeAmount to operator
             increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
         _incrementBalances(increments, _addresses, 1);
@@ -1642,8 +1628,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         private
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
         uint256[] memory decrements = new uint256[](_addresses.length / 2);
 
         // 1 + numOffers * 2
@@ -1658,8 +1642,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
             // deduct fill.offerAmount from filler
             decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
@@ -1667,8 +1649,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             // deduct fill.feeAmount from filler
             uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
             decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
         _decrementBalances(decrements, _addresses);
@@ -1686,8 +1666,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         private
     {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
         uint256[] memory decrements = new uint256[](_addresses.length / 2);
 
         uint256 i = 1;
@@ -1704,8 +1682,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
             // deduct make.offerAmount from maker
             decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
@@ -1713,8 +1689,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             // deduct make.feeAmount from maker
             uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
             decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
         _decrementBalances(decrements, _addresses);
