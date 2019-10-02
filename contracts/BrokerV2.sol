@@ -700,11 +700,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     ...
     /// ]
     function trade(
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        address[] calldata _addresses
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
     )
-        external
+        public
         onlyAdmin
         onlyActiveState
     {
@@ -713,9 +713,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
-        // The calculated hash keys for each offer is return to reduce repeated
+        // The calculated hash keys for each offer is returned to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = Utils.validateTrades(
+        _hashes = Utils.validateTrades(
             _values,
             _hashes,
             _addresses
@@ -744,7 +744,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
         // Offer nonces will also be marked as taken.
-        _storeOfferData(_values, hashKeys);
+        _storeOfferData(_values, _hashes);
 
         // Mark all fill nonces as taken in the `usedNonces` mapping.
         _storeFillNonces(_values);
@@ -803,11 +803,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     ...
     /// ]
     function networkTrade(
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        address[] calldata _addresses
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
     )
-        external
+        public
         onlyAdmin
         onlyActiveState
         nonReentrant
@@ -819,7 +819,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // to verify the signature of the offer.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = Utils.validateNetworkTrades(
+        _hashes = Utils.validateNetworkTrades(
             _values,
             _hashes,
             _addresses,
@@ -841,7 +841,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
         // Offer nonces will also be marked as taken.
-        _storeOfferData(_values, hashKeys);
+        _storeOfferData(_values, _hashes);
 
         // There may be excess tokens resulting from a trade
         // Any excess tokens are returned and recorded in `increments`
@@ -851,7 +851,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             marketDapps
         );
 
-        _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
+        _incrementBalances(increments, _addresses, 0);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -1530,7 +1530,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        _incrementBalances(increments, 1, min, max, _addresses);
+        _incrementBalances(increments, _addresses, 1);
     }
 
     /// @dev Credit makers for each amount received through a matched fill.
@@ -1574,7 +1574,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < wantAssetIndex) { max = wantAssetIndex; }
         }
 
-        _incrementBalances(increments, 1, min, max, _addresses);
+        _incrementBalances(increments, _addresses, 1);
     }
 
     /// @dev Credit the operator for each offer.feeAmount if the offer has not
@@ -1628,7 +1628,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        _incrementBalances(increments, 1, min, max, _addresses);
+        _incrementBalances(increments, _addresses, 1);
     }
 
     /// @dev Deduct tokens from fillers for each fill.offerAmount
@@ -1671,7 +1671,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        _decrementBalances(decrements, min, max, _addresses);
+        _decrementBalances(decrements, _addresses);
     }
 
     /// @dev Deduct tokens from makers for each offer.offerAmount
@@ -1717,7 +1717,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
 
-        _decrementBalances(decrements, min, max, _addresses);
+        _decrementBalances(decrements, _addresses);
     }
 
     /// @dev Reduce available offer amounts of offers and store the remaining
@@ -1725,10 +1725,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// Offer nonces will also be marked as taken.
     /// See the `trade` method for param details.
     /// @param _values Values from `trade`
-    /// @param _hashKeys An array of offer hash keys
+    /// @param _hashes An array of offer hash keys
     function _storeOfferData(
         uint256[] memory _values,
-        bytes32[] memory _hashKeys
+        bytes32[] memory _hashes
     )
         private
     {
@@ -1757,7 +1757,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         for (i; i < end; i++) {
             uint256 nonce = (_values[i * 2 + 1] & mask128) >> 56;
             bool existingOffer = _nonceTaken(nonce);
-            bytes32 hashKey = _hashKeys[i];
+            bytes32 hashKey = _hashes[i * 2];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & mask128);
             // Error code 31: _storeOfferData, offer's available amount is zero
@@ -2084,10 +2084,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _increments An array of amounts to increase a user's balance by,
     /// the corresponding user and assetId is referenced by
     /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
-    /// @param _static Indicates if the amount was pre-calculated or only known
-    /// at the time the transaction was executed
-    /// @param _i The index to start the increment loop at (inclusive)
-    /// @param _end The index to end the increment loop at (inclusive)
     /// @param _addresses An array of user asset pairs in the form of:
     /// [
     ///     user_1_address,
@@ -2098,23 +2094,25 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     asset_1_address,
     ///     ...
     /// ]
+    /// @param _static Indicates if the amount was pre-calculated or only known
+    /// at the time the transaction was executed
     function _incrementBalances(
         uint256[] memory _increments,
-        uint256 _static,
-        uint256 _i,
-        uint256 _end,
-        address[] memory _addresses
+        address[] memory _addresses,
+        uint256 _static
     )
         private
     {
-        for(_i; _i <= _end; _i++) {
-            uint256 increment = _increments[_i];
+        uint256 end = _increments.length;
+
+        for(uint256 i = 0; i < end; i++) {
+            uint256 increment = _increments[i];
             if (increment == 0) { continue; }
 
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
 
-            emit Increment((_i << 248) | (_static << 240) | increment);
+            emit Increment((i << 248) | (_static << 240) | increment);
         }
     }
 
@@ -2123,8 +2121,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _decrements An array of amounts to decrease a user's balance by,
     /// the corresponding user and assetId is referenced by
     /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
-    /// @param _i The index to start the increment loop at (inclusive)
-    /// @param _end The index to end the increment loop at (inclusive)
     /// @param _addresses An array of user asset pairs in the form of:
     /// [
     ///     user_1_address,
@@ -2137,20 +2133,19 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// ]
     function _decrementBalances(
         uint256[] memory _decrements,
-        uint256 _i,
-        uint256 _end,
         address[] memory _addresses
     )
         private
     {
-        for(_i; _i <= _end; _i++) {
-            uint256 decrement = _decrements[_i];
+        uint256 end = _decrements.length;
+        for(uint256 i = 0; i < end; i++) {
+            uint256 decrement = _decrements[i];
             if (decrement == 0) { continue; }
 
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
 
-            emit Decrement(_i << 248 | decrement);
+            emit Decrement(i << 248 | decrement);
         }
     }
 }

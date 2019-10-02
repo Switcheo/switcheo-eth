@@ -132,7 +132,7 @@ library Utils {
         _emitTradeEvents(_values, _addresses, new address[](0), false);
 
         // validate signatures of all offers
-        return _validateTradeSignatures(
+        _validateTradeSignatures(
             _values,
             _hashes,
             _addresses,
@@ -140,6 +140,8 @@ library Utils {
             0,
             _values[0] & mask8 // numOffers
         );
+
+        return _hashes;
     }
 
     /// @dev Validates `BrokerV2.networkTrade` parameters to ensure trade fairness,
@@ -164,7 +166,7 @@ library Utils {
         _validateOfferData(_values, _addresses, _operator);
 
         // validate signatures of all offers
-        return _validateTradeSignatures(
+        _validateTradeSignatures(
             _values,
             _hashes,
             _addresses,
@@ -172,6 +174,8 @@ library Utils {
             0,
             _values[0] & mask8 // numOffers
         );
+
+        return _hashes;
     }
 
     /// @dev Executes trades against external markets,
@@ -917,13 +921,7 @@ library Utils {
     )
         private
         pure
-        returns (bytes32[] memory)
     {
-        bytes32[] memory hashKeys;
-        if (_i == 0) {
-            hashKeys = new bytes32[](_end - _i);
-        }
-
         for (_i; _i < _end; _i++) {
             uint256 dataA = _values[_i * 2 + 1];
             uint256 dataB = _values[_i * 2 + 2];
@@ -951,10 +949,8 @@ library Utils {
                 prefixedSignature
             );
 
-            if (hashKeys.length > 0) { hashKeys[_i] = hashKey; }
+            _hashes[_i * 2] = hashKey;
         }
-
-        return hashKeys;
     }
 
     /// @dev Ensure that the address is a deployed contract

@@ -57,20 +57,14 @@ function printLogs(result, events) {
     if (result.receipt.logs) { logs = result.receipt.logs }
     if (result.receipt.rawLogs) { logs = result.receipt.rawLogs }
     logs = parseLogs(logs)
-    console.log('logs', logs)
 
     for (let i = 0; i < logs.length; i++) {
         const log = logs[i]
-        let print = false
         for (let j = 0; j < events.length; j++) {
             if (log.name === events[j]) {
-                print = true
+                console.log('log', log.name, log.args)
                 break
             }
-        }
-
-        if (print) {
-            console.log('log', log.name, log.args)
         }
     }
 }
