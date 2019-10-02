@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 import "../lib/token/ERC20/ERC20.sol";
 import "../lib/token/ERC20/ERC20Detailed.sol";
