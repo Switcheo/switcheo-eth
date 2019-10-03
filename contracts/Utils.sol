@@ -112,56 +112,80 @@ library Utils {
         uint256 fillerGiveAmount
     );
 
+    /// @dev Calculates the balance increments for a set of trades
+    /// @param _values The _values param from the trade method
+    /// @param _incrementsLength Should match the value of _addresses.length / 2
+    /// from the trade method
+    /// @return An array of increments
     function calculateTradeIncrements(
-        uint256[] memory _increments,
-        uint256[] memory _values
+        uint256[] memory _values,
+        uint256 _incrementsLength
     )
         public
         pure
         returns (uint256[] memory)
     {
-        _creditFillBalances(_increments, _values);
-        _creditMakerBalances(_increments, _values);
-        _creditMakerFeeBalances(_increments, _values);
-        return _increments;
+        uint256[] memory increments = new uint256[](_incrementsLength);
+        _creditFillBalances(increments, _values);
+        _creditMakerBalances(increments, _values);
+        _creditMakerFeeBalances(increments, _values);
+        return increments;
     }
 
+    /// @dev Calculates the balance decrements for a set of trades
+    /// @param _values The _values param from the trade method
+    /// @param _decrementsLength Should match the value of _addresses.length / 2
+    /// from the trade method
+    /// @return An array of decrements
     function calculateTradeDecrements(
-        uint256[] memory _decrements,
-        uint256[] memory _values
+        uint256[] memory _values,
+        uint256 _decrementsLength
     )
         public
         pure
         returns (uint256[] memory)
     {
-        _deductFillBalances(_decrements, _values);
-        _deductMakerBalances(_decrements, _values);
-        return _decrements;
+        uint256[] memory decrements = new uint256[](_decrementsLength);
+        _deductFillBalances(decrements, _values);
+        _deductMakerBalances(decrements, _values);
+        return decrements;
     }
 
+    /// @dev Calculates the balance increments for a set of network trades
+    /// @param _values The _values param from the networkTrade method
+    /// @param _incrementsLength Should match the value of _addresses.length / 2
+    /// from the networkTrade method
+    /// @return An array of increments
     function calculateNetworkTradeIncrements(
-        uint256[] memory _increments,
-        uint256[] memory _values
+        uint256[] memory _values,
+        uint256 _incrementsLength
     )
         public
         pure
         returns (uint256[] memory)
     {
-        _creditMakerBalances(_increments, _values);
-        _creditMakerFeeBalances(_increments, _values);
-        return _increments;
+        uint256[] memory increments = new uint256[](_incrementsLength);
+        _creditMakerBalances(increments, _values);
+        _creditMakerFeeBalances(increments, _values);
+        return increments;
     }
 
+    /// @dev Calculates the balance decrements for a set of network trades
+    /// @param _values The _values param from the trade method
+    /// @param _decrementsLength Should match the value of _addresses.length / 2
+    /// from the networkTrade method
+    /// @return An array of decrements
     function calculateNetworkTradeDecrements(
-        uint256[] memory _decrements,
-        uint256[] memory _values
+        uint256[] memory _values,
+        uint256 _decrementsLength
     )
         public
         pure
         returns (uint256[] memory)
     {
-        _deductMakerBalances(_decrements, _values);
-        return _decrements;
+        uint256[] memory decrements = new uint256[](_decrementsLength);
+        _deductMakerBalances(decrements, _values);
+        return decrements;
     }
 
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
@@ -249,7 +273,6 @@ library Utils {
     /// @param _addresses Addresses from `networkTrade`
     /// @param _marketDapps See `BrokerV2.marketDapps`
     function performNetworkTrades(
-        uint256[] memory _increments,
         uint256[] memory _values,
         address[] memory _addresses,
         address[] memory _marketDapps
@@ -257,6 +280,7 @@ library Utils {
         public
         returns (uint256[] memory)
     {
+        uint256[] memory increments = new uint256[](_addresses.length / 2);
         // i = 1 + numOffers * 2
         uint256 i = 1 + (_values[0] & mask8) * 2;
         uint256 end = _values.length;
@@ -286,7 +310,7 @@ library Utils {
             dataValues[1] = data[8]; // the propotionate wantAmount of the offer
             dataValues[2] = data[0]; // match data
 
-            _increments[data[2]] = _performNetworkTrade(
+            increments[data[2]] = _performNetworkTrade(
                 assetIds,
                 dataValues,
                 _marketDapps,
@@ -296,9 +320,13 @@ library Utils {
 
         _emitTradeEvents(_values, _addresses, _marketDapps, true);
 
-        return _increments;
+        return increments;
     }
 
+    /// @dev Validates the signature of a cancel invocation
+    /// @param _values The _values param from the cancel method
+    /// @param _hashes The _hashes param from the cancel method
+    /// @param _addresses The _addresses param from the cancel method
     function validateCancel(
         uint256[] memory _values,
         bytes32[] memory _hashes,
@@ -326,6 +354,10 @@ library Utils {
         );
     }
 
+    /// @dev Hashes an offer for the cancel method
+    /// @param _values The _values param from the cancel method
+    /// @param _addresses THe _addresses param from the cancel method
+    /// @return The hash of the offer
     function hashOffer(
         uint256[] memory _values,
         address[] memory _addresses
@@ -674,6 +706,11 @@ library Utils {
         }
     }
 
+    /// @dev Emits trade events for easier tracking
+    /// @param _values The _values param from the trade / networkTrade method
+    /// @param _addresses The _addresses param from the trade / networkTrade method
+    /// @param _marketDapps The _marketDapps from BrokerV2
+    /// @param _forNetworkTrade Whether this is called from the networkTrade method
     function _emitTradeEvents(
         uint256[] memory _values,
         address[] memory _addresses,
@@ -1143,6 +1180,8 @@ library Utils {
     }
 
     /// @dev Validates signatures for a set of offers or fills
+    /// Note that the r value of the offer / fill in _hashes will be
+    /// overwritten by the hash of that offer / fill
     /// @param _values Values from `trade`
     /// @param _hashes Hashes from `trade`
     /// @param _addresses Addresses from `trade`

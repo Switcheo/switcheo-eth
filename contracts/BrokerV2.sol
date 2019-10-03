@@ -301,6 +301,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _;
     }
 
+    /// @notice Checks whether an address is appointed as an admin user
+    /// @param _user The address to check
+    /// @return Whether the address is appointed as an admin user
     function isAdmin(address _user) external view returns(bool) {
         return adminAddresses[_user];
     }
@@ -436,11 +439,16 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
     }
 
+    /// @notice Allows a whitelisted contract to mark nonces
+    /// @param _nonce The nonce to mark
     function markNonce(uint256 _nonce) external nonReentrant {
         spenderList.validateSpender(msg.sender);
         _markNonce(_nonce);
     }
 
+    /// @notice Returns whether a nonce has been taken
+    /// @param _nonce The nonce to check
+    /// @return Whether the nonce has been taken
     function nonceTaken(uint256 _nonce) external view returns (bool) {
         return _nonceTaken(_nonce);
     }
@@ -704,9 +712,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
-        uint256[] memory statements = new uint256[](_addresses.length / 2);
+        // An array variable to store balance increments / decrements
+        uint256[] memory statements;
 
-        _setNonceStates(_values);
+        // Cache whether offer / fill nonces are taken in the offer's / fill's nonce space
+        _cacheNonceStates(_values);
 
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
@@ -719,11 +729,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             operatorAddress
         );
 
-        statements = Utils.calculateTradeIncrements(statements, _values);
+        statements = Utils.calculateTradeIncrements(_values, _addresses.length / 2);
         _incrementBalances(statements, _addresses, 1);
 
-        statements = new uint256[](_addresses.length / 2);
-        statements = Utils.calculateTradeDecrements(statements, _values);
+        statements = Utils.calculateTradeDecrements(_values, _addresses.length / 2);
         _decrementBalances(statements, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
@@ -800,9 +809,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
-        uint256[] memory statements = new uint256[](_addresses.length / 2);
+        // An array variable to store balance increments / decrements
+        uint256[] memory statements;
 
-        _setNonceStates(_values);
+        // Cache whether offer / fill nonces are taken in the offer's / fill's nonce space
+        _cacheNonceStates(_values);
 
         // `validateNetworkTrades` needs to calculate the hash keys of offers
         // to verify the signature of the offer.
@@ -815,11 +826,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             operatorAddress
         );
 
-        statements = Utils.calculateNetworkTradeIncrements(statements, _values);
+        statements = Utils.calculateNetworkTradeIncrements(_values, _addresses.length / 2);
         _incrementBalances(statements, _addresses, 1);
 
-        statements = new uint256[](_addresses.length / 2);
-        statements = Utils.calculateNetworkTradeDecrements(statements, _values);
+        statements = Utils.calculateNetworkTradeDecrements(_values, _addresses.length / 2);
         _decrementBalances(statements, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
@@ -827,11 +837,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // Offer nonces will also be marked as taken.
         _storeOfferData(_values, _hashes);
 
-        statements = new uint256[](_addresses.length / 2);
         // There may be excess tokens resulting from a trade
         // Any excess tokens are returned and recorded in `increments`
         statements = Utils.performNetworkTrades(
-            statements,
             _values,
             _addresses,
             marketDapps
@@ -1445,7 +1453,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    function _setNonceStates(uint256[] memory _values) private view {
+    /// @dev Cache whether offer / fill nonces are taken in the offer's / fill's nonce space
+    /// @param _values The _values param from the trade / networkTrade method
+    function _cacheNonceStates(uint256[] memory _values) private view {
         uint256 i = 1;
         // i + numOffers * 2
         uint256 end = i + (_values[0] & mask8) * 2;
@@ -1498,7 +1508,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // loop offers
         for (i; i < end; i++) {
             uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
-            bool existingOffer = _nonceTaken(nonce);
+            // we can use the cached nonce taken value here because offers have been
+            // validated to be unique
+            bool existingOffer = ((_values[i] & mask128) >> 120) == 1;
             bytes32 hashKey = _hashes[i * 2];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & mask128);
