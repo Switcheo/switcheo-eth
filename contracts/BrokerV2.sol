@@ -1510,7 +1510,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
             // we can use the cached nonce taken value here because offers have been
             // validated to be unique
-            bool existingOffer = ((_values[i] & mask128) >> 120) == 1;
+            bool existingOffer = ((_values[i * 2 + 1] & mask128) >> 120) == 1;
             bytes32 hashKey = _hashes[i * 2];
 
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & mask128);
