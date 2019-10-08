@@ -1009,12 +1009,14 @@ library Utils {
             );
 
             require(
-                _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
+                _addresses[makerOfferAssetIndex * 2 + 1] ==
+                _addresses[fillerWantAssetIndex * 2 + 1],
                 "offer.offerAssetId does not match fill.wantAssetId"
             );
 
             require(
-                _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
+                _addresses[makerWantAssetIndex * 2 + 1] ==
+                _addresses[fillerOfferAssetIndex * 2 + 1],
                 "offer.wantAssetId does not match fill.offerAssetId"
             );
 
@@ -1172,7 +1174,7 @@ library Utils {
                 // user address == user in user.wantAssetIndex pair
                 _addresses[(dataA & mask8) * 2] ==
                 _addresses[((dataA & mask32) >> 24) * 2],
-                "Invalid user in user.wantAssetIndex"
+                "Invalid user in user.feeAssetIndex"
             );
 
             require(
@@ -1194,7 +1196,8 @@ library Utils {
             );
 
              require(
-                _addresses[feeAssetIndex + 1] == _addresses[((dataA & mask32) >> 24) * 2 + 1],
+                _addresses[feeAssetIndex + 1] ==
+                _addresses[((dataA & mask32) >> 24) * 2 + 1],
                 "Invalid operator fee asset ID"
             );
         }

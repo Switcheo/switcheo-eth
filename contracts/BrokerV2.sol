@@ -138,8 +138,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     uint256 private constant REASON_CANCEL_FEE_RECEIVE = 0x13;
 
     uint256 private constant REASON_SWAP_GIVE = 0x30;
+    uint256 private constant REASON_SWAP_FEE_GIVE = 0x32;
     uint256 private constant REASON_SWAP_RECEIVE = 0x35;
-    uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
     uint256 private constant REASON_SWAP_FEE_RECEIVE = 0x37;
 
     uint256 private constant REASON_SWAP_CANCEL_RECEIVE = 0x38;
@@ -195,7 +195,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     address[] public marketDapps;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
-    // A mapping of withdrawal announcements: userAddress => assetId => announcementData
+    // A mapping of withdrawal announcements: userAddress => assetId => { amount, withdrawableAt }
     mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawalAnnouncements;
 
     // Emitted on positive balance state transitions
@@ -398,7 +398,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _dapp The new address of the market DApp
     function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
-        // Error code 8: updateMarketDapp, _index does not refer to a DApp address
+        // Error code 8: updateMarketDapp, _index does not refer to an existing non-zero address
         require(marketDapps[_index] != address(0), "8");
         marketDapps[_index] = _dapp;
     }
@@ -440,6 +440,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     }
 
     /// @notice Allows a whitelisted contract to mark nonces
+    /// @dev If the whitelisted contract is malicious or vulnerable then there is
+    /// a possibility of a DoS attack. However, since this attack requires cooperation
+    /// of the contract owner, the risk is similar to the contract owner withholding
+    /// transactions, so there is no violation of the contract's trust model.
+    /// In the case that nonces are misused, users will still be able to cancel their offers
+    /// and withdraw all their funds using the escape hatch methods.
     /// @param _nonce The nonce to mark
     function markNonce(uint256 _nonce) external nonReentrant {
         spenderList.validateSpender(msg.sender);
@@ -585,12 +591,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// The added benefit is further gas cost reduction because repeated
     /// user asset pairs do not need to be duplicated for the calldata.
     ///
-    /// The operator address and operator fee asset ID is enforced to be `address(0)`,
-    /// this is because while a slot is needed, the actual operator address should
-    /// be read directly from contract storage, and the operator fee asset ID is
-    /// identical to the maker's / filler's feeAssetId.
-    /// Enforcing this reduces calldata gas costs as zero bits cost less than
-    /// non-zero bits.
+    /// The operator address is enforced to be the contract's current operator
+    /// address, and the operator fee asset ID is enforced to be identical to
+    /// the maker's / filler's feeAssetId.
     ///
     /// A tradeoff of compacting the bits is that there is a lower maximum value
     /// for offer and fill data, however the limits remain generally practical.
@@ -602,7 +605,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// offer / fill can be split into multiple offers / fills by the off-chain
     /// service.
     ///
-    /// For nonces the maximum value is 2^72, or more than a billion billion (21 zeros).
+    /// For nonces the maximum value is 2^64, or more than a billion billion (19 zeros).
     ///
     /// Offers and fills both encompass information about how much (offerAmount)
     /// of a specified token (offerAssetId) the user wants to offer and
@@ -628,12 +631,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///
     /// 3. The offer array must not consist of repeated offers. For efficient
     /// balance updates, a loop through each offer in the offer array is used
-    /// to deduct the offer.offerAmount from the respective maker.
-    /// If an offer has not been recorded by a previos `trade` call,
-    /// and it the offer is repeated in the offers array, then there would be
+    /// to deduct the offer.offerAmount from the respective maker
+    /// if the offer has not been recorded by a previos `trade` call.
+    /// If an offer is repeated in the offers array, then there would be
     /// duplicate deductions from the maker.
-    /// To enforce uniqueness, it is required that offer nonces are sorted in a
-    /// strictly ascending order.
+    /// To enforce uniqueness, it is required that offers for a trade transaction
+    /// are sorted such that their nonces are in a strictly ascending order.
     ///
     /// 4. The fill array must not consist of repeated fills, for the same
     /// reason why there cannot be repeated offers. Additionally, to prevent
@@ -715,13 +718,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // An array variable to store balance increments / decrements
         uint256[] memory statements;
 
-        // Cache whether offer / fill nonces are taken in the offer's / fill's nonce space
+        // Cache whether offer nonces are taken in the offer's nonce space
         _cacheNonceStates(_values);
 
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
-        // The calculated hash keys for each offer is returned to reduce repeated
-        // computation.
+        // The calculated hash keys are returned to reduce repeated computation.
         _hashes = Utils.validateTrades(
             _values,
             _hashes,
@@ -1453,7 +1455,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Cache whether offer / fill nonces are taken in the offer's / fill's nonce space
+    /// @dev Cache whether offer nonces are taken in the offer's nonce space
     /// @param _values The _values param from the trade / networkTrade method
     function _cacheNonceStates(uint256[] memory _values) private view {
         uint256 i = 1;
@@ -1462,10 +1464,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & mask120) >> 56;
             // Error code 38: Invalid nonce space
             require(((_values[i] & mask128) >> 120) == 0, "38");
 
+            uint256 nonce = (_values[i] & mask120) >> 56;
             if (_nonceTaken(nonce)) {
                 _values[i] = _values[i] | (uint256(1) << 120);
             }
