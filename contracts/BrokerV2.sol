@@ -1416,7 +1416,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
 
-        // cancelFeeAmount < feeAmount
+        // cancelFeeAmount <= feeAmount
         // Error code 28: cancelSwap, cancelFeeAmount exceeds swap.feeAmount
         require(cancelFeeAmount <= _values[2], "28");
 
@@ -1486,7 +1486,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         private
     {
-        // Decrements with size numOffers
+        // takenAmounts with same size as numOffers
         uint256[] memory takenAmounts = new uint256[](_values[0] & mask8);
 
         uint256 i = 1;
@@ -1509,7 +1509,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
         // loop offers
         for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
             // we can use the cached nonce taken value here because offers have been
             // validated to be unique
             bool existingOffer = ((_values[i * 2 + 1] & mask128) >> 120) == 1;
@@ -1523,7 +1522,10 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
 
-            if (!existingOffer) { _markNonce(nonce); }
+            if (!existingOffer) {
+                uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
+                _markNonce(nonce);
+            }
         }
     }
 

@@ -208,6 +208,16 @@ library Utils {
         _validateFillAmounts(_values);
         _validateTradeData(_values, _addresses, _operator);
 
+        // validate signatures of all offers
+        _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            OFFER_TYPEHASH,
+            0,
+            _values[0] & mask8 // numOffers
+        );
+
         // validate signatures of all fills
         _validateTradeSignatures(
             _values,
@@ -219,16 +229,6 @@ library Utils {
         );
 
         _emitTradeEvents(_values, _addresses, new address[](0), false);
-
-        // validate signatures of all offers
-        _validateTradeSignatures(
-            _values,
-            _hashes,
-            _addresses,
-            OFFER_TYPEHASH,
-            0,
-            _values[0] & mask8 // numOffers
-        );
 
         return _hashes;
     }
@@ -295,7 +295,7 @@ library Utils {
             data[4] = _values[data[1] * 2 + 2]; // offer.dataB
             data[5] = ((data[3] & mask16) >> 8); // maker.offerAssetIndex
             data[6] = ((data[3] & mask24) >> 16); // maker.wantAssetIndex
-            // amount of offerAssetId to take from offer is equal to the match.takeAmount
+            // amount of offerAssetId to take from the offer is equal to the match.takeAmount
             data[7] = data[0] >> 128;
             // expected amount to receive is: matchData.takeAmount * offer.wantAmount / offer.offerAmount
             data[8] = data[7].mul(data[4] >> 128).div(data[4] & mask128);
@@ -307,7 +307,7 @@ library Utils {
 
             uint256[] memory dataValues = new uint256[](3);
             dataValues[0] = data[7]; // the proportion of offerAmount to offer
-            dataValues[1] = data[8]; // the propotionate wantAmount of the offer
+            dataValues[1] = data[8]; // the proportion of wantAmount to receive for the offer
             dataValues[2] = data[0]; // match data
 
             increments[data[2]] = _performNetworkTrade(
@@ -412,7 +412,7 @@ library Utils {
     /// @param _amount The number of tokens to transfer
     /// @param _expectedAmount The number of tokens expected to be received,
     /// this may not match `_amount`, for example, tokens which have a
-    /// propotion burnt on transfer will have a different amount received.
+    /// proportion burnt on transfer will have a different amount received.
     function transferTokensIn(
         address _user,
         address _assetId,
@@ -552,22 +552,18 @@ library Utils {
 
         // loop fills
         for(i; i < end; i += 2) {
-            // let assetIndex be filler.wantAssetIndex
-            uint256 assetIndex = (_values[i] & mask24) >> 16;
+            uint256 fillerWantAssetIndex = (_values[i] & mask24) >> 16;
             uint256 wantAmount = _values[i + 1] >> 128;
 
             // credit fill.wantAmount to filler
-            _increments[assetIndex] = _increments[assetIndex].add(wantAmount);
+            _increments[fillerWantAssetIndex] = _increments[fillerWantAssetIndex].add(wantAmount);
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
-            // let assetIndex be filler.feeAssetIndex
-            assetIndex = (_values[i] & mask32) >> 24;
-            uint256 feeAssetIndex = ((_values[i] & mask40) >> 32);
-
+            uint256 operatorFeeAssetIndex = ((_values[i] & mask40) >> 32);
             // credit fill.feeAmount to operator
-            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+            _increments[operatorFeeAssetIndex] = _increments[operatorFeeAssetIndex].add(feeAmount);
         }
     }
 
@@ -593,8 +589,8 @@ library Utils {
         for(i; i < end; i++) {
             // match.offerIndex
             uint256 offerIndex = _values[i] & mask8;
-            // offer.wantAssetIndex
-            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+            // maker.wantAssetIndex
+            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
 
             // match.takeAmount
             uint256 amount = _values[i] >> 128;
@@ -603,7 +599,7 @@ library Utils {
                            .div(_values[2 + offerIndex * 2] & mask128);
 
             // credit maker for the amount received from the match
-            _increments[wantAssetIndex] = _increments[wantAssetIndex].add(amount);
+            _increments[makerWantAssetIndex] = _increments[makerWantAssetIndex].add(amount);
         }
     }
 
@@ -630,10 +626,10 @@ library Utils {
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
-            uint256 feeAssetIndex = (_values[i] & mask40) >> 32;
+            uint256 operatorFeeAssetIndex = (_values[i] & mask40) >> 32;
 
             // credit make.feeAmount to operator
-            _increments[feeAssetIndex] = _increments[feeAssetIndex].add(feeAmount);
+            _increments[operatorFeeAssetIndex] = _increments[operatorFeeAssetIndex].add(feeAmount);
         }
     }
 
@@ -655,18 +651,18 @@ library Utils {
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 fillerOfferAssetIndex = (_values[i] & mask16) >> 8;
             uint256 offerAmount = _values[i + 1] & mask128;
 
             // deduct fill.offerAmount from filler
-            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+            _decrements[fillerOfferAssetIndex] = _decrements[fillerOfferAssetIndex].add(offerAmount);
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
             // deduct fill.feeAmount from filler
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+            uint256 fillerFeeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[fillerFeeAssetIndex] = _decrements[fillerFeeAssetIndex].add(feeAmount);
         }
     }
 
@@ -691,18 +687,18 @@ library Utils {
             bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
             if (nonceTaken) { continue; }
 
-            uint256 offerAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 makerOfferAssetIndex = (_values[i] & mask16) >> 8;
             uint256 offerAmount = _values[i + 1] & mask128;
 
             // deduct make.offerAmount from maker
-            _decrements[offerAssetIndex] = _decrements[offerAssetIndex].add(offerAmount);
+            _decrements[makerOfferAssetIndex] = _decrements[makerOfferAssetIndex].add(offerAmount);
 
             uint256 feeAmount = _values[i] >> 128;
             if (feeAmount == 0) { continue; }
 
             // deduct make.feeAmount from maker
-            uint256 feeAssetIndex = (_values[i] & mask32) >> 24;
-            _decrements[feeAssetIndex] = _decrements[feeAssetIndex].add(feeAmount);
+            uint256 makerFeeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[makerFeeAssetIndex] = _decrements[makerFeeAssetIndex].add(feeAmount);
         }
     }
 
@@ -799,15 +795,15 @@ library Utils {
         uint256 ethValue = 0;
         address tokenReceiver;
 
-        if (_assetIds[0] != ETHER_ADDR) {
+        if (_assetIds[0] == ETHER_ADDR) {
+            ethValue = _dataValues[0]; // offerAmount
+        } else {
             tokenReceiver = marketDapp.tokenReceiver(_assetIds, _dataValues, _addresses);
             approveTokenTransfer(
                 _assetIds[0], // offerAssetId
                 tokenReceiver,
                 _dataValues[0] // offerAmount
             );
-        } else {
-            ethValue = _dataValues[0]; // offerAmount
         }
 
         marketDapp.trade.value(ethValue)(
@@ -930,12 +926,12 @@ library Utils {
         );
 
         require(
-            _values.length == 1 + numOffers * 2 + numFills * 2 + numMatches,
+            _values.length == 1 + numOffers * 2 + numMatches,
             "Invalid _values.length"
         );
 
         require(
-            _hashes.length == (numOffers + numFills) * 2,
+            _hashes.length == numOffers * 2,
             "Invalid _hashes.length"
         );
     }
@@ -1132,11 +1128,14 @@ library Utils {
         }
     }
 
-    /// @dev Validates that for every offer
-    /// 1. offerAssetId != wantAssetId
-    /// 2. offerAmount > 0 && wantAmount > 0
-    /// 3. Specified `operator` address matches the expected `operator` address,
-    /// 4. Specified `operator.feeAssetId` matches the offer's feeAssetId
+    /// @dev Validates that for every offer / fill
+    /// 1. user address matches address referenced by user.offerAssetIndex
+    /// 2. user address matches address referenced by user.wantAssetIndex
+    /// 3. user address matches address referenced by user.feeAssetIndex
+    /// 4. offerAssetId != wantAssetId
+    /// 5. offerAmount > 0 && wantAmount > 0
+    /// 6. Specified `operator` address matches the expected `operator` address,
+    /// 7. Specified `operator.feeAssetId` matches the offer's feeAssetId
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
     function _validateTradeData(
@@ -1171,7 +1170,7 @@ library Utils {
             );
 
             require(
-                // user address == user in user.wantAssetIndex pair
+                // user address == user in user.feeAssetIndex pair
                 _addresses[(dataA & mask8) * 2] ==
                 _addresses[((dataA & mask32) >> 24) * 2],
                 "Invalid user in user.feeAssetIndex"
