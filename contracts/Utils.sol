@@ -1155,6 +1155,27 @@ library Utils {
             uint256 feeAssetIndex = ((dataA & mask40) >> 32) * 2;
 
             require(
+                // user address == user in user.offerAssetIndex pair
+                _addresses[(dataA & mask8) * 2] ==
+                _addresses[((dataA & mask16) >> 8) * 2],
+                "Invalid user in user.offerAssetIndex"
+            );
+
+            require(
+                // user address == user in user.wantAssetIndex pair
+                _addresses[(dataA & mask8) * 2] ==
+                _addresses[((dataA & mask24) >> 16) * 2],
+                "Invalid user in user.wantAssetIndex"
+            );
+
+            require(
+                // user address == user in user.wantAssetIndex pair
+                _addresses[(dataA & mask8) * 2] ==
+                _addresses[((dataA & mask32) >> 24) * 2],
+                "Invalid user in user.wantAssetIndex"
+            );
+
+            require(
                 // offerAssetId != wantAssetId
                 _addresses[((dataA & mask16) >> 8) * 2 + 1] !=
                 _addresses[((dataA & mask24) >> 16) * 2 + 1],
