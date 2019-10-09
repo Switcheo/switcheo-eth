@@ -719,7 +719,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256[] memory statements;
 
         // Cache whether offer nonces are taken in the offer's nonce space
-        _cacheNonceStates(_values);
+        _cacheOfferNonceStates(_values);
 
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
@@ -814,8 +814,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         // An array variable to store balance increments / decrements
         uint256[] memory statements;
 
-        // Cache whether offer / fill nonces are taken in the offer's / fill's nonce space
-        _cacheNonceStates(_values);
+        // Cache whether offer nonces are taken in the offer's nonce space
+        _cacheOfferNonceStates(_values);
 
         // `validateNetworkTrades` needs to calculate the hash keys of offers
         // to verify the signature of the offer.
@@ -1457,7 +1457,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @dev Cache whether offer nonces are taken in the offer's nonce space
     /// @param _values The _values param from the trade / networkTrade method
-    function _cacheNonceStates(uint256[] memory _values) private view {
+    function _cacheOfferNonceStates(uint256[] memory _values) private view {
         uint256 i = 1;
         // i + numOffers * 2
         uint256 end = i + (_values[0] & mask8) * 2;
