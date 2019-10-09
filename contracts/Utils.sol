@@ -993,16 +993,16 @@ library Utils {
 
             require(fillIndex >= numOffers && fillIndex < numOffers + numFills, "Invalid match.fillIndex");
 
-            uint256 makerOfferAssetIndex = (_values[1 + offerIndex * 2] & mask16) >> 8;
-            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
-            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & mask16) >> 8;
-            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & mask24) >> 16;
-
             require(
                 _addresses[_values[1 + offerIndex * 2] & mask8] !=
                 _addresses[_values[1 + fillIndex * 2] & mask8],
                 "offer.maker cannot be the same as fill.filler"
             );
+
+            uint256 makerOfferAssetIndex = (_values[1 + offerIndex * 2] & mask16) >> 8;
+            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & mask16) >> 8;
+            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & mask24) >> 16;
 
             require(
                 _addresses[makerOfferAssetIndex * 2 + 1] ==
