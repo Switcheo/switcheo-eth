@@ -1153,7 +1153,6 @@ library Utils {
         for (uint256 i = 0; i < end; i++) {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
-            uint256 feeAssetIndex = ((dataA & mask40) >> 32) * 2;
 
             require(
                 // user address == user in user.offerAssetIndex pair
@@ -1189,13 +1188,15 @@ library Utils {
                 "Invalid trade amounts"
             );
 
+            uint256 operatorFeeAssetIndex = ((dataA & mask40) >> 32) * 2;
+
              require(
-                _addresses[feeAssetIndex] == _operator,
+                _addresses[operatorFeeAssetIndex] == _operator,
                 "Invalid operator address"
             );
 
              require(
-                _addresses[feeAssetIndex + 1] ==
+                _addresses[operatorFeeAssetIndex + 1] ==
                 _addresses[((dataA & mask32) >> 24) * 2 + 1],
                 "Invalid operator fee asset ID"
             );
