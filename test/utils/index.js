@@ -50,6 +50,16 @@ function getSubBits(value, start, end) {
     return bn(str, 2)
 }
 
+function replaceSubBits(value, start, end, replacement) {
+    const str = bn(value).toString(2, 256)
+    const small = str.substring(256 - start)
+    const big = str.substring(0, 256 - end)
+    replacement = bn(replacement).toString(2, end - start)
+    const final = big + replacement + small
+
+    return bn(final, 2)
+}
+
 function clone(obj) { return JSON.parse(JSON.stringify(obj)) }
 
 function printLogs(result, events) {
@@ -762,6 +772,8 @@ module.exports = {
     bn,
     shl,
     clone,
+    getSubBits,
+    replaceSubBits,
     getBroker,
     getTokenList,
     getSpenderList,
