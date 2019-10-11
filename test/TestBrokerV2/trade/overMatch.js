@@ -1,4 +1,4 @@
-const { getJrc, getSwc, clone, exchange, testValidation } = require('../../utils')
+const { getJrc, getSwc, clone, exchange, assertReversion } = require('../../utils')
 const { getTradeParams } = require('../../utils/getTradeParams')
 
 const { PRIVATE_KEYS } = require('../../wallets')
@@ -25,9 +25,11 @@ contract('Test trade: over match', async (accounts) => {
             editedTradeParams.fills[1] = { ...fill, offerAmount: 60, wantAmount: 120 }
             editedTradeParams.matches[1].takeAmount = 120
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'subtraction overflow'
             )
         })
@@ -39,9 +41,11 @@ contract('Test trade: over match', async (accounts) => {
             const editedTradeParams = clone(tradeParams)
             editedTradeParams.matches[1].takeAmount = 50
 
-            await testValidation(exchange.trade, [],
-                [editedTradeParams, { privateKeys }],
-                [tradeParams, { privateKeys }],
+            await assertReversion(
+                exchange.trade(
+                    editedTradeParams,
+                    { privateKeys }
+                ),
                 'Invalid fills'
             )
         })

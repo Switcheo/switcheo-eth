@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 import "./BrokerExtension.sol";
 import "../Utils.sol";
@@ -20,7 +20,7 @@ contract TokenList is BrokerExtension {
     /// This layer of management is to prevent misuse of `tokensReceived` and `tokenFallback`
     /// methods by unvetted tokens.
     /// @param _assetId The token address to whitelist
-    function whitelistToken(address _assetId) external onlyOwner {
+    function whitelistToken(address _assetId) external onlyOwner nonReentrant {
         Utils.validateAddress(_assetId);
         require(!tokenWhitelist[_assetId], "Token already whitelisted");
         tokenWhitelist[_assetId] = true;
@@ -28,7 +28,7 @@ contract TokenList is BrokerExtension {
 
     /// @notice Removes a token contract from the token whitelist
     /// @param _assetId The token address to remove from the token whitelist
-    function unwhitelistToken(address _assetId) external onlyOwner {
+    function unwhitelistToken(address _assetId) external onlyOwner nonReentrant {
         Utils.validateAddress(_assetId);
         require(tokenWhitelist[_assetId], "Token not whitelisted");
         delete tokenWhitelist[_assetId];

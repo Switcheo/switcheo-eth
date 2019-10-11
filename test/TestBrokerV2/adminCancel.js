@@ -1,6 +1,7 @@
-const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange, assertAsync } = require('../utils')
+const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange,
+        assertAsync, testEvents } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
-
+const { REASON_CODES } = require('../constants')
 const { PRIVATE_KEYS } = require('../wallets')
 
 contract('Test adminCancel', async (accounts) => {
@@ -22,6 +23,28 @@ contract('Test adminCancel', async (accounts) => {
         await exchange.trade(tradeParams, { privateKeys })
         await validateBalance(maker, jrc, 300) // 500 jrc - 100 jrc - 100 jrc
         await validateBalance(operator, jrc, 6) // received 3 jrc + 3 jrc
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            const offer = tradeParams.offers[0]
+            await broker.setAdminState(1)
+            const result = await exchange.adminCancel({
+                ...offer,
+                expectedAvailableAmount: 60
+            })
+
+            testEvents(result, [
+                'BalanceIncrease',
+                {
+                    user: maker,
+                    assetId: jrc.address,
+                    amount: 60,
+                    reason: REASON_CODES.REASON_CANCEL,
+                    nonce: offer.nonce
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {

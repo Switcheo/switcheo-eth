@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 import "./lib/math/SafeMath.sol";
 import "./lib/ownership/Ownable.sol";
@@ -76,35 +76,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     // The constants for EIP-712 are precompiled to reduce contract size,
     // the original values are left here for reference and verification.
-    // NOTE: CHAIN_ID and VERIFYING_CONTRACT values must be updated before
-    // mainnet deployment.
     //
-    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
-    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
-    // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
-    // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
-    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
-    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
-    //     "EIP712Domain(",
-    //         "string name,",
-    //         "string version,",
-    //         "uint256 chainId,",
-    //         "address verifyingContract,",
-    //         "bytes32 salt",
-    //     ")"
-    // ));
-    // bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
-
-    // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
-    //     EIP712_DOMAIN_TYPEHASH,
-    //     CONTRACT_NAME,
-    //     CONTRACT_VERSION,
-    //     CHAIN_ID,
-    //     VERIFYING_CONTRACT,
-    //     SALT
-    // ));
-    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
-
     // bytes32 public constant WITHDRAW_TYPEHASH = keccak256(abi.encodePacked(
     //     "Withdraw(",
     //         "address withdrawer,",
@@ -132,15 +104,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
 
-    // bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
-    //     "Cancel(",
-    //         "bytes32 offerHash,",
-    //         "address feeAssetId,",
-    //         "uint256 feeAmount,",
-    //     ")"
-    // ));
-    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
-
     // bytes32 public constant SWAP_TYPEHASH = keccak256(abi.encodePacked(
     //     "Swap(",
     //         "address maker,",
@@ -160,6 +123,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // compatibility
     address private constant ETHER_ADDR = address(0);
 
+    // The maximum length of swap secret values
+    uint256 private constant MAX_SWAP_SECRET_LENGTH = 64;
+
     // Reason codes are used by the off-chain coordinator to track balance changes
     uint256 private constant REASON_DEPOSIT = 0x01;
 
@@ -172,8 +138,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     uint256 private constant REASON_CANCEL_FEE_RECEIVE = 0x13;
 
     uint256 private constant REASON_SWAP_GIVE = 0x30;
+    uint256 private constant REASON_SWAP_FEE_GIVE = 0x32;
     uint256 private constant REASON_SWAP_RECEIVE = 0x35;
-    uint256 private constant REASON_SWAP_FEE_GIVE = 0x36;
     uint256 private constant REASON_SWAP_FEE_RECEIVE = 0x37;
 
     uint256 private constant REASON_SWAP_CANCEL_RECEIVE = 0x38;
@@ -183,6 +149,16 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     // 7 days * 24 hours * 60 mins * 60 seconds: 604800
     uint256 private constant MAX_SLOW_WITHDRAW_DELAY = 604800;
     uint256 private constant MAX_SLOW_CANCEL_DELAY = 604800;
+
+    uint256 private constant mask8 = ~(~uint256(0) << 8);
+    uint256 private constant mask16 = ~(~uint256(0) << 16);
+    uint256 private constant mask24 = ~(~uint256(0) << 24);
+    uint256 private constant mask32 = ~(~uint256(0) << 32);
+    uint256 private constant mask40 = ~(~uint256(0) << 40);
+    uint256 private constant mask120 = ~(~uint256(0) << 120);
+    uint256 private constant mask128 = ~(~uint256(0) << 128);
+    uint256 private constant mask136 = ~(~uint256(0) << 136);
+    uint256 private constant mask144 = ~(~uint256(0) << 144);
 
     State public state;
     AdminState public adminState;
@@ -219,7 +195,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     address[] public marketDapps;
     // A mapping of cancellation announcements for the cancel escape hatch: offerHash => cancellableAt
     mapping(bytes32 => uint256) public cancellationAnnouncements;
-    // A mapping of withdrawal announcements: userAddress => assetId => announcementData
+    // A mapping of withdrawal announcements: userAddress => assetId => { amount, withdrawableAt }
     mapping(address => mapping(address => WithdrawalAnnouncement)) public withdrawalAnnouncements;
 
     // Emitted on positive balance state transitions
@@ -227,7 +203,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address indexed user,
         address indexed assetId,
         uint256 amount,
-        uint256 indexed reason,
+        uint256 reason,
         uint256 nonce
     );
 
@@ -236,7 +212,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         address indexed user,
         address indexed assetId,
         uint256 amount,
-        uint256 indexed reason,
+        uint256 reason,
         uint256 nonce
     );
 
@@ -325,6 +301,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         _;
     }
 
+    /// @notice Checks whether an address is appointed as an admin user
+    /// @param _user The address to check
+    /// @return Whether the address is appointed as an admin user
     function isAdmin(address _user) external view returns(bool) {
         return adminAddresses[_user];
     }
@@ -332,17 +311,17 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Sets tbe Broker's state.
     /// @dev The two available states are `Active` and `Inactive`.
     /// The `Active` state allows for regular exchange activity,
-    /// while the `Inactive` state prevents the invokation of deposit
+    /// while the `Inactive` state prevents the invocation of deposit
     /// and trading functions.
     /// The `Inactive` state is intended as a means to cease contract operation
     /// in the case of an upgrade or in an emergency.
     /// @param _state The state to transition the contract into
-    function setState(State _state) external onlyOwner { state = _state; }
+    function setState(State _state) external onlyOwner nonReentrant { state = _state; }
 
     /// @notice Sets the Broker's admin state.
     /// @dev The two available states are `Normal` and `Escalated`.
     /// In the `Normal` admin state, the admin methods `adminCancel` and `adminWithdraw`
-    /// are not invokable.
+    /// are not invocable.
     /// The admin state must be set to `Escalated` by the contract owner for these
     /// methods to become usable.
     /// In an `Escalated` admin state, admin addresses would be able to cancel offers
@@ -352,12 +331,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// It is set separately from the `Inactive` state so that it is possible
     /// to use admin functions without affecting regular operations.
     /// @param _state The admin state to transition the contract into
-    function setAdminState(AdminState _state) external onlyOwner { adminState = _state; }
+    function setAdminState(AdminState _state) external onlyOwner nonReentrant { adminState = _state; }
 
     /// @notice Sets the operator address.
     /// @dev All fees will be transferred to the operator address.
     /// @param _operator The address to set as the operator
-    function setOperator(address _operator) external onlyOwner {
+    function setOperator(address _operator) external onlyOwner nonReentrant {
         _validateAddress(operator);
         operator = _operator;
     }
@@ -368,7 +347,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// before the state is separately updated by the user.
     /// This differs from the regular `cancel` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
-    function setSlowCancelDelay(uint256 _delay) external onlyOwner {
+    function setSlowCancelDelay(uint256 _delay) external onlyOwner nonReentrant {
         // Error code 4: setSlowCancelDelay, slow cancel delay exceeds max allowable delay
         require(_delay <= MAX_SLOW_CANCEL_DELAY, "4");
         slowCancelDelay = _delay;
@@ -380,7 +359,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// before the state is separately updated by the user.
     /// This differs from the regular `withdraw` operation, which does not involve a delay.
     /// @param _delay The delay in seconds
-    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner {
+    function setSlowWithdrawDelay(uint256 _delay) external onlyOwner nonReentrant {
         // Error code 5: setSlowWithdrawDelay, slow withdraw delay exceeds max allowable delay
         require(_delay <= MAX_SLOW_WITHDRAW_DELAY, "5");
         slowWithdrawDelay = _delay;
@@ -391,7 +370,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// of the Broker contract, and to perform special functions such as
     /// `adminCancel` and `adminWithdraw`.
     /// @param _admin The address to give admin permissions to
-    function addAdmin(address _admin) external onlyOwner {
+    function addAdmin(address _admin) external onlyOwner nonReentrant {
         _validateAddress(_admin);
         // Error code 6: addAdmin, address is already an admin address
         require(!adminAddresses[_admin], "6");
@@ -400,7 +379,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Removes admin permissons for the specified address.
     /// @param _admin The admin address to remove admin permissions from
-    function removeAdmin(address _admin) external onlyOwner {
+    function removeAdmin(address _admin) external onlyOwner nonReentrant {
         _validateAddress(_admin);
         // Error code 7: removeAdmin, address is not an admin address
         require(adminAddresses[_admin], "7");
@@ -409,7 +388,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
 
     /// @notice Adds a market DApp to be used in `networkTrade`
     /// @param _dapp Address of the market DApp
-    function addMarketDapp(address _dapp) external onlyOwner {
+    function addMarketDapp(address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
         marketDapps.push(_dapp);
     }
@@ -417,16 +396,16 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Updates a market DApp to be used in `networkTrade`
     /// @param _index Index of the market DApp to update
     /// @param _dapp The new address of the market DApp
-    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner {
+    function updateMarketDapp(uint256 _index, address _dapp) external onlyOwner nonReentrant {
         _validateAddress(_dapp);
-        // Error code 8: updateMarketDapp, _index does not refer to a DApp address
+        // Error code 8: updateMarketDapp, _index does not refer to an existing non-zero address
         require(marketDapps[_index] != address(0), "8");
         marketDapps[_index] = _dapp;
     }
 
     /// @notice Removes a market DApp
     /// @param _index Index of the market DApp to remove
-    function removeMarketDapp(uint256 _index) external onlyOwner {
+    function removeMarketDapp(uint256 _index) external onlyOwner nonReentrant {
         // Error code 9: removeMarketDapp, _index does not refer to a DApp address
         require(marketDapps[_index] != address(0), "9");
         delete marketDapps[_index];
@@ -450,6 +429,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
         spenderList.validateSpenderAuthorization(_from, msg.sender);
 
@@ -459,16 +439,31 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         balances[_to][_assetId] = balances[_to][_assetId].add(_amount);
     }
 
-    function markNonce(uint256 _nonce) external {
+    /// @notice Allows a whitelisted contract to mark nonces
+    /// @dev If the whitelisted contract is malicious or vulnerable then there is
+    /// a possibility of a DoS attack. However, since this attack requires cooperation
+    /// of the contract owner, the risk is similar to the contract owner withholding
+    /// transactions, so there is no violation of the contract's trust model.
+    /// In the case that nonces are misused, users will still be able to cancel their offers
+    /// and withdraw all their funds using the escape hatch methods.
+    /// @param _nonce The nonce to mark
+    function markNonce(uint256 _nonce) external nonReentrant {
         spenderList.validateSpender(msg.sender);
         _markNonce(_nonce);
+    }
+
+    /// @notice Returns whether a nonce has been taken
+    /// @param _nonce The nonce to check
+    /// @return Whether the nonce has been taken
+    function nonceTaken(uint256 _nonce) external view returns (bool) {
+        return _nonceTaken(_nonce);
     }
 
     /// @notice Deposits ETH into the sender's contract balance
     /// @dev This operation is only usable in an `Active` state
     /// to prevent this contract from receiving ETH in the case that its
     /// operation has been terminated.
-    function deposit() external payable onlyActiveState {
+    function deposit() external payable onlyActiveState nonReentrant {
         // Error code 10: deposit, msg.value is 0
         require(msg.value > 0, "10");
         _increaseBalance(msg.sender, ETHER_ADDR, msg.value, REASON_DEPOSIT, 0);
@@ -489,15 +484,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// This method has separate `_amount` and `_expectedAmount` values
     /// to support unconventional token transfers, e.g. tokens which have a
     /// proportion burnt on transfer.
-    /// Whitelisted tokens cannot use this method as it may cause a double
-    /// increment for the user's balance. This is because this method does a
-    /// call to the token's `transferFrom` method, and some tokens have a
-    /// `transferFrom` that later on calls `tokenFallback` or `tokensReceived`.
     /// @param _user The address of the user depositing the tokens
     /// @param _assetId The address of the token contract
     /// @param _amount The value to invoke the token's `transferFrom` with
     /// @param _expectedAmount The final amount expected to be received by this contract
-    /// @param _nonce An unused nonce for balance tracking
+    /// @param _nonce A nonce for balance tracking, emitted in the BalanceIncrease event
     function depositToken(
         address _user,
         address _assetId,
@@ -510,8 +501,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         onlyActiveState
         nonReentrant
     {
-        _markNonce(_nonce);
-
         _increaseBalance(
             _user,
             _assetId,
@@ -531,7 +520,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Deposits ERC223 tokens under the `_user`'s balance
     /// @dev ERC223 tokens should invoke this method when tokens are
     /// sent to the Broker contract.
-    /// The invokation will fail unless the token has been previously
+    /// The invocation will fail unless the token has been previously
     /// whitelisted through the `whitelistToken` method.
     /// @param _user The address of the user sending the tokens
     /// @param _amount The amount of tokens transferred to the Broker
@@ -553,7 +542,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @notice Deposits ERC777 tokens under the `_user`'s balance
     /// @dev ERC777 tokens should invoke this method when tokens are
     /// sent to the Broker contract.
-    /// The invokation will fail unless the token has been previously
+    /// The invocation will fail unless the token has been previously
     /// whitelisted through the `whitelistToken` method.
     /// @param _user The address of the user sending the tokens
     /// @param _to The address receiving the tokens
@@ -602,12 +591,9 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// The added benefit is further gas cost reduction because repeated
     /// user asset pairs do not need to be duplicated for the calldata.
     ///
-    /// The operator address and operator fee asset ID is enforced to be `address(0)`,
-    /// this is because while a slot is needed, the actual operator address should
-    /// be read directly from contract storage, and the operator fee asset ID is
-    /// identical to the maker's / filler's feeAssetId.
-    /// Enforcing this reduces calldata gas costs as zero bits cost less than
-    /// non-zero bits.
+    /// The operator address is enforced to be the contract's current operator
+    /// address, and the operator fee asset ID is enforced to be identical to
+    /// the maker's / filler's feeAssetId.
     ///
     /// A tradeoff of compacting the bits is that there is a lower maximum value
     /// for offer and fill data, however the limits remain generally practical.
@@ -619,7 +605,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// offer / fill can be split into multiple offers / fills by the off-chain
     /// service.
     ///
-    /// For nonces the maximum value is 2^72, or more than a billion billion (21 zeros).
+    /// For nonces the maximum value is 2^64, or more than a billion billion (19 zeros).
     ///
     /// Offers and fills both encompass information about how much (offerAmount)
     /// of a specified token (offerAssetId) the user wants to offer and
@@ -645,12 +631,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///
     /// 3. The offer array must not consist of repeated offers. For efficient
     /// balance updates, a loop through each offer in the offer array is used
-    /// to deduct the offer.offerAmount from the respective maker.
-    /// If an offer has not been recorded by a previos `trade` call,
-    /// and it the offer is repeated in the offers array, then there would be
+    /// to deduct the offer.offerAmount from the respective maker
+    /// if the offer has not been recorded by a previos `trade` call.
+    /// If an offer is repeated in the offers array, then there would be
     /// duplicate deductions from the maker.
-    /// To enforce uniqueness, it is required that offer nonces are sorted in a
-    /// strictly ascending order.
+    /// To enforce uniqueness, it is required that offers for a trade transaction
+    /// are sorted such that their nonces are in a strictly ascending order.
     ///
     /// 4. The fill array must not consist of repeated fills, for the same
     /// reason why there cannot be repeated offers. Additionally, to prevent
@@ -671,7 +657,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(40..48): The `v` component of the maker's signature for this offer
     /// bits(48..56): Indicates whether the Ethereum signed message
     /// prefix should be prepended during signature verification
-    /// bits(56..128): The offer nonce to prevent replay attacks
+    /// bits(56..120): The offer nonce to prevent replay attacks
+    /// bits(120..128): Space to indicate whether the offer nonce has been marked before
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
     ///
     /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
@@ -687,7 +674,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(40..48): The `v` component of the filler's signature for this fill
     /// bits(48..56): Indicates whether the Ethereum signed message
     /// prefix should be prepended during signature verification
-    /// bits(56..128): The fill nonce to prevent replay attacks
+    /// bits(56..120): The fill nonce to prevent replay attacks
+    /// bits(120..128): Left empty to match the offer values format
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this fill
     ///
     /// @param _values[2 + numOffers * 2 + i * 2] Second part of fill data for the i'th fill
@@ -716,51 +704,43 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     ...
     /// ]
     function trade(
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        address[] calldata _addresses
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
     )
-        external
+        public
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
+        // An array variable to store balance increments / decrements
+        uint256[] memory statements;
+
+        // Cache whether offer nonces are taken in the offer's nonce space
+        _cacheOfferNonceStates(_values);
 
         // `validateTrades` needs to calculate the hash keys of offers and fills
         // to verify the signature of the offer / fill.
-        // The calculated hash keys for each offer is return to reduce repeated
-        // computation.
-        bytes32[] memory hashKeys = Utils.validateTrades(
+        // The calculated hash keys are returned to reduce repeated computation.
+        _hashes = Utils.validateTrades(
             _values,
             _hashes,
-            _addresses
+            _addresses,
+            operatorAddress
         );
 
-        // Credit fillers for each fill.wantAmount, and credit the operator
-        // for each fill.feeAmount.
-        _creditFillBalances(_values, _addresses, operatorAddress);
+        statements = Utils.calculateTradeIncrements(_values, _addresses.length / 2);
+        _incrementBalances(statements, _addresses, 1);
 
-        // Credit makers for each amount received through a matched fill.
-        _creditMakerBalances(_values, _addresses);
-
-        // Credit the operator for each offer.feeAmount if the offer has not
-        // been recorded through a previous `trade` call.
-        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
-
-        // Deduct tokens from fillers for each fill.offerAmount
-        // and each fill.feeAmount.
-        _deductFillBalances(_values, _addresses);
-
-        // Deduct tokens from makers for each offer.offerAmount
-        // and each offer.feeAmount if the offer has not been recorded
-        // through a previous `trade` call.
-        _deductMakerBalances(_values, _addresses);
+        statements = Utils.calculateTradeDecrements(_values, _addresses.length / 2);
+        _decrementBalances(statements, _addresses);
 
         // Reduce available offer amounts of offers and store the remaining
         // offer amount in the `offers` mapping.
         // Offer nonces will also be marked as taken.
-        _storeOfferData(_values, hashKeys);
+        _storeOfferData(_values, _hashes);
 
         // Mark all fill nonces as taken in the `usedNonces` mapping.
         _storeFillNonces(_values);
@@ -787,7 +767,8 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// bits(40..48): The `v` component of the maker's signature for this offer
     /// bits(48..56): Indicates whether the Ethereum signed message
     /// prefix should be prepended during signature verification
-    /// bits(56..128): The offer nonce to prevent replay attacks
+    /// bits(56..120): The offer nonce to prevent replay attacks
+    /// bits(120..128): Space to indicate whether the offer nonce has been marked before
     /// bits(128..256): The number of tokens to be paid to the operator as fees for this offer
     ///
     /// @param _values[2 + i * 2] Second part of offer data for the i'th offer
@@ -819,42 +800,53 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     ...
     /// ]
     function networkTrade(
-        uint256[] calldata _values,
-        bytes32[] calldata _hashes,
-        address[] calldata _addresses
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
     )
-        external
+        public
         onlyAdmin
         onlyActiveState
         nonReentrant
     {
         // Cache the operator address to reduce gas costs from storage reads
         address operatorAddress = operator;
+        // An array variable to store balance increments / decrements
+        uint256[] memory statements;
+
+        // Cache whether offer nonces are taken in the offer's nonce space
+        _cacheOfferNonceStates(_values);
 
         // `validateNetworkTrades` needs to calculate the hash keys of offers
         // to verify the signature of the offer.
         // The calculated hash keys for each offer is return to reduce repeated
         // computation.
-        bytes32[] memory hashKeys = Utils.validateNetworkTrades(
+        _hashes = Utils.validateNetworkTrades(
             _values,
             _hashes,
             _addresses,
             operatorAddress
         );
 
-        _creditMakerBalances(_values, _addresses);
-        _creditMakerFeeBalances(_values, _addresses, operatorAddress);
-        _deductMakerBalances(_values, _addresses);
-        _storeOfferData(_values, hashKeys);
+        statements = Utils.calculateNetworkTradeIncrements(_values, _addresses.length / 2);
+        _incrementBalances(statements, _addresses, 1);
+
+        statements = Utils.calculateNetworkTradeDecrements(_values, _addresses.length / 2);
+        _decrementBalances(statements, _addresses);
+
+        // Reduce available offer amounts of offers and store the remaining
+        // offer amount in the `offers` mapping.
+        // Offer nonces will also be marked as taken.
+        _storeOfferData(_values, _hashes);
 
         // There may be excess tokens resulting from a trade
         // Any excess tokens are returned and recorded in `increments`
-        uint256[] memory increments = Utils.performNetworkTrades(
+        statements = Utils.performNetworkTrades(
             _values,
             _addresses,
             marketDapps
         );
-        _incrementBalances(increments, 0, 0, increments.length - 1, _addresses);
+        _incrementBalances(statements, _addresses, 0);
     }
 
     /// @notice Cancels a perviously made offer and refunds the remaining offer
@@ -896,39 +888,14 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
         onlyAdmin
+        nonReentrant
     {
-        bytes32 offerHash = keccak256(abi.encode(
-            OFFER_TYPEHASH,
-            _addresses[0], // maker
-            _addresses[1], // offerAssetId
-            _values[0] & ~(~uint256(0) << 128), // offerAmount
-            _addresses[2], // wantAssetId
-            _values[0] >> 128, // wantAmount
-            _addresses[3], // feeAssetId
-            _values[1] & ~(~uint256(0) << 128), // feeAmount
-            _values[2] >> 144 // offerNonce
-        ));
-
-        bytes32 cancelHash = keccak256(abi.encode(
-            CANCEL_TYPEHASH,
-            offerHash,
-            _addresses[4],
-            _values[1] >> 128
-        ));
-
-        _validateSignature(
-            cancelHash,
-            _addresses[0], // maker
-            uint8((_values[2] & ~(~uint256(0) << 144)) >> 136), // v
-            _hashes[0], // r
-            _hashes[1], // s
-            ((_values[2] & ~(~uint256(0) << 136)) >> 128) != 0 // prefixedSignature
-        );
-
+        Utils.validateCancel(_values, _hashes, _addresses);
+        bytes32 offerHash = Utils.hashOffer(_values, _addresses);
         _cancel(
             _addresses[0], // maker
             offerHash,
-            _values[2] & ~(~uint256(0) << 128), // expectedAvailableAmount
+            _values[2] & mask128, // expectedAvailableAmount
             _addresses[1], // offerAssetId
             _values[2] >> 144, // offerNonce
             _addresses[4], // cancelFeeAssetId
@@ -971,6 +938,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyEscalatedAdminState
+        nonReentrant
     {
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1024,6 +992,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _offerNonce
     )
         external
+        nonReentrant
     {
         // Error code 11: announceCancel, invalid msg.sender
         require(_maker == msg.sender, "11");
@@ -1078,6 +1047,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _offerNonce
     )
         external
+        nonReentrant
     {
         bytes32 offerHash = keccak256(abi.encode(
             OFFER_TYPEHASH,
@@ -1145,6 +1115,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     )
         external
         onlyAdmin
+        nonReentrant
     {
         _markNonce(_nonce);
 
@@ -1196,6 +1167,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyEscalatedAdminState
+        nonReentrant
     {
         _markNonce(_nonce);
 
@@ -1222,6 +1194,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
 
         // Error code 16: announceWithdraw, invalid withdrawal amount
@@ -1248,6 +1221,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _amount
     )
         external
+        nonReentrant
     {
         WithdrawalAnnouncement memory announcement = withdrawalAnnouncements[_withdrawer][_assetId];
 
@@ -1263,12 +1237,12 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             _withdrawer,
             _withdrawer,
             _assetId,
-            announcement.amount,
+            _amount,
             address(0),
             0,
             0
         );
-        emit SlowWithdraw(_withdrawer, _assetId, announcement.amount);
+        emit SlowWithdraw(_withdrawer, _assetId, _amount);
     }
 
     /// @notice Locks a user's balances for the first part of an atomic swap
@@ -1298,12 +1272,16 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         external
         onlyAdmin
         onlyActiveState
+        nonReentrant
     {
         // Error code 20: createSwap, invalid swap amount
         require(_values[0] > 0, "20");
         // Error code 21: createSwap, expiry time has already passed
         require(_values[1] > now, "21");
         _validateAddress(_addresses[1]);
+
+        // Error code 39: createSwap, swap maker cannot be the swap taker
+        require(_addresses[0] != _addresses[1], "39");
 
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashes[0]);
         // Error code 22: createSwap, the swap is already active
@@ -1368,7 +1346,11 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         bytes calldata _preimage
     )
         external
+        nonReentrant
     {
+        // Error code 37: swap secret length exceeded
+        require(_preimage.length <= MAX_SWAP_SECRET_LENGTH, "37");
+
         bytes32 swapHash = _hashSwap(_addresses, _values, _hashedSecret);
         // Error code 24: executeSwap, swap is not active
         require(atomicSwaps[swapHash], "24");
@@ -1423,6 +1405,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _cancelFeeAmount
     )
         external
+        nonReentrant
     {
         // Error code 26: cancelSwap, expiry time has not been reached
         require(_values[1] <= now, "26");
@@ -1433,7 +1416,7 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 cancelFeeAmount = _cancelFeeAmount;
         if (!adminAddresses[msg.sender]) { cancelFeeAmount = _values[2]; }
 
-        // cancelFeeAmount < feeAmount
+        // cancelFeeAmount <= feeAmount
         // Error code 28: cancelSwap, cancelFeeAmount exceeds swap.feeAmount
         require(cancelFeeAmount <= _values[2], "28");
 
@@ -1472,252 +1455,23 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
-    /// for each fill.feeAmount. See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    /// @param _operator Address of the operator
-    function _creditFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses,
-        address _operator
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            // let assetIndex be filler.wantAssetIndex
-            uint256 assetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
-            uint256 wantAmount = _values[i + 1] >> 128;
-
-            // credit fill.wantAmount to filler
-            increments[assetIndex] = increments[assetIndex].add(wantAmount);
-            if (min > assetIndex) { min = assetIndex; }
-            if (max < assetIndex) { max = assetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // let assetIndex be filler.feeAssetIndex
-            assetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            uint256 feeAssetIndex = ((_values[i] & ~(~uint256(0) << 40)) >> 32);
-
-            // override the operator slot with the actual operator address
-            // and set the operator fee asset ID slot to be the fill's feeAssetId
-            _addresses[feeAssetIndex * 2] = _operator;
-            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
-                // a value of address(1) indicates that this value has not been set before
-                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
-            } else {
-                // if the value is not address(1) then it must have been previously set
-                // to a value matching the make's feeAssetId
-                // Error code 29: _creditFillBalances, invalid operator feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "29");
-            }
-
-            // credit fill.feeAmount to operator
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        _incrementBalances(increments, 1, min, max, _addresses);
-    }
-
-    /// @dev Credit makers for each amount received through a matched fill.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _creditMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i += numOffers * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        uint256 end = _values.length;
-
-        // loop matches
-        for(i; i < end; i++) {
-            // match.offerIndex
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
-            // offer.wantAssetIndex
-            uint256 wantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-
-            // match.takeAmount
-            uint256 amount = _values[i] >> 128;
-            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
-            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
-                           .div(_values[2 + offerIndex * 2] & ~(~uint256(0) << 128));
-
-            // credit maker for the amount received from the match
-            increments[wantAssetIndex] = increments[wantAssetIndex].add(amount);
-            if (min > wantAssetIndex) { min = wantAssetIndex; }
-            if (max < wantAssetIndex) { max = wantAssetIndex; }
-        }
-
-        _incrementBalances(increments, 1, min, max, _addresses);
-    }
-
-    /// @dev Credit the operator for each offer.feeAmount if the offer has not
-    /// been recorded through a previous `trade` call.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _creditMakerFeeBalances(
-        uint256[] memory _values,
-        address[] memory _addresses,
-        address _operator
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory increments = new uint256[](_addresses.length / 2);
-
+    /// @dev Cache whether offer nonces are taken in the offer's nonce space
+    /// @param _values The _values param from the trade / networkTrade method
+    function _cacheOfferNonceStates(uint256[] memory _values) private view {
         uint256 i = 1;
         // i + numOffers * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 end = i + (_values[0] & mask8) * 2;
 
         // loop offers
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
-            if (_nonceTaken(nonce)) { continue; }
+            // Error code 38: Invalid nonce space
+            require(((_values[i] & mask128) >> 120) == 0, "38");
 
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // let assetIndex be maker.feeAssetIndex
-            uint256 assetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 40)) >> 32;
-
-            // override the operator slot with the actual operator address
-            // and set the operator fee asset ID slot to be the make's feeAssetId
-            _addresses[feeAssetIndex * 2] = _operator;
-            if (_addresses[feeAssetIndex * 2 + 1] == address(1)) {
-                // a value of address(1) indicates that this value has not been set before
-                _addresses[feeAssetIndex * 2 + 1] = _addresses[assetIndex * 2 + 1];
-            } else {
-                // if the value is not address(1) then it must have been previously set
-                // to a value matching the make's feeAssetId
-                // Error code 30: _creditMakerFeeBalances, invalid operator feeAssetId
-                require(_addresses[feeAssetIndex * 2 + 1] == _addresses[assetIndex * 2 + 1], "30");
+            uint256 nonce = (_values[i] & mask120) >> 56;
+            if (_nonceTaken(nonce)) {
+                _values[i] = _values[i] | (uint256(1) << 120);
             }
-
-            // credit make.feeAmount to operator
-            increments[feeAssetIndex] = increments[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
         }
-
-        _incrementBalances(increments, 1, min, max, _addresses);
-    }
-
-    /// @dev Deduct tokens from fillers for each fill.offerAmount
-    /// and each fill.feeAmount.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _deductFillBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory decrements = new uint256[](_addresses.length / 2);
-
-        // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
-        // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
-
-        // loop fills
-        for(i; i < end; i += 2) {
-            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
-
-            // deduct fill.offerAmount from filler
-            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct fill.feeAmount from filler
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        _decrementBalances(decrements, min, max, _addresses);
-    }
-
-    /// @dev Deduct tokens from makers for each offer.offerAmount
-    /// and each offer.feeAmount if the offer has not been recorded
-    /// through a previous `trade` call.
-    /// See the `trade` method for param details.
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _deductMakerBalances(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-    {
-        uint256 min = _addresses.length;
-        uint256 max = 0;
-        uint256[] memory decrements = new uint256[](_addresses.length / 2);
-
-        uint256 i = 1;
-        // i + numOffers * 2
-        uint256 end = i + (_values[0] & ~(~uint256(0) << 8)) * 2;
-
-        // loop offers
-        for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
-            if (_nonceTaken(nonce)) { continue; }
-
-            uint256 offerAssetIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
-            uint256 offerAmount = _values[i + 1] & ~(~uint256(0) << 128);
-
-            // deduct make.offerAmount from maker
-            decrements[offerAssetIndex] = decrements[offerAssetIndex].add(offerAmount);
-            if (min > offerAssetIndex) { min = offerAssetIndex; }
-            if (max < offerAssetIndex) { max = offerAssetIndex; }
-
-            uint256 feeAmount = _values[i] >> 128;
-            if (feeAmount == 0) { continue; }
-
-            // deduct make.feeAmount from maker
-            uint256 feeAssetIndex = (_values[i] & ~(~uint256(0) << 32)) >> 24;
-            decrements[feeAssetIndex] = decrements[feeAssetIndex].add(feeAmount);
-            if (min > feeAssetIndex) { min = feeAssetIndex; }
-            if (max < feeAssetIndex) { max = feeAssetIndex; }
-        }
-
-        _decrementBalances(decrements, min, max, _addresses);
     }
 
     /// @dev Reduce available offer amounts of offers and store the remaining
@@ -1725,49 +1479,53 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// Offer nonces will also be marked as taken.
     /// See the `trade` method for param details.
     /// @param _values Values from `trade`
-    /// @param _hashKeys An array of offer hash keys
+    /// @param _hashes An array of offer hash keys
     function _storeOfferData(
         uint256[] memory _values,
-        bytes32[] memory _hashKeys
+        bytes32[] memory _hashes
     )
         private
     {
-        // Decrements with size numOffers
-        uint256[] memory decrements = new uint256[](_values[0] & ~(~uint256(0) << 8));
+        // takenAmounts with same size as numOffers
+        uint256[] memory takenAmounts = new uint256[](_values[0] & mask8);
 
         uint256 i = 1;
         // i += numOffers * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        i += (_values[0] & mask8) * 2;
         // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        i += ((_values[0] & mask16) >> 8) * 2;
 
         uint256 end = _values.length;
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
+            uint256 offerIndex = _values[i] & mask8;
             uint256 takeAmount = _values[i] >> 128;
-            decrements[offerIndex] = decrements[offerIndex].add(takeAmount);
+            takenAmounts[offerIndex] = takenAmounts[offerIndex].add(takeAmount);
         }
 
         i = 0;
-        end = _values[0] & ~(~uint256(0) << 8); // numOffers
+        end = _values[0] & mask8; // numOffers
 
         // loop offers
         for (i; i < end; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & ~(~uint256(0) << 128)) >> 56;
-            bool existingOffer = _nonceTaken(nonce);
-            bytes32 hashKey = _hashKeys[i];
+            // we can use the cached nonce taken value here because offers have been
+            // validated to be unique
+            bool existingOffer = ((_values[i * 2 + 1] & mask128) >> 120) == 1;
+            bytes32 hashKey = _hashes[i * 2];
 
-            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & ~(~uint256(0) << 128));
+            uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & mask128);
             // Error code 31: _storeOfferData, offer's available amount is zero
             require(availableAmount > 0, "31");
 
-            uint256 remainingAmount = availableAmount.sub(decrements[i]);
+            uint256 remainingAmount = availableAmount.sub(takenAmounts[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
             if (existingOffer && remainingAmount == 0) { delete offers[hashKey]; }
 
-            if (!existingOffer) { _markNonce(nonce); }
+            if (!existingOffer) {
+                uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
+                _markNonce(nonce);
+            }
         }
     }
 
@@ -1779,13 +1537,13 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _values Values from `trade`
     function _storeFillNonces(uint256[] memory _values) private {
         // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 i = 1 + (_values[0] & mask8) * 2;
         // i + numFills * 2
-        uint256 end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
 
         // loop fills
         for(i; i < end; i += 2) {
-            uint256 nonce = (_values[i] & ~(~uint256(0) << 128)) >> 56;
+            uint256 nonce = (_values[i] & mask120) >> 56;
             _markNonce(nonce);
         }
     }
@@ -1858,7 +1616,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         uint256 _nonce
     )
         private
-        nonReentrant
     {
         // Error code 34: _withdraw, invalid withdrawal amount
         require(_amount > 0, "34");
@@ -2084,10 +1841,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _increments An array of amounts to increase a user's balance by,
     /// the corresponding user and assetId is referenced by
     /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
-    /// @param _static Indicates if the amount was pre-calculated or only known
-    /// at the time the transaction was executed
-    /// @param _i The index to start the increment loop at (inclusive)
-    /// @param _end The index to end the increment loop at (inclusive)
     /// @param _addresses An array of user asset pairs in the form of:
     /// [
     ///     user_1_address,
@@ -2098,23 +1851,25 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     ///     asset_1_address,
     ///     ...
     /// ]
+    /// @param _static Indicates if the amount was pre-calculated or only known
+    /// at the time the transaction was executed
     function _incrementBalances(
         uint256[] memory _increments,
-        uint256 _static,
-        uint256 _i,
-        uint256 _end,
-        address[] memory _addresses
+        address[] memory _addresses,
+        uint256 _static
     )
         private
     {
-        for(_i; _i <= _end; _i++) {
-            uint256 increment = _increments[_i];
+        uint256 end = _increments.length;
+
+        for(uint256 i = 0; i < end; i++) {
+            uint256 increment = _increments[i];
             if (increment == 0) { continue; }
 
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].add(increment);
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].add(increment);
 
-            emit Increment((_i << 248) | (_static << 240) | increment);
+            emit Increment((i << 248) | (_static << 240) | increment);
         }
     }
 
@@ -2123,8 +1878,6 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// @param _decrements An array of amounts to decrease a user's balance by,
     /// the corresponding user and assetId is referenced by
     /// _addresses[index * 2] and _addresses[index * 2 + 1] respectively
-    /// @param _i The index to start the increment loop at (inclusive)
-    /// @param _end The index to end the increment loop at (inclusive)
     /// @param _addresses An array of user asset pairs in the form of:
     /// [
     ///     user_1_address,
@@ -2137,20 +1890,19 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
     /// ]
     function _decrementBalances(
         uint256[] memory _decrements,
-        uint256 _i,
-        uint256 _end,
         address[] memory _addresses
     )
         private
     {
-        for(_i; _i <= _end; _i++) {
-            uint256 decrement = _decrements[_i];
+        uint256 end = _decrements.length;
+        for(uint256 i = 0; i < end; i++) {
+            uint256 decrement = _decrements[i];
             if (decrement == 0) { continue; }
 
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]] =
-            balances[_addresses[_i * 2]][_addresses[_i * 2 + 1]].sub(decrement);
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
+            balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
 
-            emit Decrement(_i << 248 | decrement);
+            emit Decrement(i << 248 | decrement);
         }
     }
 }

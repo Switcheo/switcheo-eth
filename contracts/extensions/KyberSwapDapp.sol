@@ -1,11 +1,10 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 import "../lib/math/SafeMath.sol";
 import "./BrokerExtension.sol";
 import "../Utils.sol";
 
 interface KyberNetworkProxy {
-    function kyberNetworkContract() external view returns (address);
     function trade(address src, uint256 srcAmount, address dest, address payable destAddress, uint256 maxDestAmount, uint256 minConversionRate, address walletId) external payable returns (uint256);
 }
 
@@ -28,6 +27,7 @@ contract KyberSwapDapp is BrokerExtension {
     )
         external
         onlyOwner
+        nonReentrant
     {
         kyberNetworkProxy = KyberNetworkProxy(_kyberNetworkProxyAddress);
     }
@@ -54,15 +54,15 @@ contract KyberSwapDapp is BrokerExtension {
     )
         public
         payable
+        nonReentrant
     {
         uint256 ethValue = 0;
 
         if (_assetIds[0] != ETHER_ADDR) {
             Utils.transferTokensIn(msg.sender, _assetIds[0], _dataValues[0], _dataValues[0]);
-            address kyberNetworkContract = kyberNetworkProxy.kyberNetworkContract();
             Utils.approveTokenTransfer(
                 _assetIds[0],
-                kyberNetworkContract,
+                address(kyberNetworkProxy),
                 _dataValues[0]
             );
         } else {

@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 import "./lib/math/SafeMath.sol";
 
@@ -23,11 +23,6 @@ library Utils {
     // The constants for EIP-712 are precompiled to reduce contract size,
     // the original values are left here for reference and verification.
     //
-    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
-    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
-    // uint256 public constant CHAIN_ID = 3; // TODO: update this before deployment
-    // address public constant VERIFYING_CONTRACT = address(1); // TODO: pre-calculate and update this before deployment
-    // bytes32 public constant SALT = keccak256("switcheo-eth-eip712-salt");
     // bytes32 public constant EIP712_DOMAIN_TYPEHASH = keccak256(abi.encodePacked(
     //     "EIP712Domain(",
     //         "string name,",
@@ -38,6 +33,12 @@ library Utils {
     //     ")"
     // ));
     // bytes32 public constant EIP712_DOMAIN_TYPEHASH = 0xd87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472;
+    //
+    // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
+    // bytes32 public constant CONTRACT_VERSION = keccak256("2");
+    // uint256 public constant CHAIN_ID = 3; // TODO: Update this before deploying
+    // address public constant VERIFYING_CONTRACT = address(1); // TODO: Update this before deploying
+    // bytes32 public constant SALT = keccak256("switcheo-eth-salt");
 
     // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
     //     EIP712_DOMAIN_TYPEHASH,
@@ -63,6 +64,15 @@ library Utils {
     // ));
     bytes32 public constant OFFER_TYPEHASH = 0xf845c83a8f7964bc8dd1a092d28b83573b35be97630a5b8a3b8ae2ae79cd9260;
 
+    // bytes32 public constant CANCEL_TYPEHASH = keccak256(abi.encodePacked(
+    //     "Cancel(",
+    //         "bytes32 offerHash,",
+    //         "address feeAssetId,",
+    //         "uint256 feeAmount,",
+    //     ")"
+    // ));
+    bytes32 public constant CANCEL_TYPEHASH = 0x46f6d088b1f0ff5a05c3f232c4567f2df96958e05457e6c0e1221dcee7d69c18;
+
     // bytes32 public constant FILL_TYPEHASH = keccak256(abi.encodePacked(
     //     "Fill(",
     //         "address filler,",
@@ -81,6 +91,103 @@ library Utils {
     // compatibility
     address private constant ETHER_ADDR = address(0);
 
+    uint256 private constant mask8 = ~(~uint256(0) << 8);
+    uint256 private constant mask16 = ~(~uint256(0) << 16);
+    uint256 private constant mask24 = ~(~uint256(0) << 24);
+    uint256 private constant mask32 = ~(~uint256(0) << 32);
+    uint256 private constant mask40 = ~(~uint256(0) << 40);
+    uint256 private constant mask48 = ~(~uint256(0) << 48);
+    uint256 private constant mask56 = ~(~uint256(0) << 56);
+    uint256 private constant mask120 = ~(~uint256(0) << 120);
+    uint256 private constant mask128 = ~(~uint256(0) << 128);
+    uint256 private constant mask136 = ~(~uint256(0) << 136);
+    uint256 private constant mask144 = ~(~uint256(0) << 144);
+
+    event Trade(
+        address maker,
+        address taker,
+        address makerGiveAsset,
+        uint256 makerGiveAmount,
+        address fillerGiveAsset,
+        uint256 fillerGiveAmount
+    );
+
+    /// @dev Calculates the balance increments for a set of trades
+    /// @param _values The _values param from the trade method
+    /// @param _incrementsLength Should match the value of _addresses.length / 2
+    /// from the trade method
+    /// @return An array of increments
+    function calculateTradeIncrements(
+        uint256[] memory _values,
+        uint256 _incrementsLength
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        uint256[] memory increments = new uint256[](_incrementsLength);
+        _creditFillBalances(increments, _values);
+        _creditMakerBalances(increments, _values);
+        _creditMakerFeeBalances(increments, _values);
+        return increments;
+    }
+
+    /// @dev Calculates the balance decrements for a set of trades
+    /// @param _values The _values param from the trade method
+    /// @param _decrementsLength Should match the value of _addresses.length / 2
+    /// from the trade method
+    /// @return An array of decrements
+    function calculateTradeDecrements(
+        uint256[] memory _values,
+        uint256 _decrementsLength
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        uint256[] memory decrements = new uint256[](_decrementsLength);
+        _deductFillBalances(decrements, _values);
+        _deductMakerBalances(decrements, _values);
+        return decrements;
+    }
+
+    /// @dev Calculates the balance increments for a set of network trades
+    /// @param _values The _values param from the networkTrade method
+    /// @param _incrementsLength Should match the value of _addresses.length / 2
+    /// from the networkTrade method
+    /// @return An array of increments
+    function calculateNetworkTradeIncrements(
+        uint256[] memory _values,
+        uint256 _incrementsLength
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        uint256[] memory increments = new uint256[](_incrementsLength);
+        _creditMakerBalances(increments, _values);
+        _creditMakerFeeBalances(increments, _values);
+        return increments;
+    }
+
+    /// @dev Calculates the balance decrements for a set of network trades
+    /// @param _values The _values param from the trade method
+    /// @param _decrementsLength Should match the value of _addresses.length / 2
+    /// from the networkTrade method
+    /// @return An array of decrements
+    function calculateNetworkTradeDecrements(
+        uint256[] memory _values,
+        uint256 _decrementsLength
+    )
+        public
+        pure
+        returns (uint256[] memory)
+    {
+        uint256[] memory decrements = new uint256[](_decrementsLength);
+        _deductMakerBalances(decrements, _values);
+        return decrements;
+    }
+
     /// @dev Validates `BrokerV2.trade` parameters to ensure trade fairness,
     /// see `BrokerV2.trade` for param details.
     /// @param _values Values from `trade`
@@ -89,17 +196,27 @@ library Utils {
     function validateTrades(
         uint256[] memory _values,
         bytes32[] memory _hashes,
-        address[] memory _addresses
+        address[] memory _addresses,
+        address _operator
     )
         public
-        pure
         returns (bytes32[] memory)
     {
         _validateTradeInputLengths(_values, _hashes);
         _validateUniqueOffers(_values);
         _validateMatches(_values, _addresses);
         _validateFillAmounts(_values);
-        _validateTradeData(_values, _addresses);
+        _validateTradeData(_values, _addresses, _operator);
+
+        // validate signatures of all offers
+        _validateTradeSignatures(
+            _values,
+            _hashes,
+            _addresses,
+            OFFER_TYPEHASH,
+            0,
+            _values[0] & mask8 // numOffers
+        );
 
         // validate signatures of all fills
         _validateTradeSignatures(
@@ -107,19 +224,13 @@ library Utils {
             _hashes,
             _addresses,
             FILL_TYPEHASH,
-            _values[0] & ~(~uint256(0) << 8), // numOffers
-            (_values[0] & ~(~uint256(0) << 8)) + ((_values[0] & ~(~uint256(0) << 16)) >> 8) // numOffers + numFills
+            _values[0] & mask8, // numOffers
+            (_values[0] & mask8) + ((_values[0] & mask16) >> 8) // numOffers + numFills
         );
 
-        // validate signatures of all offers
-        return _validateTradeSignatures(
-            _values,
-            _hashes,
-            _addresses,
-            OFFER_TYPEHASH,
-            0,
-            _values[0] & ~(~uint256(0) << 8) // numOffers
-        );
+        _emitTradeEvents(_values, _addresses, new address[](0), false);
+
+        return _hashes;
     }
 
     /// @dev Validates `BrokerV2.networkTrade` parameters to ensure trade fairness,
@@ -141,17 +252,19 @@ library Utils {
         _validateNetworkTradeInputLengths(_values, _hashes);
         _validateUniqueOffers(_values);
         _validateNetworkMatches(_values, _addresses, _operator);
-        _validateOfferData(_values, _addresses, _operator);
+        _validateTradeData(_values, _addresses, _operator);
 
         // validate signatures of all offers
-        return _validateTradeSignatures(
+        _validateTradeSignatures(
             _values,
             _hashes,
             _addresses,
             OFFER_TYPEHASH,
             0,
-            _values[0] & ~(~uint256(0) << 8) // numOffers
+            _values[0] & mask8 // numOffers
         );
+
+        return _hashes;
     }
 
     /// @dev Executes trades against external markets,
@@ -169,23 +282,23 @@ library Utils {
     {
         uint256[] memory increments = new uint256[](_addresses.length / 2);
         // i = 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 i = 1 + (_values[0] & mask8) * 2;
         uint256 end = _values.length;
 
         // loop matches
         for(i; i < end; i++) {
             uint256[] memory data = new uint256[](9);
             data[0] = _values[i]; // match data
-            data[1] = data[0] & ~(~uint256(0) << 8); // offerIndex
-            data[2] = (data[0] & ~(~uint256(0) << 24)) >> 16; // operator.surplusAssetIndex
+            data[1] = data[0] & mask8; // offerIndex
+            data[2] = (data[0] & mask24) >> 16; // operator.surplusAssetIndex
             data[3] = _values[data[1] * 2 + 1]; // offer.dataA
             data[4] = _values[data[1] * 2 + 2]; // offer.dataB
-            data[5] = ((data[3] & ~(~uint256(0) << 16)) >> 8); // maker.offerAssetIndex
-            data[6] = ((data[3] & ~(~uint256(0) << 24)) >> 16); // maker.wantAssetIndex
-            // amount of offerAssetId to take from offer is equal to the match.takeAmount
+            data[5] = ((data[3] & mask16) >> 8); // maker.offerAssetIndex
+            data[6] = ((data[3] & mask24) >> 16); // maker.wantAssetIndex
+            // amount of offerAssetId to take from the offer is equal to the match.takeAmount
             data[7] = data[0] >> 128;
             // expected amount to receive is: matchData.takeAmount * offer.wantAmount / offer.offerAmount
-            data[8] = data[7].mul(data[4] >> 128).div(data[4] & ~(~uint256(0) << 128));
+            data[8] = data[7].mul(data[4] >> 128).div(data[4] & mask128);
 
             address[] memory assetIds = new address[](3);
             assetIds[0] = _addresses[data[5] * 2 + 1]; // offer.offerAssetId
@@ -194,7 +307,7 @@ library Utils {
 
             uint256[] memory dataValues = new uint256[](3);
             dataValues[0] = data[7]; // the proportion of offerAmount to offer
-            dataValues[1] = data[8]; // the propotionate wantAmount of the offer
+            dataValues[1] = data[8]; // the proportion of wantAmount to receive for the offer
             dataValues[2] = data[0]; // match data
 
             increments[data[2]] = _performNetworkTrade(
@@ -205,7 +318,65 @@ library Utils {
             );
         }
 
+        _emitTradeEvents(_values, _addresses, _marketDapps, true);
+
         return increments;
+    }
+
+    /// @dev Validates the signature of a cancel invocation
+    /// @param _values The _values param from the cancel method
+    /// @param _hashes The _hashes param from the cancel method
+    /// @param _addresses The _addresses param from the cancel method
+    function validateCancel(
+        uint256[] memory _values,
+        bytes32[] memory _hashes,
+        address[] memory _addresses
+    )
+        public
+        pure
+    {
+        bytes32 offerHash = hashOffer(_values, _addresses);
+
+        bytes32 cancelHash = keccak256(abi.encode(
+            CANCEL_TYPEHASH,
+            offerHash,
+            _addresses[4],
+            _values[1] >> 128
+        ));
+
+        validateSignature(
+            cancelHash,
+            _addresses[0], // maker
+            uint8((_values[2] & mask144) >> 136), // v
+            _hashes[0], // r
+            _hashes[1], // s
+            ((_values[2] & mask136) >> 128) != 0 // prefixedSignature
+        );
+    }
+
+    /// @dev Hashes an offer for the cancel method
+    /// @param _values The _values param from the cancel method
+    /// @param _addresses THe _addresses param from the cancel method
+    /// @return The hash of the offer
+    function hashOffer(
+        uint256[] memory _values,
+        address[] memory _addresses
+    )
+        public
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(
+            OFFER_TYPEHASH,
+            _addresses[0], // maker
+            _addresses[1], // offerAssetId
+            _values[0] & mask128, // offerAmount
+            _addresses[2], // wantAssetId
+            _values[0] >> 128, // wantAmount
+            _addresses[3], // feeAssetId
+            _values[1] & mask128, // feeAmount
+            _values[2] >> 144 // offerNonce
+        ));
     }
 
     /// @notice Approves a token transfer
@@ -241,7 +412,7 @@ library Utils {
     /// @param _amount The number of tokens to transfer
     /// @param _expectedAmount The number of tokens expected to be received,
     /// this may not match `_amount`, for example, tokens which have a
-    /// propotion burnt on transfer will have a different amount received.
+    /// proportion burnt on transfer will have a different amount received.
     function transferTokensIn(
         address _user,
         address _assetId,
@@ -364,6 +535,228 @@ library Utils {
         require(_address != address(0), "Invalid address");
     }
 
+    /// @dev Credit fillers for each fill.wantAmount,and credit the operator
+    /// for each fill.feeAmount. See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditFillBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 fillerWantAssetIndex = (_values[i] & mask24) >> 16;
+            uint256 wantAmount = _values[i + 1] >> 128;
+
+            // credit fill.wantAmount to filler
+            _increments[fillerWantAssetIndex] = _increments[fillerWantAssetIndex].add(wantAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 operatorFeeAssetIndex = ((_values[i] & mask40) >> 32);
+            // credit fill.feeAmount to operator
+            _increments[operatorFeeAssetIndex] = _increments[operatorFeeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Credit makers for each amount received through a matched fill.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditMakerBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i += numOffers * 2
+        i += (_values[0] & mask8) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & mask16) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            // match.offerIndex
+            uint256 offerIndex = _values[i] & mask8;
+            // maker.wantAssetIndex
+            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+
+            // match.takeAmount
+            uint256 amount = _values[i] >> 128;
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
+            amount = amount.mul(_values[2 + offerIndex * 2] >> 128)
+                           .div(_values[2 + offerIndex * 2] & mask128);
+
+            // credit maker for the amount received from the match
+            _increments[makerWantAssetIndex] = _increments[makerWantAssetIndex].add(amount);
+        }
+    }
+
+    /// @dev Credit the operator for each offer.feeAmount if the offer has not
+    /// been recorded through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _creditMakerFeeBalances(
+        uint256[] memory _increments,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i + numOffers * 2
+        uint256 end = i + (_values[0] & mask8) * 2;
+
+        // loop offers
+        for(i; i < end; i += 2) {
+            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
+            if (nonceTaken) { continue; }
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            uint256 operatorFeeAssetIndex = (_values[i] & mask40) >> 32;
+
+            // credit make.feeAmount to operator
+            _increments[operatorFeeAssetIndex] = _increments[operatorFeeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Deduct tokens from fillers for each fill.offerAmount
+    /// and each fill.feeAmount.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _deductFillBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        // 1 + numOffers * 2
+        uint256 i = 1 + (_values[0] & mask8) * 2;
+        // i + numFills * 2
+        uint256 end = i + ((_values[0] & mask16) >> 8) * 2;
+
+        // loop fills
+        for(i; i < end; i += 2) {
+            uint256 fillerOfferAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct fill.offerAmount from filler
+            _decrements[fillerOfferAssetIndex] = _decrements[fillerOfferAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct fill.feeAmount from filler
+            uint256 fillerFeeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[fillerFeeAssetIndex] = _decrements[fillerFeeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Deduct tokens from makers for each offer.offerAmount
+    /// and each offer.feeAmount if the offer has not been recorded
+    /// through a previous `trade` call.
+    /// See the `trade` method for param details.
+    /// @param _values Values from `trade`
+    function _deductMakerBalances(
+        uint256[] memory _decrements,
+        uint256[] memory _values
+    )
+        private
+        pure
+    {
+        uint256 i = 1;
+        // i + numOffers * 2
+        uint256 end = i + (_values[0] & mask8) * 2;
+
+        // loop offers
+        for(i; i < end; i += 2) {
+            bool nonceTaken = ((_values[i] & mask128) >> 120) == 1;
+            if (nonceTaken) { continue; }
+
+            uint256 makerOfferAssetIndex = (_values[i] & mask16) >> 8;
+            uint256 offerAmount = _values[i + 1] & mask128;
+
+            // deduct make.offerAmount from maker
+            _decrements[makerOfferAssetIndex] = _decrements[makerOfferAssetIndex].add(offerAmount);
+
+            uint256 feeAmount = _values[i] >> 128;
+            if (feeAmount == 0) { continue; }
+
+            // deduct make.feeAmount from maker
+            uint256 makerFeeAssetIndex = (_values[i] & mask32) >> 24;
+            _decrements[makerFeeAssetIndex] = _decrements[makerFeeAssetIndex].add(feeAmount);
+        }
+    }
+
+    /// @dev Emits trade events for easier tracking
+    /// @param _values The _values param from the trade / networkTrade method
+    /// @param _addresses The _addresses param from the trade / networkTrade method
+    /// @param _marketDapps The _marketDapps from BrokerV2
+    /// @param _forNetworkTrade Whether this is called from the networkTrade method
+    function _emitTradeEvents(
+        uint256[] memory _values,
+        address[] memory _addresses,
+        address[] memory _marketDapps,
+        bool _forNetworkTrade
+    )
+        private
+    {
+        uint256 i = 1;
+        // i += numOffers * 2
+        i += (_values[0] & mask8) * 2;
+        // i += numFills * 2
+        i += ((_values[0] & mask16) >> 8) * 2;
+
+        uint256 end = _values.length;
+
+        // loop matches
+        for(i; i < end; i++) {
+            uint256[] memory data = new uint256[](7);
+            data[0] = _values[i] & mask8; // match.offerIndex
+            data[1] = _values[1 + data[0] * 2] & mask8; // makerIndex
+            data[2] = (_values[1 + data[0] * 2] & mask16) >> 8; // makerOfferAssetIndex
+            data[3] = (_values[1 + data[0] * 2] & mask24) >> 16; // makerWantAssetIndex
+            data[4] = _values[i] >> 128; // match.takeAmount
+            // receiveAmount = match.takeAmount * offer.wantAmount / offer.offerAmount
+            data[5] = data[4].mul(_values[2 + data[0] * 2] >> 128)
+                             .div(_values[2 + data[0] * 2] & mask128);
+            // match.fillIndex for `trade`, marketDappIndex for `networkTrade`
+            data[6] = (_values[i] & mask16) >> 8;
+
+            address filler;
+            if (_forNetworkTrade) {
+                filler = _marketDapps[data[6]];
+            } else {
+                uint256 fillerIndex = (_values[1 + data[6] * 2] & mask8);
+                filler = _addresses[fillerIndex * 2];
+            }
+
+            emit Trade(
+                _addresses[data[1] * 2], // maker
+                filler,
+                _addresses[data[2] * 2 + 1], // makerGiveAsset
+                data[4], // makerGiveAmount
+                _addresses[data[3] * 2 + 1], // fillerGiveAsset
+                data[5] // fillerGiveAmount
+            );
+        }
+    }
+
+
     /// @notice Executes a trade against an external market.
     /// @dev The initial Ether or token balance is compared with the
     /// balance after the trade to ensure that the appropriate amounts of
@@ -372,8 +765,8 @@ library Utils {
     /// expected. If the number of tokens received is more than expected than
     /// the excess tokens are transferred to the `BrokerV2.operator`.
     /// @param _assetIds[0] The offerAssetId of the offer
-    /// @param _assetIds[2] The wantAssetId of the offer
-    /// @param _assetIds[3] The surplusAssetId
+    /// @param _assetIds[1] The wantAssetId of the offer
+    /// @param _assetIds[2] The surplusAssetId
     /// @param _dataValues[0] The number of tokens offerred
     /// @param _dataValues[1] The number of tokens expected to be received
     /// @param _dataValues[2] Match data
@@ -388,7 +781,8 @@ library Utils {
         private
         returns (uint256)
     {
-        uint256 dappIndex = (_dataValues[2] & ~(~uint256(0) << 16)) >> 8;
+        uint256 dappIndex = (_dataValues[2] & mask16) >> 8;
+        validateAddress(_marketDapps[dappIndex]);
         MarketDapp marketDapp = MarketDapp(_marketDapps[dappIndex]);
 
         uint256[] memory funds = new uint256[](6);
@@ -401,15 +795,15 @@ library Utils {
         uint256 ethValue = 0;
         address tokenReceiver;
 
-        if (_assetIds[0] != ETHER_ADDR) {
+        if (_assetIds[0] == ETHER_ADDR) {
+            ethValue = _dataValues[0]; // offerAmount
+        } else {
             tokenReceiver = marketDapp.tokenReceiver(_assetIds, _dataValues, _addresses);
             approveTokenTransfer(
                 _assetIds[0], // offerAssetId
                 tokenReceiver,
                 _dataValues[0] // offerAmount
             );
-        } else {
-            ethValue = _dataValues[0]; // offerAmount
         }
 
         marketDapp.trade.value(ethValue)(
@@ -477,9 +871,9 @@ library Utils {
         private
         pure
     {
-        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
-        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
+        uint256 numOffers = _values[0] & mask8;
+        uint256 numFills = (_values[0] & mask16) >> 8;
+        uint256 numMatches = (_values[0] & mask24) >> 16;
 
         // Validate that bits(24..256) are zero
         require(_values[0] >> 24 == 0, "Invalid trade input");
@@ -517,9 +911,9 @@ library Utils {
         private
         pure
     {
-        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
-        uint256 numMatches = (_values[0] & ~(~uint256(0) << 24)) >> 16;
+        uint256 numOffers = _values[0] & mask8;
+        uint256 numFills = (_values[0] & mask16) >> 8;
+        uint256 numMatches = (_values[0] & mask24) >> 16;
 
         // Validate that bits(24..256) are zero
         require(_values[0] >> 24 == 0, "Invalid networkTrade input");
@@ -532,12 +926,12 @@ library Utils {
         );
 
         require(
-            _values.length == 1 + numOffers * 2 + numFills * 2 + numMatches,
+            _values.length == 1 + numOffers * 2 + numMatches,
             "Invalid _values.length"
         );
 
         require(
-            _hashes.length == (numOffers + numFills) * 2,
+            _hashes.length == numOffers * 2,
             "Invalid _hashes.length"
         );
     }
@@ -550,13 +944,12 @@ library Utils {
     /// with N being the number of offers.
     /// @param _values Values from `trade`
     function _validateUniqueOffers(uint256[] memory _values) private pure {
-        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
+        uint256 numOffers = _values[0] & mask8;
 
         uint256 prevNonce;
-        uint256 mask = ~(~uint256(0) << 128);
 
         for(uint256 i = 0; i < numOffers; i++) {
-            uint256 nonce = (_values[i * 2 + 1] & mask) >> 56;
+            uint256 nonce = (_values[i * 2 + 1] & mask120) >> 56;
 
             if (i == 0) {
                 // Set the value of the first nonce
@@ -585,38 +978,46 @@ library Utils {
         private
         pure
     {
-        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
-        uint256 numFills = (_values[0] & ~(~uint256(0) << 16)) >> 8;
+        uint256 numOffers = _values[0] & mask8;
+        uint256 numFills = (_values[0] & mask16) >> 8;
 
         uint256 i = 1 + numOffers * 2 + numFills * 2;
         uint256 end = _values.length;
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 offerIndex = _values[i] & mask8;
+            uint256 fillIndex = (_values[i] & mask16) >> 8;
 
             require(offerIndex < numOffers, "Invalid match.offerIndex");
 
             require(fillIndex >= numOffers && fillIndex < numOffers + numFills, "Invalid match.fillIndex");
 
-            uint256 makerOfferAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & ~(~uint256(0) << 24)) >> 16;
-            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 16)) >> 8;
-            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & ~(~uint256(0) << 24)) >> 16;
+            require(
+                _addresses[(_values[1 + offerIndex * 2] & mask8) * 2] !=
+                _addresses[(_values[1 + fillIndex * 2] & mask8) * 2],
+                "offer.maker cannot be the same as fill.filler"
+            );
+
+            uint256 makerOfferAssetIndex = (_values[1 + offerIndex * 2] & mask16) >> 8;
+            uint256 makerWantAssetIndex = (_values[1 + offerIndex * 2] & mask24) >> 16;
+            uint256 fillerOfferAssetIndex = (_values[1 + fillIndex * 2] & mask16) >> 8;
+            uint256 fillerWantAssetIndex = (_values[1 + fillIndex * 2] & mask24) >> 16;
 
             require(
-                _addresses[makerOfferAssetIndex * 2 + 1] == _addresses[fillerWantAssetIndex * 2 + 1],
+                _addresses[makerOfferAssetIndex * 2 + 1] ==
+                _addresses[fillerWantAssetIndex * 2 + 1],
                 "offer.offerAssetId does not match fill.wantAssetId"
             );
 
             require(
-                _addresses[makerWantAssetIndex * 2 + 1] == _addresses[fillerOfferAssetIndex * 2 + 1],
+                _addresses[makerWantAssetIndex * 2 + 1] ==
+                _addresses[fillerOfferAssetIndex * 2 + 1],
                 "offer.wantAssetId does not match fill.offerAssetId"
             );
 
             // require that bits(16..128) are all zero for every match
-            require((_values[i] & ~(~uint256(0) << 128)) >> 16 == uint256(0), "Invalid match data");
+            require((_values[i] & mask128) >> 16 == uint256(0), "Invalid match data");
 
             uint256 takeAmount = _values[i] >> 128;
             require(takeAmount > 0, "Invalid match.takeAmount");
@@ -624,7 +1025,7 @@ library Utils {
             uint256 offerDataB = _values[2 + offerIndex * 2];
             // (offer.wantAmount * takeAmount) % offer.offerAmount == 0
             require(
-                (offerDataB >> 128).mul(takeAmount).mod(offerDataB & ~(~uint256(0) << 128)) == 0,
+                (offerDataB >> 128).mul(takeAmount).mod(offerDataB & mask128) == 0,
                 "Invalid amounts"
             );
         }
@@ -646,16 +1047,16 @@ library Utils {
         private
         pure
     {
-        uint256 numOffers = _values[0] & ~(~uint256(0) << 8);
+        uint256 numOffers = _values[0] & mask8;
 
         // 1 + numOffers * 2
-        uint256 i = 1 + (_values[0] & ~(~uint256(0) << 8)) * 2;
+        uint256 i = 1 + (_values[0] & mask8) * 2;
         uint256 end = _values.length;
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 surplusAssetIndex = (_values[i] & ~(~uint256(0) << 24)) >> 16;
+            uint256 offerIndex = _values[i] & mask8;
+            uint256 surplusAssetIndex = (_values[i] & mask24) >> 16;
 
             require(offerIndex < numOffers, "Invalid match.offerIndex");
             require(_addresses[surplusAssetIndex * 2] == _operator, "Invalid operator address");
@@ -666,7 +1067,7 @@ library Utils {
             uint256 offerDataB = _values[2 + offerIndex * 2];
             // (offer.wantAmount * takeAmount) % offer.offerAmount == 0
             require(
-                (offerDataB >> 128).mul(takeAmount).mod(offerDataB & ~(~uint256(0) << 128)) == 0,
+                (offerDataB >> 128).mul(takeAmount).mod(offerDataB & mask128) == 0,
                 "Invalid amounts"
             );
         }
@@ -687,19 +1088,19 @@ library Utils {
 
         uint256 i = 1;
         // i += numOffers * 2
-        i += (_values[0] & ~(~uint256(0) << 8)) * 2;
+        i += (_values[0] & mask8) * 2;
         // i += numFills * 2
-        i += ((_values[0] & ~(~uint256(0) << 16)) >> 8) * 2;
+        i += ((_values[0] & mask16) >> 8) * 2;
 
         uint256 end = _values.length;
 
         // loop matches
         for (i; i < end; i++) {
-            uint256 offerIndex = _values[i] & ~(~uint256(0) << 8);
-            uint256 fillIndex = (_values[i] & ~(~uint256(0) << 16)) >> 8;
+            uint256 offerIndex = _values[i] & mask8;
+            uint256 fillIndex = (_values[i] & mask16) >> 8;
             uint256 takeAmount = _values[i] >> 128;
             uint256 wantAmount = _values[2 + offerIndex * 2] >> 128;
-            uint256 offerAmount = _values[2 + offerIndex * 2] & ~(~uint256(0) << 128);
+            uint256 offerAmount = _values[2 + offerIndex * 2] & mask128;
             // giveAmount = takeAmount * wantAmount / offerAmount
             uint256 giveAmount = takeAmount.mul(wantAmount).div(offerAmount);
 
@@ -711,15 +1112,15 @@ library Utils {
         }
 
         // numOffers
-        i = (_values[0] & ~(~uint256(0) << 8));
+        i = _values[0] & mask8;
         // i + numFills
-        end = i + ((_values[0] & ~(~uint256(0) << 16)) >> 8);
+        end = i + ((_values[0] & mask16) >> 8);
 
         // loop fills
         for(i; i < end; i++) {
             require(
                 // fill.offerAmount == (sum of given amounts for fill)
-                _values[i * 2 + 2] & ~(~uint256(0) << 128) == filled[i * 2 + 1] &&
+                _values[i * 2 + 2] & mask128 == filled[i * 2 + 1] &&
                 // fill.wantAmount == (sum of taken amounts for fill)
                 _values[i * 2 + 2] >> 128 == filled[i * 2 + 2],
                 "Invalid fills"
@@ -727,66 +1128,17 @@ library Utils {
         }
     }
 
-    /// @dev Validates that for every offer / fill:
-    /// 1. offerAssetId != wantAssetId
-    /// 2. offerAmount > 0 && wantAmount > 0
-    /// 3. The referenced `operator` address is the zero address
+    /// @dev Validates that for every offer / fill
+    /// 1. user address matches address referenced by user.offerAssetIndex
+    /// 2. user address matches address referenced by user.wantAssetIndex
+    /// 3. user address matches address referenced by user.feeAssetIndex
+    /// 4. offerAssetId != wantAssetId
+    /// 5. offerAmount > 0 && wantAmount > 0
+    /// 6. Specified `operator` address matches the expected `operator` address,
+    /// 7. Specified `operator.feeAssetId` matches the offer's feeAssetId
     /// @param _values Values from `trade`
     /// @param _addresses Addresses from `trade`
     function _validateTradeData(
-        uint256[] memory _values,
-        address[] memory _addresses
-    )
-        private
-        pure
-    {
-        // numOffers + numFills
-        uint256 end = (_values[0] & ~(~uint256(0) << 8)) +
-                      ((_values[0] & ~(~uint256(0) << 16)) >> 8);
-
-        for (uint256 i = 0; i < end; i++) {
-            uint256 dataA = _values[i * 2 + 1];
-            uint256 dataB = _values[i * 2 + 2];
-
-            require(
-                // offerAssetId != wantAssetId
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1] !=
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1],
-                "Invalid trade assets"
-            );
-
-            require(
-                // offerAmount > 0 && wantAmount > 0
-                (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
-                "Invalid trade amounts"
-            );
-
-             require(
-                // _addresses[operator address index] == address(0)
-                // The actual operator address will be read directly from
-                // the contract's storage
-                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2] == address(0),
-                "Invalid operator address placeholder"
-            );
-
-             require(
-                // _addresses[operator fee asset ID index] == address(1)
-                // address(1) is used to differentiate from the ETHER_ADDR which is address(0)
-                // The actual fee asset ID will be read from the filler / maker feeAssetId
-                _addresses[((dataA & ~(~uint256(0) << 40)) >> 32) * 2 + 1] == address(1),
-                "Invalid operator fee asset ID placeholder"
-            );
-        }
-    }
-
-    /// @dev Validates that for every offer
-    /// 1. offerAssetId != wantAssetId
-    /// 2. offerAmount > 0 && wantAmount > 0
-    /// 3. Specified `operator` address matches the expected `operator` address,
-    /// 4. Specified `operator.feeAssetId` matches the offer's feeAssetId
-    /// @param _values Values from `trade`
-    /// @param _addresses Addresses from `trade`
-    function _validateOfferData(
         uint256[] memory _values,
         address[] memory _addresses,
         address _operator
@@ -794,43 +1146,66 @@ library Utils {
         private
         pure
     {
-        // numOffers
-        uint256 i = (_values[0] & ~(~uint256(0) << 8));
         // numOffers + numFills
-        uint256 end = (_values[0] & ~(~uint256(0) << 8)) +
-                      ((_values[0] & ~(~uint256(0) << 16)) >> 8);
+        uint256 end = (_values[0] & mask8) +
+                      ((_values[0] & mask16) >> 8);
 
-        for (i; i < end; i++) {
+        for (uint256 i = 0; i < end; i++) {
             uint256 dataA = _values[i * 2 + 1];
             uint256 dataB = _values[i * 2 + 2];
-            uint256 feeAssetIndex = ((dataA & ~(~uint256(0) << 40)) >> 32) * 2;
+
+            require(
+                // user address == user in user.offerAssetIndex pair
+                _addresses[(dataA & mask8) * 2] ==
+                _addresses[((dataA & mask16) >> 8) * 2],
+                "Invalid user in user.offerAssetIndex"
+            );
+
+            require(
+                // user address == user in user.wantAssetIndex pair
+                _addresses[(dataA & mask8) * 2] ==
+                _addresses[((dataA & mask24) >> 16) * 2],
+                "Invalid user in user.wantAssetIndex"
+            );
+
+            require(
+                // user address == user in user.feeAssetIndex pair
+                _addresses[(dataA & mask8) * 2] ==
+                _addresses[((dataA & mask32) >> 24) * 2],
+                "Invalid user in user.feeAssetIndex"
+            );
 
             require(
                 // offerAssetId != wantAssetId
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1] !=
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1],
+                _addresses[((dataA & mask16) >> 8) * 2 + 1] !=
+                _addresses[((dataA & mask24) >> 16) * 2 + 1],
                 "Invalid trade assets"
             );
 
             require(
                 // offerAmount > 0 && wantAmount > 0
-                (dataB & ~(~uint256(0) << 128)) > 0 && (dataB >> 128) > 0,
+                (dataB & mask128) > 0 && (dataB >> 128) > 0,
                 "Invalid trade amounts"
             );
 
+            uint256 operatorFeeAssetIndex = ((dataA & mask40) >> 32) * 2;
+
              require(
-                _addresses[feeAssetIndex] == _operator,
+                _addresses[operatorFeeAssetIndex] == _operator,
                 "Invalid operator address"
             );
 
              require(
-                _addresses[feeAssetIndex + 1] == _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1],
+                _addresses[operatorFeeAssetIndex + 1] ==
+                _addresses[((dataA & mask32) >> 24) * 2 + 1],
                 "Invalid operator fee asset ID"
             );
         }
     }
 
     /// @dev Validates signatures for a set of offers or fills
+    /// Note that the r value of the offer / fill in _hashes will be
+    /// overwritten by the hash of that offer / fill
     /// @param _values Values from `trade`
     /// @param _hashes Hashes from `trade`
     /// @param _addresses Addresses from `trade`
@@ -849,48 +1224,36 @@ library Utils {
     )
         private
         pure
-        returns (bytes32[] memory)
     {
-        bytes32[] memory hashKeys;
-        if (_i == 0) {
-            hashKeys = new bytes32[](_end - _i);
-        }
-
         for (_i; _i < _end; _i++) {
             uint256 dataA = _values[_i * 2 + 1];
             uint256 dataB = _values[_i * 2 + 2];
 
             bytes32 hashKey = keccak256(abi.encode(
                 _typehash,
-                _addresses[(dataA & ~(~uint256(0) << 8)) * 2], // user
-                _addresses[((dataA & ~(~uint256(0) << 16)) >> 8) * 2 + 1], // offerAssetId
-                dataB & ~(~uint256(0) << 128), // offerAmount
-                _addresses[((dataA & ~(~uint256(0) << 24)) >> 16) * 2 + 1], // wantAssetId
+                _addresses[(dataA & mask8) * 2], // user
+                _addresses[((dataA & mask16) >> 8) * 2 + 1], // offerAssetId
+                dataB & mask128, // offerAmount
+                _addresses[((dataA & mask24) >> 16) * 2 + 1], // wantAssetId
                 dataB >> 128, // wantAmount
-                _addresses[((dataA & ~(~uint256(0) << 32)) >> 24) * 2 + 1], // feeAssetId
+                _addresses[((dataA & mask32) >> 24) * 2 + 1], // feeAssetId
                 dataA >> 128, // feeAmount
-                (dataA & ~(~uint256(0) << 128)) >> 56 // nonce
+                (dataA & mask120) >> 56 // nonce
             ));
 
-            // To reduce gas costs, each bit of _values[0] after the 24th bit
-            // is used to indicate whether the Ethereum signed message prefix
-            // should be prepended for signature verification of the offer / fill
-            // at that index
-            bool prefixedSignature = ((dataA & ~(~uint256(0) << 56)) >> 48) != 0;
+            bool prefixedSignature = ((dataA & mask56) >> 48) != 0;
 
             validateSignature(
                 hashKey,
-                _addresses[(dataA & ~(~uint256(0) << 8)) * 2], // user
-                uint8((dataA & ~(~uint256(0) << 48)) >> 40), // The `v` component of the user's signature
+                _addresses[(dataA & mask8) * 2], // user
+                uint8((dataA & mask48) >> 40), // The `v` component of the user's signature
                 _hashes[_i * 2], // The `r` component of the user's signature
                 _hashes[_i * 2 + 1], // The `s` component of the user's signature
                 prefixedSignature
             );
 
-            if (hashKeys.length > 0) { hashKeys[_i] = hashKey; }
+            _hashes[_i * 2] = hashKey;
         }
-
-        return hashKeys;
     }
 
     /// @dev Ensure that the address is a deployed contract

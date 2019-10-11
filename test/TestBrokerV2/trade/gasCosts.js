@@ -92,7 +92,7 @@ contract('Test trade: gas costs', async (accounts) => {
         it('prints gas cost', async () => {
             await exchange.mintAndDeposit({ user: maker, token: jrc, amount: 170, nonce: 1 })
             await exchange.mintAndDeposit({ user: filler, token: swc, amount: 30, nonce: 2 })
-            await assertAsync(broker.usedNonces(0), shl(1, 1).or(shl(1, 2)))
+            await assertAsync(broker.usedNonces(0), 0)
 
             const offer = {
                 maker,
@@ -141,7 +141,7 @@ contract('Test trade: gas costs', async (accounts) => {
             // assert that remaining available offer amount is stored
             await assertAsync(broker.offers(offerHash), 60) // 60 jrc remaining, 100 jrc - 40 jrc
             // assert that all nonces have been marked as used
-            await assertAsync(broker.usedNonces(0), shl(1, 1).or(shl(1, 2)).or(shl(1, 3)).or(shl(1, 4)))
+            await assertAsync(broker.usedNonces(0), shl(1, 3).or(shl(1, 4)))
         })
     })
 

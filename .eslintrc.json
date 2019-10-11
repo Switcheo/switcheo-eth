@@ -24,6 +24,7 @@
       "comma-dangle": ["error", "never"],
       "require-jsdoc": "off",
       "block-spacing": "off",
-      "brace-style": "off"
+      "brace-style": "off",
+      "guard-for-in": "off"
     }
 }

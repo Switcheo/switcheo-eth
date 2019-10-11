@@ -11,13 +11,13 @@ $ npm install ganache-cli@latest -g
 ```
 3. Run Ganache-CLI with:
 ```
-$ ganache-cli -m "ladder soft balcony kiwi sword shadow volcano reform cricket wall initial normal" -p 7545
+$ ganache-cli -m "ladder soft balcony kiwi sword shadow volcano reform cricket wall initial normal" -p 7545 -l 8000000
 ```
 4. Install node modules with `npm install`
-5. Install solc v0.5.10:
+5. Install solc v0.5.12:
 ```
 $ cd /usr/local/lib/node_modules/truffle
-$ npm install solc@0.5.10
+$ npm install solc@0.5.12
 ```
 6. Run `truffle migrate` to deploy the contracts to Ganache
 7. Run `truffle test` to run test files

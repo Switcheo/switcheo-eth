@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 import "../lib/math/SafeMath.sol";
 import "./BrokerExtension.sol";
@@ -30,7 +30,7 @@ contract UniswapDapp is BrokerExtension {
         factory = UniswapFactory(_factoryAddress);
     }
 
-    function setFactory(address _factoryAddress) external onlyOwner {
+    function setFactory(address _factoryAddress) external onlyOwner nonReentrant {
         factory = UniswapFactory(_factoryAddress);
     }
 
@@ -56,6 +56,7 @@ contract UniswapDapp is BrokerExtension {
     )
         public
         payable
+        nonReentrant
     {
         // _dataValues[2] bits(24..56): delay
         uint256 deadline = now.add((_dataValues[2] & ~(~uint256(0) << 56)) >> 24);

@@ -1,4 +1,6 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
+
+import "../lib/utils/ReentrancyGuard.sol";
 
 interface Broker {
     function owner() external returns (address);
@@ -6,7 +8,7 @@ interface Broker {
     function markNonce(uint256 _nonce) external;
 }
 
-contract BrokerExtension {
+contract BrokerExtension is ReentrancyGuard {
     Broker public broker;
 
     modifier onlyAdmin() {

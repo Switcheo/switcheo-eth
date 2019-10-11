@@ -1,7 +1,7 @@
 const { getBroker, getJrc, getSwc, validateBalance, hashOffer, exchange,
-        assertAsync, increaseEvmTime } = require('../utils')
+        assertAsync, increaseEvmTime, assertReversion, testEvents } = require('../utils')
 const { getTradeParams } = require('../utils/getTradeParams')
-
+const { MAX_SLOW_CANCEL_DELAY, REASON_CODES } = require('../constants')
 const { PRIVATE_KEYS } = require('../wallets')
 
 contract('Test slowCancel', async (accounts) => {
@@ -10,7 +10,7 @@ contract('Test slowCancel', async (accounts) => {
     const maker = accounts[1]
     const filler = accounts[2]
     const privateKeys = PRIVATE_KEYS
-    const announceDelay = 604800
+    const announceDelay = MAX_SLOW_CANCEL_DELAY
 
     beforeEach(async () => {
         broker = await getBroker()
@@ -24,6 +24,33 @@ contract('Test slowCancel', async (accounts) => {
         await exchange.trade(tradeParams, { privateKeys })
         await validateBalance(maker, jrc, 300) // 500 jrc - 100 jrc - 100 jrc
         await validateBalance(operator, jrc, 6) // received 3 jrc + 3 jrc
+    })
+
+    contract('test event emission', async () => {
+        it('emits events', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await exchange.announceCancel(offer, { from: maker })
+
+            await increaseEvmTime(announceDelay)
+            const result = await exchange.slowCancel(offer)
+
+            testEvents(result, [
+                'BalanceIncrease',
+                {
+                    user: maker,
+                    assetId: jrc.address,
+                    amount: 60,
+                    reason: REASON_CODES.REASON_CANCEL,
+                    nonce: offer.nonce
+                },
+                'SlowCancel',
+                {
+                    offerHash,
+                    amount: 60
+                }
+            ])
+        })
     })
 
     contract('when parameters are valid', async () => {
@@ -43,6 +70,37 @@ contract('Test slowCancel', async (accounts) => {
             await validateBalance(maker, jrc, 360) // 300 jrc + 60 jrc
             await validateBalance(operator, jrc, 6) // unchanged
             await assertAsync(broker.offers(offerHash), 0)
+        })
+    })
+
+    contract('when the cancellation was not pre-announced', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await increaseEvmTime(announceDelay)
+
+            await assertReversion(
+                exchange.slowCancel(offer),
+                '13'
+            )
+        })
+    })
+
+    contract('when the cancellation time has not passed', async () => {
+        it('raises an error', async () => {
+            const offer = tradeParams.offers[0]
+            const offerHash = hashOffer(offer)
+            await assertAsync(broker.offers(offerHash), 60)
+
+            await exchange.announceCancel(offer, { from: maker })
+            await increaseEvmTime(announceDelay - 10)
+
+            await assertReversion(
+                exchange.slowCancel(offer),
+                '14'
+            )
         })
     })
 })

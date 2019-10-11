@@ -1,4 +1,4 @@
-pragma solidity 0.5.10;
+pragma solidity 0.5.12;
 
 /// @title An adapted version of the UniswapFactory contract for testing
 /// @notice https://github.com/Uniswap/contracts-vyper
