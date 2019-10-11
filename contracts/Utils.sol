@@ -994,8 +994,8 @@ library Utils {
             require(fillIndex >= numOffers && fillIndex < numOffers + numFills, "Invalid match.fillIndex");
 
             require(
-                _addresses[_values[1 + offerIndex * 2] & mask8] !=
-                _addresses[_values[1 + fillIndex * 2] & mask8],
+                _addresses[(_values[1 + offerIndex * 2] & mask8) * 2] !=
+                _addresses[(_values[1 + fillIndex * 2] & mask8) * 2],
                 "offer.maker cannot be the same as fill.filler"
             );
 
