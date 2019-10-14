@@ -17,24 +17,32 @@ async function touchBalances(accounts) {
     await exchange.mintAndDeposit({ user: filler, token: jrc, amount: 1, nonce: 6 })
 }
 
-async function batchTrade(batchSize, accounts) {
+async function batchTrade(batchSize, accounts, numMakers = 1) {
     const privateKeys = PRIVATE_KEYS
 
     const jrc = await getJrc()
     const swc = await getSwc()
 
     const operator = accounts[0]
-    const maker = accounts[1]
     const filler = accounts[2]
 
-    await exchange.mintAndDeposit({ user: maker, token: jrc, amount: batchSize * 2 * 100, nonce: 1 })
     await exchange.mintAndDeposit({ user: filler, token: swc, amount: batchSize * 2 * 50, nonce: 2 })
 
     const offers = []
     const fills = []
     const matches = []
 
+    let maker = accounts[1]
+    await exchange.mintAndDeposit({ user: maker, token: jrc, amount: batchSize * 2 * 100, nonce: 1 })
+
     for (let i = 0; i < batchSize; i++) {
+        if (i < numMakers - 1) {
+            maker = accounts[3 + i]
+            await exchange.mintAndDeposit({ user: maker, token: jrc, amount: 200, nonce: 1 })
+        } else {
+            maker = accounts[1]
+        }
+
         offers.push(
             {
                 maker,
@@ -71,8 +79,8 @@ async function batchTrade(batchSize, accounts) {
         matches
     }, { privateKeys })
 
-    // console.log('gas used', result.receipt.gasUsed)
-    console.log('gas used', result.receipt.gasUsed / batchSize)
+    console.log('gas used', result.receipt.gasUsed)
+    // console.log('gas used', result.receipt.gasUsed / batchSize)
 }
 
 contract('Test trade: gas costs', async (accounts) => {
@@ -86,6 +94,48 @@ contract('Test trade: gas costs', async (accounts) => {
         broker = await getBroker()
         jrc = await getJrc()
         swc = await getSwc()
+    })
+
+    contract('when there is 1 match for 1 maker', async () => {
+        it('prints gas cost', async () => {
+            await touchBalances(accounts)
+            await batchTrade(1, accounts, 1)
+        })
+    })
+
+    contract('when there are 2 matches for 1 maker', async () => {
+        it('prints gas cost', async () => {
+            await touchBalances(accounts)
+            await batchTrade(2, accounts, 1)
+        })
+    })
+
+    contract('when there are 3 matches and 1 maker', async () => {
+        it('prints gas cost', async () => {
+            await touchBalances(accounts)
+            await batchTrade(3, accounts, 1)
+        })
+    })
+
+    contract('when there are 2 matches for 2 makers', async () => {
+        it('prints gas cost', async () => {
+            await touchBalances(accounts)
+            await batchTrade(2, accounts, 2)
+        })
+    })
+
+    contract('when there are 3 matches for 2 makers', async () => {
+        it('prints gas cost', async () => {
+            await touchBalances(accounts)
+            await batchTrade(3, accounts, 2)
+        })
+    })
+
+    contract('when there are 3 matches for 3 makers', async () => {
+        it('prints gas cost', async () => {
+            await touchBalances(accounts)
+            await batchTrade(3, accounts, 3)
+        })
     })
 
     contract('worst-case single trade', async () => {
