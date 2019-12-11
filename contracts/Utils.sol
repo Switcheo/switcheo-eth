@@ -36,8 +36,8 @@ library Utils {
     //
     // bytes32 public constant CONTRACT_NAME = keccak256("Switcheo Exchange");
     // bytes32 public constant CONTRACT_VERSION = keccak256("2");
-    // uint256 public constant CHAIN_ID = 3; // TODO: Update this before deploying
-    // address public constant VERIFYING_CONTRACT = address(1); // TODO: Update this before deploying
+    // uint256 public constant CHAIN_ID = 3;
+    // address public constant VERIFYING_CONTRACT = 0x7f5826B841276308306D2F1fbFf952b5CCcb83d9
     // bytes32 public constant SALT = keccak256("switcheo-eth-salt");
 
     // bytes32 public constant DOMAIN_SEPARATOR = keccak256(abi.encode(
@@ -48,7 +48,7 @@ library Utils {
     //     VERIFYING_CONTRACT,
     //     SALT
     // ));
-    bytes32 public constant DOMAIN_SEPARATOR = 0x14f697e312cdba1c10a1eb5c87d96fa22b63aef9dc39592568387471319ea630;
+    bytes32 public constant DOMAIN_SEPARATOR = 0xc010bb4cc969cfe848269abac6dabb33d37e5285d4e5d93ae411b94c5edb8280;
 
     // bytes32 public constant OFFER_TYPEHASH = keccak256(abi.encodePacked(
     //     "Offer(",

@@ -1517,6 +1517,13 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
             uint256 availableAmount = existingOffer ? offers[hashKey] : (_values[i * 2 + 2] & mask128);
             // Error code 31: _storeOfferData, offer's available amount is zero
             require(availableAmount > 0, "31");
+            require(
+                availableAmount >= takenAmounts[i],
+                string(abi.encodePacked(
+                    "Insufficient available amount ",
+                    hashKey
+                ))
+            );
 
             uint256 remainingAmount = availableAmount.sub(takenAmounts[i]);
             if (remainingAmount > 0) { offers[hashKey] = remainingAmount; }
@@ -1898,6 +1905,19 @@ contract BrokerV2 is Ownable, ReentrancyGuard {
         for(uint256 i = 0; i < end; i++) {
             uint256 decrement = _decrements[i];
             if (decrement == 0) { continue; }
+            require(
+                balances[_addresses[i * 2]][_addresses[i * 2 + 1]] >= decrement,
+                string(abi.encodePacked(
+                    "Insufficient balance ",
+                     _addresses[i * 2],
+                     " ",
+                     _addresses[i * 2 + 1],
+                     " ",
+                     balances[_addresses[i * 2]][_addresses[i * 2 + 1]],
+                     " ",
+                     decrement
+                 ))
+            );
 
             balances[_addresses[i * 2]][_addresses[i * 2 + 1]] =
             balances[_addresses[i * 2]][_addresses[i * 2 + 1]].sub(decrement);
