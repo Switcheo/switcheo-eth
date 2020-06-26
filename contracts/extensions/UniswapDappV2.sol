@@ -5,6 +5,7 @@ import "./BrokerExtension.sol";
 import "../Utils.sol";
 
 interface UniswapRouterV2 {
+    function WETH() external pure returns (address);
     function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)
         external
         payable
@@ -30,7 +31,6 @@ contract UniswapDappV2 is BrokerExtension {
 
     UniswapRouterV2 public router;
     address private constant ETHER_ADDR = address(0);
-    address private constant WETH_ADDR = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
     constructor(address _routerAddress) public {
         router = UniswapRouterV2(_routerAddress);
@@ -70,7 +70,7 @@ contract UniswapDappV2 is BrokerExtension {
         // give exact ETH and expect min tokens back
         if (_assetIds[0] == ETHER_ADDR) {
             address[] memory path = new address[](2);
-            path[0] = WETH_ADDR; // token in
+            path[0] = router.WETH(); // token in
             path[1] = _assetIds[1]; // token out
 
             router.swapExactETHForTokens.value(_dataValues[0])(
@@ -92,7 +92,7 @@ contract UniswapDappV2 is BrokerExtension {
         if (_assetIds[1] == ETHER_ADDR) {
             address[] memory path = new address[](2);
             path[0] = _assetIds[0]; // token in
-            path[1] = WETH_ADDR; // token out
+            path[1] = router.WETH(); // token out
 
             router.swapExactTokensForETH(
                 _dataValues[0],
