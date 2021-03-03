@@ -3,7 +3,7 @@
     "bn.js": "^5.0.0",
     "chai": "^4.2.0",
     "eth-crypto": "^1.3.4",
-    "openzeppelin-solidity": "^2.3.0",
+    "openzeppelin-solidity": "^3.4.1",
     "openzeppelin-test-helpers": "github:OpenZeppelin/openzeppelin-test-helpers",
     "truffle-hdwallet-provider": "^1.0.14",
     "truffle-privatekey-provider": "^1.3.0"
